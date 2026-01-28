@@ -1,0 +1,82 @@
+// MysticNameTags Dashboard UI
+// Import Common.ui for reusable components
+$C = "../Common.ui";
+
+// Custom button styles
+@PrimaryButton = TextButtonStyle(
+  Default: (Background: #3a7bd5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #4a8be5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #2a6bc5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+@SecondaryButton = TextButtonStyle(
+  Default: (Background: #2b3542, LabelStyle: (FontSize: 14, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #3b4552, LabelStyle: (FontSize: 14, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #1b2532, LabelStyle: (FontSize: 14, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+// Main container
+Group {
+  Anchor: (Width: 400, Height: 280);
+  Background: #141c26(0.98);
+  LayoutMode: Top;
+  Padding: (Full: 20);
+
+  // Title
+  Label {
+    Text: "MysticNameTags Dashboard";
+    Anchor: (Height: 40);
+    Style: (FontSize: 24, TextColor: #ffffff, HorizontalAlignment: Center, RenderBold: true);
+  }
+
+  // Separator
+  Group { Anchor: (Height: 1); Background: #2b3542; }
+  Group { Anchor: (Height: 16); }
+
+  // Status text
+  Label #StatusText {
+    Text: "Welcome to MysticNameTags!";
+    Anchor: (Height: 30);
+    Style: (FontSize: 16, TextColor: #96a9be, HorizontalAlignment: Center);
+  }
+
+  Group { Anchor: (Height: 8); }
+
+  // Info section
+  Label {
+    Text: "Version: 1.0.0 | By Alphine";
+    Anchor: (Height: 24);
+    Style: (FontSize: 14, TextColor: #6e7da1, HorizontalAlignment: Center);
+  }
+
+  // Spacer
+  Group { FlexWeight: 1; }
+
+  // Buttons row
+  Group {
+    LayoutMode: Center;
+    Anchor: (Height: 50);
+
+    TextButton #RefreshButton {
+      Text: "Refresh";
+      Anchor: (Width: 100, Height: 44);
+      Style: @PrimaryButton;
+    }
+
+    Group { Anchor: (Width: 16); }
+
+    TextButton #CloseButton {
+      Text: "Close";
+      Anchor: (Width: 100, Height: 44);
+      Style: @SecondaryButton;
+    }
+  }
+
+  // Footer
+  Group { Anchor: (Height: 8); }
+  Label {
+    Text: "Press ESC to close";
+    Anchor: (Height: 16);
+    Style: (FontSize: 11, TextColor: #555555, HorizontalAlignment: Center);
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "Group": "com.mystichorizons",
+  "Name": "MysticNameTags",
+  "Version": "1.0.0",
+  "Description": "A Hytale mod that customizes nameplates and supports luckperms, placeholders, and custom tags.",
+  "Authors": [
+    {
+      "Name": "Alphine"
+    }
+  ],
+  "Main": "com.mystichorizons.mysticnametags.MysticNameTagsPlugin",
+  "ServerVersion": "*",
+  "Dependencies": {
+    "LuckPerms:LuckPerms": "*",
+    "TheNewEconomy:VaultUnlocked": "*"},
+  "OptionalDependencies": {
+    "CreeperFace:PlaceholderAPI": "*"
+  },
+  "IncludesAssetPack": true
+}

@@ -1,0 +1,427 @@
+// MysticNameTags - Tags UI
+// Controller: MysticNameTagsTagsUI
+
+$C = "../Common.ui";
+
+$C.@PageOverlay {
+  Group {
+    LayoutMode: Center;
+    Anchor: (Full: 1);
+
+    // Main container
+    $C.@DecoratedContainer #TagsRoot {
+      @ContentPadding = Padding(Full: 14);
+      @CloseButton = false;
+
+      // Bigger card
+      Anchor: (Width: 720, Height: 520);
+
+      // ===== HEADER (inside DecoratedContainer's #Title) =====
+      Group #Title {
+        LayoutMode: Top;
+        Padding: (Top: 6, Left: 18, Right: 18, Bottom: 4);
+
+        Label #TitleLabel {
+          Text: "Tags";
+          Anchor: (Height: 22);
+          Style: (
+            FontSize: 18,
+            TextColor: #ffffff,
+            RenderBold: true,
+            HorizontalAlignment: Center
+          );
+        }
+
+        Label #Subtitle {
+          Text: "Equip unlocked titles or purchase new ones.";
+          Anchor: (Height: 18);
+          Style: (
+            FontSize: 11,
+            TextColor: #cbd5f5,
+            HorizontalAlignment: Center
+          );
+        }
+      }
+
+      // ===== CONTENT AREA =====
+      Group #Content {
+        LayoutMode: Top;
+        Padding: @ContentPadding;
+        Background: #020617(0.94);
+
+        // Balance
+        Label #BalanceLabel {
+          Text: "Balance: loading...";
+          Anchor: (Height: 20);
+          Style: (FontSize: 13, TextColor: #cbd5f5);
+        }
+
+        // Current nameplate preview
+        Label #CurrentNameplateLabel {
+          Text: "Current: (loading...)";
+          Anchor: (Height: 20);
+          Style: (FontSize: 13, TextColor: #cbd5f5);
+        }
+
+        Group { Anchor: (Height: 6); }
+        $C.@ContentSeparator { }
+        Group { Anchor: (Height: 6); }
+
+        // List header
+        Group #ListHeader {
+          LayoutMode: Left;
+          Anchor: (Height: 20);
+          Padding: (Bottom: 4);
+
+          Label {
+            Text: "Tag";
+            Anchor: (Width: 320, Height: 18);
+            Style: (FontSize: 11, TextColor: #64748b);
+          }
+
+          Label {
+            Text: "Cost";
+            Anchor: (Width: 160, Height: 18);
+            Style: (FontSize: 11, TextColor: #64748b);
+          }
+
+          Group { FlexWeight: 1; }
+
+          Label {
+            Text: "Action";
+            Anchor: (Width: 80, Height: 18);
+            Style: (FontSize: 11, TextColor: #64748b);
+          }
+        }
+
+        Group { Anchor: (Height: 4); }
+
+        // ===== TAG ROWS (10 max) =====
+        Group #TagList {
+          Anchor: (Full: 1);
+          LayoutMode: Top;
+          Padding: (Right: 4);
+
+          // Row 0
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow0Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow0Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow0Button {
+              @Anchor = (Width: 110, Height: 24); // fits "Purchase"
+              Text: "Select";
+            }
+          }
+
+          // Row 1
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow1Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow1Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow1Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 2
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow2Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow2Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow2Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 3
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow3Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow3Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow3Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 4
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow4Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow4Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow4Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 5
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow5Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow5Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow5Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 6
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow6Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow6Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow6Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 7
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow7Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow7Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow7Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 8
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10, Bottom: 3);
+            Background: #020617(0.9);
+
+            Label #TagRow8Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow8Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow8Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+
+          // Row 9
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 36);
+            Padding: (Left: 10, Right: 10);
+            Background: #020617(0.9);
+
+            Label #TagRow9Name {
+              Text: "Tag Name";
+              Anchor: (Width: 320, Height: 20);
+              Style: (FontSize: 13, TextColor: #ffffff);
+            }
+
+            Label #TagRow9Price {
+              Text: "Price";
+              Anchor: (Width: 160, Height: 20);
+              Style: (FontSize: 12, TextColor: #b6c9de);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #TagRow9Button {
+              @Anchor = (Width: 110, Height: 24);
+              Text: "Select";
+            }
+          }
+        }
+
+        Group { Anchor: (Height: 6); }
+
+        // Page controls
+        Group #PageControls {
+          LayoutMode: Left;
+          Anchor: (Height: 26);
+
+          $C.@SmallSecondaryTextButton #PrevPageButton {
+            @Anchor = (Width: 80, Height: 24);
+            Text: "< Prev";
+          }
+
+          Group { Anchor: (Width: 8); }
+
+          Label #PageLabel {
+            Text: "Page 1/1";
+            Anchor: (Width: 180, Height: 20);
+            Style: (FontSize: 11, TextColor: #96a9be, HorizontalAlignment: Center);
+          }
+
+          Group { FlexWeight: 1; }
+
+          $C.@SmallSecondaryTextButton #NextPageButton {
+            @Anchor = (Width: 80, Height: 24);
+            Text: "Next >";
+          }
+        }
+
+        Group { Anchor: (Height: 4); }
+
+        // Footer
+        Group {
+          LayoutMode: Left;
+          Anchor: (Height: 26);
+
+          Label {
+            Text: "Click a tag to buy/equip.";
+            Anchor: (Height: 16);
+            Style: (FontSize: 11, TextColor: #555555);
+          }
+
+          Group { FlexWeight: 1; }
+
+          $C.@SmallSecondaryTextButton #BottomCloseButton {
+            @Anchor = (Width: 100, Height: 24);
+            Text: "Close";
+          }
+        }
+      }
+    }
+  }
+}
