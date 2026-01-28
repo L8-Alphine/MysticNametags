@@ -11,10 +11,13 @@
   "Main": "com.mystichorizons.mysticnametags.MysticNameTagsPlugin",
   "ServerVersion": "*",
   "Dependencies": {
-    "LuckPerms:LuckPerms": "*",
-    "TheNewEconomy:VaultUnlocked": "*"},
+    "LuckPerms:LuckPerms": "*"
+  },
   "OptionalDependencies": {
-    "CreeperFace:PlaceholderAPI": "*"
+    "CreeperFace:PlaceholderAPI": "*",
+    "WiFlowPlaceholderAPI:WiFlowPlaceholderAPI": "*",
+    "TheNewEconomy:VaultUnlocked": "*",
+    "com.eliteessentials:EliteEssentials": "*"
   },
   "IncludesAssetPack": true
 }
