@@ -18,3 +18,4 @@ libs/HytaleServer.jar
 server/mods/
 server/logs/
 server/world/
+/server/
