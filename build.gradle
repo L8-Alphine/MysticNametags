@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.0'
+version = '1.0.1'
 
 repositories {
     mavenCentral()
@@ -37,9 +37,13 @@ dependencies {
 
     // PlaceholderAPI
     compileOnly files('libs/PlaceholderAPI-2.0.jar')
+    compileOnly files('libs/WiFlowPlaceholderAPI-1.0.0.jar') // Better PlaceholderAPI overall with a better system
 
-    // Optional VaultUnlocked Support
+    // VaultUnlocked Support
     compileOnly 'net.cfh.vault:VaultUnlocked:2.18.3'
+
+    // EliteEssentials Support
+    compileOnly files('libs/EliteEssentials-1.1.4.jar')
 
     // Luckperms Support
     compileOnly 'net.luckperms:api:5.4'
