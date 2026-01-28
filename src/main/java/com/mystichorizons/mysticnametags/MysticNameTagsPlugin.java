@@ -40,16 +40,42 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         return instance;
     }
 
+    /**
+     * Expose integrations to commands / other systems.
+     */
+    public IntegrationManager getIntegrations() {
+        return integrations;
+    }
+
     @Override
     protected void setup() {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Setting up...");
 
         this.integrations = new IntegrationManager();
-//        this.integrations.init();
 
         // Init core config + tags
         Settings.init();
         TagManager.init(integrations);
+
+        // Soft-economy detection
+        boolean vault = integrations.isVaultAvailable();
+        boolean elite = integrations.isEliteEconomyAvailable();
+
+        if (vault) {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] VaultUnlocked detected – tag purchasing enabled (primary backend).");
+
+            if (elite) {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] EliteEssentials economy also detected – using VaultUnlocked over EliteEssentials.");
+            }
+        } else if (elite) {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] EliteEssentials economy detected – tag purchasing enabled.");
+        } else {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] No compatible economy found – tags can only be unlocked via permissions.");
+        }
 
         // Register commands
         registerCommands();
@@ -95,6 +121,14 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING).withCause(t)
                     .log("[MysticNameTags] PlaceholderAPI not present, placeholders disabled.");
+        }
+
+        // WiFlowPlaceholderAPI ({mystictags_...}) – new expansion
+        try {
+            new com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook().register();
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to register WiFlowPlaceholderAPI expansion. Maybe not installed? Disabled Placeholder Support.");
         }
     }
 
