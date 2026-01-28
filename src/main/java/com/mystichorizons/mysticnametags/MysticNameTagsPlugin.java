@@ -57,26 +57,6 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         Settings.init();
         TagManager.init(integrations);
 
-        // Soft-economy detection
-        boolean vault = integrations.isVaultAvailable();
-        boolean elite = integrations.isEliteEconomyAvailable();
-
-        if (vault) {
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] VaultUnlocked detected – tag purchasing enabled (primary backend).");
-
-            if (elite) {
-                LOGGER.at(Level.INFO)
-                        .log("[MysticNameTags] EliteEssentials economy also detected – using VaultUnlocked over EliteEssentials.");
-            }
-        } else if (elite) {
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] EliteEssentials economy detected – tag purchasing enabled.");
-        } else {
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] No compatible economy found – tags can only be unlocked via permissions.");
-        }
-
         // Register commands
         registerCommands();
 
@@ -119,16 +99,35 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.INFO)
                     .log("[MysticNameTags] PlaceholderAPI hooked successfully.");
         } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] PlaceholderAPI not present, placeholders disabled.");
+            LOGGER.at(Level.WARNING)
+                    .log("[MysticNameTags] PlaceholderAPI not present.");
         }
 
-        // WiFlowPlaceholderAPI ({mystictags_...}) – new expansion
+        // WiFlowPlaceholderAPI
         try {
             new com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook().register();
         } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
+            LOGGER.at(Level.WARNING)
                     .log("[MysticNameTags] Failed to register WiFlowPlaceholderAPI expansion. Maybe not installed? Disabled Placeholder Support.");
+        }
+
+        try {
+            var manager = net.cfh.vault.VaultUnlockedServicesManager.get();
+            LOGGER.at(Level.INFO).log("[MysticNameTags][Debug] Startup Vault econ provider names = "
+                    + manager.economyProviderNames());
+            LOGGER.at(Level.INFO).log("[MysticNameTags][Debug] Startup Vault economyObj() = "
+                    + manager.economyObj());
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags][Debug] Error probing VaultUnlocked at startup");
+        }
+
+        try {
+            boolean enabled = com.eliteessentials.api.EconomyAPI.isEnabled();
+            LOGGER.at(Level.INFO).log("[MysticNameTags][Debug] Startup EconomyAPI.isEnabled() = " + enabled);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags][Debug] EconomyAPI not reachable at startup");
         }
     }
 

@@ -129,7 +129,25 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             }
         }
 
-        // Fill rows for this page
+        // ---- Economy status + balance (once per rebuild) ----
+        double balance = 0.0;
+        boolean econEnabled = false;
+        try {
+            if (uuid != null) {
+                econEnabled = tagManager.getIntegrations().hasAnyEconomy();
+                if (econEnabled) {
+                    balance = tagManager.getIntegrations().getBalance(uuid);
+                }
+            }
+        } catch (Throwable ignored) { }
+
+        if (!econEnabled) {
+            cmd.set("#BalanceLabel.Text", "Balance: N/A (no economy found)");
+        } else {
+            cmd.set("#BalanceLabel.Text", "Balance: " + balance);
+        }
+
+        // ---- Fill rows for this page ----
         int row = 0;
         for (int i = startIndex; i < endIndex && row < MAX_ROWS; i++, row++) {
             TagDefinition def = tags.get(i);
@@ -142,25 +160,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
             String nameText = ColorFormatter.stripFormatting(rawDisplay);
             String hex      = ColorFormatter.extractFirstHexColor(rawDisplay);
-
-            // Balance label
-            double balance = 0.0;
-            boolean econEnabled = false;
-
-            try {
-                if (uuid != null) {
-                    econEnabled = TagManager.get().getIntegrations().hasAnyEconomy();
-                    if (econEnabled) {
-                        balance = TagManager.get().getIntegrations().getBalance(uuid);
-                    }
-                }
-            } catch (Throwable ignored) { }
-
-            if (!econEnabled) {
-                cmd.set("#BalanceLabel.Text", "Balance: N/A (no economy found)");
-            } else {
-                cmd.set("#BalanceLabel.Text", "Balance: " + balance);
-            }
 
             String priceText;
             if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
@@ -236,20 +235,18 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         try {
             String baseName = playerRef.getUsername();
 
-            // This is the *actual* nameplate (with § codes) used in-game
+            // This is the *actual* nameplate (with &/hex codes) used for chat/UI
             String coloredNameplate = tagManager.buildNameplate(playerRef, baseName, uuid);
 
-            // Strip color codes so they don't render as raw §7 etc. in the UI
+            // Strip color codes so they don't render raw in the UI
             previewText = ColorFormatter.stripFormatting(coloredNameplate);
 
             // Try to derive a nice color from the player's rank or active tag
             if (uuid != null) {
-                // Rank prefix from integrations (may contain &#RRGGBB or &x codes)
-                String rankPrefix = TagManager.get().getIntegrations().getLuckPermsPrefix(uuid);
+                String rankPrefix = tagManager.getIntegrations().getLuckPermsPrefix(uuid);
                 previewHex = ColorFormatter.extractFirstHexColor(rankPrefix);
 
                 if (previewHex == null) {
-                    // Fallback to active tag color
                     TagDefinition active = tagManager.getEquipped(uuid);
                     if (active != null) {
                         previewHex = ColorFormatter.extractFirstHexColor(active.getDisplay());
@@ -317,13 +314,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                                 case UNLOCKED_FREE:
                                 case UNLOCKED_PAID:
                                 case EQUIPPED_ALREADY_OWNED: {
-                                    // Always use plain nameplate for the actual Nameplate component
                                     String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
                                     NameplateManager.get().apply(uuid, store, ref, text);
                                     break;
                                 }
                                 case UNEQUIPPED: {
-                                    // Reapply with the rank rebuilt at the end
                                     NameplateManager.get().restore(uuid, store, ref, baseName);
                                     String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
                                     NameplateManager.get().apply(uuid, store, ref, text);
@@ -347,12 +342,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                             .log("[MysticNameTags] Failed to handle tag_click for " + tagId);
                 }
 
-                // 4) Rebuild the page dynamically using sendUpdate, so the UI refreshes
-                //    without closing and the loading overlay clears.
+                // 4) Rebuild the page dynamically so the UI refreshes
                 UICommandBuilder updateCmd = new UICommandBuilder();
                 UIEventBuilder updateEvt   = new UIEventBuilder();
 
-                // We do NOT need to register row events again here
                 rebuildPage(ref, store, updateCmd, updateEvt, false);
 
                 sendUpdate(updateCmd, null, false);
@@ -405,7 +398,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
         String parsedMsg   = WiFlowPlaceholderSupport.apply(playerRef, msg);
 
-        // 2) Then apply & + hex colors like before
+        // 2) Then apply & + hex colors
         parsedTitle = ColorFormatter.colorize(parsedTitle);
         parsedMsg   = ColorFormatter.colorize(parsedMsg);
 

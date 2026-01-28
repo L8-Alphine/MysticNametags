@@ -1,88 +1,180 @@
 package com.mystichorizons.mysticnametags.integrations;
 
-import java.lang.reflect.InvocationTargetException;
+import net.cfh.vault.VaultUnlockedServicesManager;
+import net.milkbowl.vault2.economy.Economy;
+import net.milkbowl.vault2.economy.EconomyResponse;
+import net.milkbowl.vault2.economy.EconomyResponse.ResponseType;
+
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.UUID;
 
 public final class VaultUnlockedSupport {
 
-    private static boolean initialized = false;
-    private static boolean available   = false;
-
-    private static Class<?> servicesClass;
-    private static Class<?> economyClass;
-    private static Method getMethod;
-    private static Method economyWithdrawMethod;
-    private static Method economyGetBalanceMethod;
-
-    private static Object economyInstance;
+    // Cached provider; re-resolved if it goes null / disabled
+    private static volatile Economy economy;
 
     private VaultUnlockedSupport() {}
 
-    private static void init() {
-        if (initialized) return;
+    private static Economy resolveEconomy() {
+        // If we already have a live provider, keep using it
+        Economy cached = economy;
+        if (cached != null && cached.isEnabled()) {
+            return cached;
+        }
 
         try {
-            servicesClass = Class.forName("net.cfh.vault.VaultUnlockedServicesManager");
-            economyClass  = Class.forName("net.milkbowl.vault2.economy.Economy");
-
-            // static VaultUnlockedServicesManager.get()
-            getMethod = servicesClass.getMethod("get");
-
-            // Economy methods: withdraw(String, UUID, BigDecimal) and getBalance(String, UUID)
-            economyWithdrawMethod = economyClass.getMethod(
-                    "withdraw", String.class, UUID.class, BigDecimal.class
-            );
-            economyGetBalanceMethod = economyClass.getMethod(
-                    "getBalance", String.class, UUID.class
-            );
-
-            // Resolve the economy instance once
-            Object services = getMethod.invoke(null);
-            Method economyObj = servicesClass.getMethod("economyObj");
-            Object eco = economyObj.invoke(services);
-
-            if (eco != null) {
-                economyInstance = eco;
-                available = true;
+            Economy eco = VaultUnlockedServicesManager.get().economyObj();
+            if (eco != null && eco.isEnabled()) {
+                economy = eco;
+                return eco;
             }
-        } catch (ClassNotFoundException | NoSuchMethodException |
-                 IllegalAccessException | InvocationTargetException e) {
-            available = false;
-        } finally {
-            initialized = true;
+        } catch (NoClassDefFoundError e) {
+            // VaultUnlocked not on classpath
+            return null;
+        } catch (Throwable ignored) {
+            return null;
         }
+
+        return null;
     }
 
     public static boolean isAvailable() {
-        if (!initialized) init();
-        return available && economyInstance != null;
-    }
-
-    public static boolean withdraw(String pluginName, UUID uuid, double amount) {
-        if (!isAvailable() || amount <= 0.0D) return false;
-        try {
-            BigDecimal value = BigDecimal.valueOf(amount);
-            Object response = economyWithdrawMethod.invoke(economyInstance, pluginName, uuid, value);
-            // EconomyResponse has transactionSuccess():boolean – reflect it:
-            Method successMethod = response.getClass().getMethod("transactionSuccess");
-            Object ok = successMethod.invoke(response);
-            return ok instanceof Boolean && (Boolean) ok;
-        } catch (Throwable ignored) {
-            return false;
-        }
+        return resolveEconomy() != null;
     }
 
     public static double getBalance(String pluginName, UUID uuid) {
-        if (!isAvailable()) return 0.0D;
-        try {
-            Object bal = economyGetBalanceMethod.invoke(economyInstance, pluginName, uuid);
-            if (bal instanceof BigDecimal bd) {
-                return bd.doubleValue();
-            }
-        } catch (Throwable ignored) {
+        Economy eco = resolveEconomy();
+        if (eco == null || uuid == null) {
+            return 0.0D;
         }
+
+        // Prefer the typed API first
+        try {
+            BigDecimal bal = eco.balance(pluginName, uuid);
+            return bal.doubleValue();
+        } catch (Throwable ignored) {
+            // Fallback: try a simpler getBalance(UUID) like EliteEssentials does
+            try {
+                Method m = eco.getClass().getMethod("getBalance", UUID.class);
+                Object result = m.invoke(eco, uuid);
+
+                if (result instanceof BigDecimal bd) {
+                    return bd.doubleValue();
+                } else if (result instanceof Number n) {
+                    return n.doubleValue();
+                }
+            } catch (Throwable ignored2) {
+                // Give up and return 0
+            }
+        }
+
         return 0.0D;
+    }
+
+    public static boolean withdraw(String pluginName, UUID uuid, double amount) {
+        if (amount <= 0.0D || uuid == null) return false;
+
+        Economy eco = resolveEconomy();
+        if (eco == null) {
+            return false;
+        }
+
+        BigDecimal value = BigDecimal.valueOf(amount);
+
+        // 1) Try modern VaultUnlocked Economy API
+        try {
+            EconomyResponse response = eco.withdraw(pluginName, uuid, value);
+            return response.type == ResponseType.SUCCESS;
+        } catch (Throwable ignored) {
+            // 2) Fallback: try an external-style withdraw(UUID, BigDecimal)
+            try {
+                Method m = eco.getClass().getMethod("withdraw", UUID.class, BigDecimal.class);
+                Object resp = m.invoke(eco, uuid, value);
+
+                // Some providers may still return EconomyResponse-like objects
+                if (resp != null && resp.getClass().getName().contains("EconomyResponse")) {
+                    // Try getType()
+                    try {
+                        Method typeMethod = resp.getClass().getMethod("getType");
+                        Object type = typeMethod.invoke(resp);
+                        if ("SUCCESS".equalsIgnoreCase(String.valueOf(type))) {
+                            return true;
+                        }
+                    } catch (Throwable ignored2) {
+                        // Try type()
+                        try {
+                            Method typeMethod = resp.getClass().getMethod("type");
+                            Object type = typeMethod.invoke(resp);
+                            if ("SUCCESS".equalsIgnoreCase(String.valueOf(type))) {
+                                return true;
+                            }
+                        } catch (Throwable ignored3) {
+                            // ignore
+                        }
+                    }
+                }
+
+                // Or they might just return a boolean
+                if (resp instanceof Boolean b) {
+                    return b;
+                }
+            } catch (Throwable ignored2) {
+                // No compatible withdraw method
+            }
+        }
+
+        return false;
+    }
+
+    public static boolean deposit(String pluginName, UUID uuid, double amount) {
+        if (amount <= 0.0D || uuid == null) return false;
+
+        Economy eco = resolveEconomy();
+        if (eco == null) {
+            return false;
+        }
+
+        BigDecimal value = BigDecimal.valueOf(amount);
+
+        // 1) Try modern API
+        try {
+            EconomyResponse response = eco.deposit(pluginName, uuid, value);
+            return response.type == ResponseType.SUCCESS;
+        } catch (Throwable ignored) {
+            // 2) Fallback: deposit(UUID, BigDecimal)
+            try {
+                Method m = eco.getClass().getMethod("deposit", UUID.class, BigDecimal.class);
+                Object resp = m.invoke(eco, uuid, value);
+
+                if (resp != null && resp.getClass().getName().contains("EconomyResponse")) {
+                    try {
+                        Method typeMethod = resp.getClass().getMethod("getType");
+                        Object type = typeMethod.invoke(resp);
+                        if ("SUCCESS".equalsIgnoreCase(String.valueOf(type))) {
+                            return true;
+                        }
+                    } catch (Throwable ignored2) {
+                        try {
+                            Method typeMethod = resp.getClass().getMethod("type");
+                            Object type = typeMethod.invoke(resp);
+                            if ("SUCCESS".equalsIgnoreCase(String.valueOf(type))) {
+                                return true;
+                            }
+                        } catch (Throwable ignored3) {
+                            // ignore
+                        }
+                    }
+                }
+
+                if (resp instanceof Boolean b) {
+                    return b;
+                }
+            } catch (Throwable ignored2) {
+                // No compatible deposit method
+            }
+        }
+
+        return false;
     }
 }

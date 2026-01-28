@@ -28,6 +28,9 @@ public class IntegrationManager {
     private LuckPerms luckPerms;
     private boolean luckPermsAvailable;
 
+    // ---- Economy status logging ----
+    private boolean loggedEconomyStatus = false;
+
     public void init() {
         setupLuckPerms();
     }
@@ -120,7 +123,7 @@ public class IntegrationManager {
     }
 
     // ----------------------------------------------------------------
-    // Economy (VaultUnlocked – OPTIONAL)
+    // Economy (VaultUnlocked + EliteEssentials – OPTIONAL)
     // ----------------------------------------------------------------
 
     /**
@@ -128,26 +131,59 @@ public class IntegrationManager {
      * Secondary backend: EliteEssentials EconomyAPI (if present and enabled).
      */
     public boolean isVaultAvailable() {
-        return VaultUnlockedSupport.isAvailable();
+        try {
+            return VaultUnlockedSupport.isAvailable();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
     }
 
     public boolean isEliteEconomyAvailable() {
-        return EliteEconomySupport.isAvailable();
+        try {
+            return EliteEconomySupport.isAvailable();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
     }
 
     /**
      * Is there ANY economy available at all?
      */
     public boolean hasAnyEconomy() {
-        // Priority is handled in withdraw/getBalance,
-        // this just answers "is there at least one backend?"
         return isVaultAvailable() || isEliteEconomyAvailable();
+    }
+
+    private void logEconomyStatusIfNeeded() {
+        if (loggedEconomyStatus) {
+            return;
+        }
+
+        boolean vault = isVaultAvailable();
+        boolean elite = isEliteEconomyAvailable();
+
+        if (vault) {
+            if (elite) {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] VaultUnlocked + EliteEssentials detected – using VaultUnlocked as primary economy backend.");
+            } else {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] VaultUnlocked detected – tag purchasing enabled.");
+            }
+            loggedEconomyStatus = true;
+        } else if (elite) {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] EliteEssentials EconomyAPI detected – tag purchasing enabled.");
+            loggedEconomyStatus = true;
+        }
+        // If neither is detected yet, we stay quiet and will re-check on the next call.
     }
 
     public boolean withdraw(@Nonnull UUID uuid, double amount) {
         if (amount <= 0.0D) {
             return true;
         }
+
+        logEconomyStatusIfNeeded();
 
         // 1) Prefer VaultUnlocked
         if (isVaultAvailable()) {
@@ -168,6 +204,8 @@ public class IntegrationManager {
             return true;
         }
 
+        logEconomyStatusIfNeeded();
+
         // 1) Prefer VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid) >= amount;
@@ -183,6 +221,8 @@ public class IntegrationManager {
     }
 
     public double getBalance(@Nonnull UUID uuid) {
+        logEconomyStatusIfNeeded();
+
         // 1) Prefer VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid);
@@ -203,7 +243,8 @@ public class IntegrationManager {
 
     /**
      * Permission check for *players* (used in tag logic).
-     * Uses LuckPerms when available; if LP missing, falls back to Hytale's system.
+     * Uses LuckPerms when available; if LP missing, falls back to
+     * "fail-open" so tags remain usable via other means (crates, etc.).
      */
     public boolean hasPermission(@Nonnull PlayerRef playerRef,
                                  @Nonnull String permissionNode) {
@@ -231,8 +272,7 @@ public class IntegrationManager {
             return false;
         }
 
-        // ConsoleSender already has all permissions, keep that behaviour.
-        // (ConsoleSender.hasPermission(...) always returns true.)
+        // If LP isn't present, delegate entirely to native perms
         if (!luckPermsAvailable) {
             return sender.hasPermission(permissionNode);
         }
@@ -246,7 +286,7 @@ public class IntegrationManager {
             // Fall through to native perms
         }
 
-        // Fallback to Hytale's PermissionHolder – covers OP, etc.
+        // Fallback to Hytale's PermissionHolder – covers OP, console, etc.
         return sender.hasPermission(permissionNode);
     }
 
