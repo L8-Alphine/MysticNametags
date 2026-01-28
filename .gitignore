@@ -15,7 +15,12 @@ pom.xml.versionsBackup
 
 # Hytale
 libs/HytaleServer.jar
-server/mods/
-server/logs/
-server/world/
-/server/
+libs/PlaceholderAPI-2.0.jar
+server/mods/*
+server/logs/*
+server/world/*
+/server/*
+/server/Assets.zip
+/server/HytaleServer.jar
+/server/HytaleServer.aot
+/libs/
