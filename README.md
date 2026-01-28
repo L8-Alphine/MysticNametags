@@ -23,14 +23,14 @@ Designed for performance, modularity, and large servers.
 - **LuckPerms**  
   https://www.curseforge.com/hytale/mods/luckperms
 
-- **VaultUnlocked**  
-  https://www.curseforge.com/hytale/mods/vaultunlocked
-
 > These are **mandatory**. MysticNameTags will not function correctly without them.
 
 ### **Optional**
 - **PlaceholderAPI (CreeperFace)**  
   https://www.curseforge.com/hytale/mods/placeholderapi
+- **VaultUnlocked**  
+  https://www.curseforge.com/hytale/mods/vaultunlocked
+- **EliteEssentials** https://www.curseforge.com/hytale/mods/eliteessentials
 
 ---
 
@@ -40,8 +40,7 @@ Designed for performance, modularity, and large servers.
 |-------|------------|
 | `/tags` | Opens the tag selection UI |
 | `/tags tags` | Opens the tag list directly |
-
-> A reload command is **planned**, but currently **server restart is required** after config changes.
+| `/tags reload` | Reloads and rebuilds all online user nameplates. Permission: `mysticnametags.reload` |
 
 ---
 
@@ -91,6 +90,16 @@ If PlaceholderAPI is installed, MysticNameTags registers the following placehold
 | `%mystictags_tag_plain%` | Plain tag (no colors)                   |
 | `%mystictags_full%`      | Full formatted name (rank + name + tag) |
 
+> Using WiFlow's PlaceholderAPI you can use the following for placeholders
+
+| Placeholder                | Description                              |
+| ------------------------ |------------------------------------------|
+| `{mystictags_tag}`       | Colored active tag                       |
+| `{mystictags_tag_plain}` | Plain tag (no colors)                    |
+| `{mystictags_full}`      | Full formatted name (rank + name + tag)  |
+| `{mystictags_full_plain} | Plain formatted name (rank + name + tag) |
+
+
 > Placeholder availability depends on PlaceholderAPI scope support.
 
 ---
@@ -100,10 +109,10 @@ If PlaceholderAPI is installed, MysticNameTags registers the following placehold
 * 🚫 No repeating tasks
 * 🚫 No polling loops
 * ✅ Nameplates rebuild **only when needed**:
-
     * Player joins
     * Tag changes
     * LuckPerms data recalculates
+    * Reload
 * ✅ World-thread safe updates
 * ✅ Does **not** interfere with teleport plugins
   (Tested with **EliteEssentials**)
@@ -125,7 +134,6 @@ Safe to run alongside other chat, scoreboard, and utility plugins.
 
 ## 🚧 In Development / Planned
 
-* `/tags reload` command
 * BetterScoreboard integration
 * Player list (tab) tag support
 * Expanded PlaceholderAPI usage
