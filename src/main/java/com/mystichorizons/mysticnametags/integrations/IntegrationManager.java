@@ -1,18 +1,14 @@
 package com.mystichorizons.mysticnametags.integrations;
 
 import com.hypixel.hytale.logger.HytaleLogger;
+import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.tags.TagManager;
-import net.cfh.vault.VaultUnlockedServicesManager;
-import net.luckperms.api.event.user.UserDataRecalculateEvent;
-import net.milkbowl.vault2.chat.ChatUnlocked;
-import net.milkbowl.vault2.economy.Economy;
-import net.milkbowl.vault2.economy.EconomyResponse;
-import net.milkbowl.vault2.permission.PermissionUnlocked;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
+import net.luckperms.api.event.user.UserDataRecalculateEvent;
 import net.luckperms.api.model.group.Group;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.query.QueryOptions;
@@ -20,7 +16,6 @@ import org.checkerframework.checker.nullness.compatqual.NonNullDecl;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.logging.Level;
 
@@ -29,53 +24,31 @@ public class IntegrationManager {
     private static final String ECON_PLUGIN_NAME = "MysticNameTags";
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
+    // ---- LuckPerms ----
     private LuckPerms luckPerms;
-    private Economy economy;
-    private PermissionUnlocked permission;
-    private ChatUnlocked chat;
-
     private boolean luckPermsAvailable;
-    private boolean vaultAvailable;
 
     public void init() {
         setupLuckPerms();
-        setupVaultUnlocked();
     }
+
+    // ----------------------------------------------------------------
+    // LuckPerms
+    // ----------------------------------------------------------------
 
     private void setupLuckPerms() {
         try {
             this.luckPerms = LuckPermsProvider.get();
             this.luckPermsAvailable = true;
 
-            LOGGER.at(Level.INFO).log("[MysticNameTags] Hooked into LuckPerms " +
-                    luckPerms.getPlatform());
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] Hooked into LuckPerms " + luckPerms.getPlatform());
 
-            // Register LP event listeners once we know it's present
             registerLuckPermsListeners();
         } catch (Throwable t) {
             this.luckPermsAvailable = false;
-            LOGGER.at(Level.INFO).withCause(t)
-                    .log("[MysticNameTags] LuckPerms not detected - rank formatting + extra permissions limited.");
-        }
-    }
-
-    private void setupVaultUnlocked() {
-        try {
-            VaultUnlockedServicesManager services = VaultUnlockedServicesManager.get();
-            this.economy = services.economyObj();
-            this.permission = services.permissionObj();
-            this.chat = services.chatObj();
-            this.vaultAvailable = (economy != null || permission != null || chat != null);
-
-            if (vaultAvailable) {
-                LOGGER.at(Level.INFO).log("[MysticNameTags] Hooked into VaultUnlocked (Hytale)");
-            } else {
-                LOGGER.at(Level.INFO).log("[MysticNameTags] VaultUnlocked detected but no services registered.");
-            }
-        } catch (Throwable t) {
-            this.vaultAvailable = false;
-            LOGGER.at(Level.INFO).withCause(t)
-                    .log("[MysticNameTags] VaultUnlocked not detected - economic tag purchasing disabled.");
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] LuckPerms not detected! Permissions and rank prefixes disabled.");
         }
     }
 
@@ -83,22 +56,12 @@ public class IntegrationManager {
         return luckPermsAvailable;
     }
 
-    public boolean isVaultAvailable() {
-        return vaultAvailable && economy != null;
-    }
-
-    // ---------------- LuckPerms helpers ----------------
-
     @Nullable
     public String getLuckPermsPrefix(@Nonnull UUID uuid) {
-        if (!luckPermsAvailable) {
-            return null;
-        }
+        if (!luckPermsAvailable) return null;
 
         User user = luckPerms.getUserManager().getUser(uuid);
-        if (user == null) {
-            return null;
-        }
+        if (user == null) return null;
 
         QueryOptions options = luckPerms.getContextManager()
                 .getQueryOptions(user)
@@ -109,40 +72,29 @@ public class IntegrationManager {
             return prefix;
         }
 
-        // Fall back to primary group tag/prefix if present
-        String primaryGroup = user.getPrimaryGroup();
-        Group group = luckPerms.getGroupManager().getGroup(primaryGroup);
+        Group group = luckPerms.getGroupManager().getGroup(user.getPrimaryGroup());
         if (group != null) {
-            String groupPrefix = group.getCachedData().getMetaData(options).getPrefix();
-            if (groupPrefix != null && !groupPrefix.isEmpty()) {
-                return groupPrefix;
-            }
+            return group.getCachedData().getMetaData(options).getPrefix();
         }
 
         return null;
     }
 
     public boolean hasPermissionWithLuckPerms(@Nonnull UUID uuid, @Nonnull String node) {
-        if (!luckPermsAvailable) {
-            return false;
-        }
+        if (!luckPermsAvailable) return false;
 
         User user = luckPerms.getUserManager().getUser(uuid);
-        if (user == null) {
-            return false;
-        }
+        if (user == null) return false;
 
-        return user.getCachedData().getPermissionData().checkPermission(node).asBoolean();
+        return user.getCachedData()
+                .getPermissionData()
+                .checkPermission(node)
+                .asBoolean();
     }
 
     private void registerLuckPermsListeners() {
-        if (!luckPermsAvailable || luckPerms == null) {
-            return;
-        }
-
-        // Fires whenever a user's cached data (including prefixes / groups) is recalculated
         luckPerms.getEventBus().subscribe(
-                MysticNameTagsPlugin.getInstance(), // your plugin instance
+                MysticNameTagsPlugin.getInstance(),
                 UserDataRecalculateEvent.class,
                 event -> {
                     UUID uuid = event.getUser().getUniqueId();
@@ -150,94 +102,155 @@ public class IntegrationManager {
                         handleRankChange(uuid);
                     } catch (Throwable t) {
                         LOGGER.at(Level.WARNING).withCause(t)
-                                .log("[MysticNameTags] Failed to handle LuckPerms rank change for " + uuid);
+                                .log("[MysticNameTags] Failed to refresh nameplate for " + uuid);
                     }
                 }
         );
     }
 
-    /**
-     * Called when LuckPerms notifies us that a user's data (groups/prefix/meta) changed.
-     * We rebuild their nameplate if they're online.
-     */
     private void handleRankChange(@Nonnull UUID uuid) {
-        TagManager tagManager = TagManager.get();
+        TagManager manager = TagManager.get();
 
-        PlayerRef ref = tagManager.getOnlinePlayer(uuid);
-        World world   = tagManager.getOnlineWorld(uuid);
+        PlayerRef ref = manager.getOnlinePlayer(uuid);
+        World world   = manager.getOnlineWorld(uuid);
 
-        if (ref == null || world == null) {
-            return; // offline or not tracked
-        }
-
-        // This is deduplicated + world-thread safe inside TagManager
-        tagManager.refreshNameplate(ref, world);
-    }
-
-    // ---------------- VaultUnlocked helpers ----------------
-
-    public boolean withdraw(@Nonnull UUID accountId, double amount) {
-        if (!isVaultAvailable() || amount <= 0.0D) {
-            return false;
-        }
-
-        try {
-            BigDecimal value = BigDecimal.valueOf(amount);
-            EconomyResponse response = economy.withdraw(ECON_PLUGIN_NAME, accountId, value);
-            return response != null && response.transactionSuccess();
-        } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] Economy withdraw failed for " + accountId);
-            return false;
+        if (ref != null && world != null) {
+            manager.refreshNameplate(ref, world);
         }
     }
 
-    public boolean hasBalance(@Nonnull UUID accountId, double amount) {
-        if (!isVaultAvailable() || amount <= 0.0D) {
-            return false;
-        }
+    // ----------------------------------------------------------------
+    // Economy (VaultUnlocked – OPTIONAL)
+    // ----------------------------------------------------------------
 
-        try {
-            BigDecimal bal = economy.getBalance(ECON_PLUGIN_NAME, accountId);
-            if (bal == null) return false;
-            return bal.compareTo(BigDecimal.valueOf(amount)) >= 0;
-        } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] Economy getBalance failed for " + accountId);
-            return false;
-        }
+    /**
+     * Primary backend: VaultUnlocked (if present).
+     * Secondary backend: EliteEssentials EconomyAPI (if present and enabled).
+     */
+    public boolean isVaultAvailable() {
+        return VaultUnlockedSupport.isAvailable();
     }
 
-    public double getBalance(@Nonnull UUID accountId) {
-        if (!isVaultAvailable()) {
-            return 0.0D;
-        }
-
-        try {
-            BigDecimal bal = economy.getBalance(ECON_PLUGIN_NAME, accountId);
-            return bal == null ? 0.0D : bal.doubleValue();
-        } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] Economy getBalance failed for " + accountId);
-            return 0.0D;
-        }
+    public boolean isEliteEconomyAvailable() {
+        return EliteEconomySupport.isAvailable();
     }
 
-    public boolean hasPermission(@Nonnull PlayerRef playerRef, @Nonnull String permissionNode) {
+    /**
+     * Is there ANY economy available at all?
+     */
+    public boolean hasAnyEconomy() {
+        // Priority is handled in withdraw/getBalance,
+        // this just answers "is there at least one backend?"
+        return isVaultAvailable() || isEliteEconomyAvailable();
+    }
+
+    public boolean withdraw(@Nonnull UUID uuid, double amount) {
+        if (amount <= 0.0D) {
+            return true;
+        }
+
+        // 1) Prefer VaultUnlocked
+        if (isVaultAvailable()) {
+            return VaultUnlockedSupport.withdraw(ECON_PLUGIN_NAME, uuid, amount);
+        }
+
+        // 2) Fallback to EliteEssentials EconomyAPI
+        if (isEliteEconomyAvailable()) {
+            return EliteEconomySupport.withdraw(uuid, amount);
+        }
+
+        // 3) No economy
+        return false;
+    }
+
+    public boolean hasBalance(@Nonnull UUID uuid, double amount) {
+        if (amount <= 0.0D) {
+            return true;
+        }
+
+        // 1) Prefer VaultUnlocked
+        if (isVaultAvailable()) {
+            return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid) >= amount;
+        }
+
+        // 2) Fallback to EliteEssentials
+        if (isEliteEconomyAvailable()) {
+            return EliteEconomySupport.has(uuid, amount);
+        }
+
+        // 3) No economy
+        return false;
+    }
+
+    public double getBalance(@Nonnull UUID uuid) {
+        // 1) Prefer VaultUnlocked
+        if (isVaultAvailable()) {
+            return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid);
+        }
+
+        // 2) Fallback to EliteEssentials
+        if (isEliteEconomyAvailable()) {
+            return EliteEconomySupport.getBalance(uuid);
+        }
+
+        // 3) No economy
+        return 0.0D;
+    }
+
+    // ----------------------------------------------------------------
+    // Unified permission entry
+    // ----------------------------------------------------------------
+
+    /**
+     * Permission check for *players* (used in tag logic).
+     * Uses LuckPerms when available; if LP missing, falls back to Hytale's system.
+     */
+    public boolean hasPermission(@Nonnull PlayerRef playerRef,
+                                 @Nonnull String permissionNode) {
+
         UUID uuid = getUuidFromPlayerRef(playerRef);
+
         if (uuid != null && hasPermissionWithLuckPerms(uuid, permissionNode)) {
             return true;
         }
 
-        // If LuckPerms isn't present, we can't enforce plugin-level perms here.
-        if (!luckPermsAvailable) {
-            return true;
-        }
-
-        return false;
+        // If LP is missing, fail-open for tag usage
+        return !luckPermsAvailable;
     }
 
-    // ---------------- Utility ----------------
+    /**
+     * Permission check for *command senders*.
+     * - If LuckPerms is present, prefers LP via UUID
+     * - Always falls back to sender.hasPermission(...) so Hytale's permission
+     *   system (including console) continues to work.
+     */
+    public boolean hasPermission(@Nonnull CommandSender sender,
+                                 @Nonnull String permissionNode) {
+
+        if (sender == null) {
+            return false;
+        }
+
+        // ConsoleSender already has all permissions, keep that behaviour.
+        // (ConsoleSender.hasPermission(...) always returns true.)
+        if (!luckPermsAvailable) {
+            return sender.hasPermission(permissionNode);
+        }
+
+        try {
+            UUID uuid = sender.getUuid();
+            if (uuid != null && hasPermissionWithLuckPerms(uuid, permissionNode)) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+            // Fall through to native perms
+        }
+
+        // Fallback to Hytale's PermissionHolder – covers OP, etc.
+        return sender.hasPermission(permissionNode);
+    }
+
+    // ----------------------------------------------------------------
 
     @NonNullDecl
     private UUID getUuidFromPlayerRef(@Nonnull PlayerRef ref) {
