@@ -4,7 +4,6 @@ import com.hypixel.hytale.event.EventRegistry;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
-import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.mystichorizons.mysticnametags.commands.MysticNameTagsPluginCommand;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
@@ -12,8 +11,6 @@ import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.placeholders.PlaceholderHook;
 import com.mystichorizons.mysticnametags.tags.TagManager;
-import com.mystichorizons.mysticnametags.ui.MysticNameTagsTagsUI;
-import cz.creeperface.hytale.placeholderapi.api.PlaceholderAPI;
 
 import javax.annotation.Nonnull;
 import java.util.UUID;
