@@ -123,6 +123,22 @@ public class TagManager {
         }
     }
 
+    public static void reload() {
+        if (instance == null) {
+            return;
+        }
+
+        LOGGER.at(Level.INFO).log("[MysticNameTags] Reloading tags.json...");
+
+        // Re-read tags.json
+        instance.loadConfig();
+
+        // Optionally re-apply nameplates for all online players
+        instance.refreshAllOnlineNameplates();
+
+        LOGGER.at(Level.INFO).log("[MysticNameTags] tags.json reload complete.");
+    }
+
     // ------------- Player data -------------
 
     @Nonnull
@@ -279,16 +295,16 @@ public class TagManager {
             return TagPurchaseResult.EQUIPPED_ALREADY_OWNED;
         }
 
+        // Free / non-purchasable tags – no economy needed
         if (!def.isPurchasable() || def.getPrice() <= 0) {
-            // Free tag, just unlock + equip
             data.addOwned(def.getId());
             data.setEquipped(def.getId());
             savePlayerData(uuid);
             return TagPurchaseResult.UNLOCKED_FREE;
         }
 
-        // Economy
-        if (!integrations.isVaultAvailable()) {
+        // Paid tag – requires some economy backend
+        if (!integrations.hasAnyEconomy()) {
             return TagPurchaseResult.NO_ECONOMY;
         }
 
@@ -522,5 +538,55 @@ public class TagManager {
         UUID uuid = playerRef.getUuid();
         String baseName = playerRef.getUsername();
         return buildNameplate(playerRef, baseName, uuid); // already colorized
+    }
+    /**
+     * Full colored “[Rank] Name [Tag]” string for chat / scoreboards (NOT Nameplate).
+     */
+    public String getColoredFullNameplate(UUID uuid, String baseName) {
+        String rank = integrations.getLuckPermsPrefix(uuid);
+        TagDefinition active = getEquipped(uuid);
+        String tagDisplay = (active != null) ? active.getDisplay() : null;
+
+        String formatted = Settings.get().formatNameplate(rank, baseName, tagDisplay);
+        // Use your chat/UI variant – NOT the nameplate-safe one
+        return ColorFormatter.colorize(formatted);
+    }
+
+    /**
+     * Plain “[Rank] Name [Tag]” with all formatting stripped.
+     */
+    public String getPlainFullNameplate(UUID uuid, String baseName) {
+        String colored = getColoredFullNameplate(uuid, baseName);
+        return ColorFormatter.stripFormatting(colored).trim();
+    }
+
+    /**
+     * Rebuild and apply nameplates for all currently tracked online players.
+     * Called after /tags reload so new tag definitions + perms are reflected.
+     */
+    private void refreshAllOnlineNameplates() {
+        if (onlinePlayers.isEmpty()) {
+            return;
+        }
+
+        LOGGER.at(Level.INFO)
+                .log("[MysticNameTags] Refreshing nameplates for " + onlinePlayers.size() + " online players...");
+
+        for (Map.Entry<UUID, PlayerRef> entry : onlinePlayers.entrySet()) {
+            UUID uuid = entry.getKey();
+            PlayerRef ref = entry.getValue();
+            World world = onlineWorlds.get(uuid);
+
+            if (ref == null || world == null) {
+                continue;
+            }
+
+            try {
+                refreshNameplate(ref, world);
+            } catch (Throwable t) {
+                LOGGER.at(Level.WARNING).withCause(t)
+                        .log("[MysticNameTags] Failed to refresh nameplate during reload for " + uuid);
+            }
+        }
     }
 }
