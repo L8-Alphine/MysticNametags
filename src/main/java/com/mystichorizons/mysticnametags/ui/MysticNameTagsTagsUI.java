@@ -18,6 +18,7 @@ import com.hypixel.hytale.server.core.ui.builder.UIEventBuilder;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.core.util.NotificationUtil;
+import com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
@@ -142,9 +143,30 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             String nameText = ColorFormatter.stripFormatting(rawDisplay);
             String hex      = ColorFormatter.extractFirstHexColor(rawDisplay);
 
+            // Balance label
+            double balance = 0.0;
+            boolean econEnabled = false;
+
+            try {
+                if (uuid != null) {
+                    econEnabled = TagManager.get().getIntegrations().hasAnyEconomy();
+                    if (econEnabled) {
+                        balance = TagManager.get().getIntegrations().getBalance(uuid);
+                    }
+                }
+            } catch (Throwable ignored) { }
+
+            if (!econEnabled) {
+                cmd.set("#BalanceLabel.Text", "Balance: N/A (no economy found)");
+            } else {
+                cmd.set("#BalanceLabel.Text", "Balance: " + balance);
+            }
+
             String priceText;
             if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
                 priceText = "Free";
+            } else if (!econEnabled) {
+                priceText = def.getPrice() + " coins (economy disabled)";
             } else {
                 priceText = def.getPrice() + " coins";
             }
@@ -206,16 +228,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#PageLabel.Text", "Page " + (page + 1) + "/" + totalPages);
         cmd.set("#PrevPageButton.Visible", page > 0);
         cmd.set("#NextPageButton.Visible", page < totalPages - 1);
-
-        // Balance label
-        double balance = 0.0;
-        try {
-            if (uuid != null) {
-                balance = TagManager.get().getIntegrations().getBalance(uuid);
-            }
-        } catch (Throwable ignored) { }
-
-        cmd.set("#BalanceLabel.Text", "Balance: " + balance);
 
         // ----- Current nameplate preview (colored) -----
         String previewText;
@@ -361,7 +373,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     }
 
     private void handlePurchaseResult(TagPurchaseResult result, TagDefinition def) {
-        // Build messages using &-style codes, then colorize once.
         String title = "&bMysticNameTags";
 
         String tagDisplay = def != null ? def.getDisplay() : "&ftag";
@@ -381,7 +392,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             case UNEQUIPPED ->
                     msg = "&7Unequipped &r" + tagDisplay + "&7.";
             case NO_ECONOMY ->
-                    msg = "&cEconomy plugin is not configured.";
+                    msg = "&cEconomy plugin is not configured. &7This tag can only be unlocked with an economy plugin installed.";
             case NOT_ENOUGH_MONEY ->
                     msg = "&cYou cannot afford that tag.";
             case TRANSACTION_FAILED ->
@@ -390,10 +401,18 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                     msg = "&cUnknown purchase result: " + result;
         }
 
+        // 1) Let WiFlow expand {placeholders} if the API is there
+        String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
+        String parsedMsg   = WiFlowPlaceholderSupport.apply(playerRef, msg);
+
+        // 2) Then apply & + hex colors like before
+        parsedTitle = ColorFormatter.colorize(parsedTitle);
+        parsedMsg   = ColorFormatter.colorize(parsedMsg);
+
         NotificationUtil.sendNotification(
                 playerRef.getPacketHandler(),
-                Message.raw(ColorFormatter.colorize(title)),
-                Message.raw(ColorFormatter.colorize(msg)),
+                Message.raw(parsedTitle),
+                Message.raw(parsedMsg),
                 NotificationStyle.Default
         );
     }
