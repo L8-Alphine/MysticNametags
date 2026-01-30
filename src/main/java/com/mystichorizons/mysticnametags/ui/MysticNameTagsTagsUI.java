@@ -260,18 +260,34 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 canUseCache.put(def.getId(), canUse);
             }
 
+            // Determine state flags
             boolean isEquipped = equippedId != null
                     && equippedId.equalsIgnoreCase(def.getId());
+
+            boolean owns = uuid != null && tagManager.ownsTag(uuid, def.getId());
+            boolean isFree = !def.isPurchasable() || def.getPrice() <= 0.0D;
+            boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
 
             String buttonText;
             if (isEquipped) {
                 buttonText = "Unequip";
-            } else if (canUse || (!def.isPurchasable() || def.getPrice() <= 0.0D)) {
-                // Can use via permission, or it's a free/non-purchasable tag
-                buttonText = "Equip";
+            } else if (isFree) {
+                // Free tag
+                if (!owns) {
+                    buttonText = "Unlock";
+                } else {
+                    buttonText = "Equip";
+                }
+            } else if (hasCost) {
+                // Paid tag
+                if (!owns) {
+                    buttonText = "Buy";
+                } else {
+                    buttonText = "Equip";
+                }
             } else {
-                // Locked behind economy / not owned yet
-                buttonText = "Purchase";
+                // Fallback – shouldn't really happen with current config model
+                buttonText = "Equip";
             }
 
             cmd.set(buttonSelector + ".Text", buttonText);
