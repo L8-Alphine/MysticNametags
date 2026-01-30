@@ -9,7 +9,6 @@ import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.protocol.packets.interface_.NotificationStyle;
-import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.player.pages.InteractiveCustomUIPage;
 import com.hypixel.hytale.server.core.ui.builder.EventData;
@@ -17,19 +16,16 @@ import com.hypixel.hytale.server.core.ui.builder.UICommandBuilder;
 import com.hypixel.hytale.server.core.ui.builder.UIEventBuilder;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
-import com.hypixel.hytale.server.core.util.NotificationUtil;
 import com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.tags.TagManager.TagPurchaseResult;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
+import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 
 import javax.annotation.Nonnull;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Level;
 
 /**
@@ -43,24 +39,41 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
+    // 10 rows, 10 tags per page
     private static final int MAX_ROWS  = 10;
     private static final int PAGE_SIZE = 10;
 
     private final PlayerRef playerRef;
     private final UUID uuid;
-    private final int currentPage; // zero-based
+
+    // zero-based page index (mutable so we can flip pages without recreating the page)
+    private int currentPage;
+
+    // Optional filter applied server-side (case-insensitive, mutable)
+    private String filterQuery;
+
+    // Per-page instance cache: tagId -> canUse
+    private final Map<String, Boolean> canUseCache = new HashMap<>();
 
     public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid) {
-        this(playerRef, uuid, 0);
+        this(playerRef, uuid, 0, null);
     }
 
     public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef,
                                 @Nonnull UUID uuid,
-                                int page) {
+                                int page,
+                                String filterQuery) {
         super(playerRef, CustomPageLifetime.CanDismiss, UIEventData.CODEC);
         this.playerRef = playerRef;
         this.uuid = uuid;
         this.currentPage = Math.max(page, 0);
+        this.filterQuery = normalizeFilter(filterQuery);
+    }
+
+    private static String normalizeFilter(String filter) {
+        if (filter == null) return null;
+        String trimmed = filter.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     @Override
@@ -89,8 +102,56 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 EventData.of("Action", "next_page")
         );
 
+        // "Apply" / "Clear" buttons just send "set_filter" with optional Filter text.
+        evt.addEventBinding(
+                CustomUIEventBindingType.Activating,
+                "#ApplyFilterButton",
+                EventData.of("Action", "set_filter")
+        );
+        evt.addEventBinding(
+                CustomUIEventBindingType.Activating,
+                "#ClearFilterButton",
+                new EventData()
+                        .append("Action", "set_filter")
+                        .append("Filter", "")
+        );
+
         // Fill the dynamic content (rows, balance, preview)
         rebuildPage(ref, store, cmd, evt, true);
+    }
+
+    /**
+     * Logical snapshot of tags to use for this UI instance:
+     * - filtered by filterQuery (if not null)
+     * - stable order: underlying TagManager uses LinkedHashMap
+     */
+    private List<TagDefinition> createFilteredSnapshot() {
+        TagManager tagManager = TagManager.get();
+        Collection<TagDefinition> all = tagManager.getAllTags();
+
+        if (filterQuery == null) {
+            return new ArrayList<>(all);
+        }
+
+        String needle = filterQuery.toLowerCase(Locale.ROOT);
+        List<TagDefinition> filtered = new ArrayList<>();
+
+        for (TagDefinition def : all) {
+            String id = def.getId() != null ? def.getId() : "";
+            String display = def.getDisplay() != null ? def.getDisplay() : "";
+            String descr   = def.getDescription() != null ? def.getDescription() : "";
+
+            String plainDisplay = ColorFormatter.stripFormatting(display);
+
+            String haystack =
+                    (id + " " + plainDisplay + " " + descr).toLowerCase(Locale.ROOT);
+
+            if (haystack.contains(needle)) {
+                filtered.add(def);
+            }
+        }
+
+        return filtered;
     }
 
     /**
@@ -110,15 +171,26 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         TagManager tagManager = TagManager.get();
 
-        // Collect tags into a list for paging
-        Collection<TagDefinition> all = tagManager.getAllTags();
-        List<TagDefinition> tags = new ArrayList<>(all);
+        // Snapshot of tags for this filter
+        List<TagDefinition> tags = createFilteredSnapshot();
 
-        int totalPages = Math.max(1, (int) Math.ceil(tags.size() / (double) PAGE_SIZE));
-        int page = Math.min(currentPage, totalPages - 1);
+        int totalTags  = tags.size();
+        int totalPages = Math.max(1, (int) Math.ceil(totalTags / (double) PAGE_SIZE));
 
-        int startIndex = page * PAGE_SIZE;
-        int endIndex   = Math.min(startIndex + PAGE_SIZE, tags.size());
+        // Clamp the current page in case tags changed
+        if (currentPage > totalPages - 1) {
+            currentPage = totalPages - 1;
+        }
+
+        int startIndex = currentPage * PAGE_SIZE;
+        int endIndex   = Math.min(startIndex + PAGE_SIZE, totalTags);
+
+        // Make sure search box reflects our current filter
+        if (filterQuery != null) {
+            cmd.set("#TagSearchBox.PlaceholderText", "Filter: " + filterQuery);
+        } else {
+            cmd.set("#TagSearchBox.PlaceholderText", "Search tags...");
+        }
 
         // Equipped tag (by id) for this player
         String equippedId = null;
@@ -158,8 +230,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
             String rawDisplay = def.getDisplay();
 
+            // Plain text for UI label, but preserves Unicode symbols
             String nameText = ColorFormatter.stripFormatting(rawDisplay);
-            String hex      = ColorFormatter.extractFirstHexColor(rawDisplay);
+            String hex      = ColorFormatter.extractUiTextColor(rawDisplay);
 
             String priceText;
             if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
@@ -178,7 +251,15 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             }
 
             // Determine button label based on usage/equipped state
-            boolean canUse = tagManager.canUseTag(playerRef, uuid, def);
+            boolean canUse;
+            Boolean cached = canUseCache.get(def.getId());
+            if (cached != null) {
+                canUse = cached;
+            } else {
+                canUse = tagManager.canUseTag(playerRef, uuid, def);
+                canUseCache.put(def.getId(), canUse);
+            }
+
             boolean isEquipped = equippedId != null
                     && equippedId.equalsIgnoreCase(def.getId());
 
@@ -200,14 +281,17 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             cmd.set(priceSelector + ".Visible", true);
             cmd.set(buttonSelector + ".Visible", true);
 
-            // Row button binding only needed on first build
+            // Row button binding – only TagId, no RowIndex needed
             if (registerRowEvents) {
+                EventData rowEvent = new EventData()
+                        .append("Action", "tag_click")
+                        .append("TagId", def.getId() != null ? def.getId() : "");
+
                 evt.addEventBinding(
                         CustomUIEventBindingType.Activating,
                         buttonSelector,
-                        new EventData()
-                                .append("Action", "tag_click")
-                                .append("TagId", def.getId())
+                        rowEvent,
+                        false // non-locking click for Equip/Purchase/Unequip
                 );
             }
         }
@@ -224,9 +308,21 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         // Page label + enable/disable arrows
-        cmd.set("#PageLabel.Text", "Page " + (page + 1) + "/" + totalPages);
-        cmd.set("#PrevPageButton.Visible", page > 0);
-        cmd.set("#NextPageButton.Visible", page < totalPages - 1);
+        String label;
+        if (totalTags == 0) {
+            label = (filterQuery != null)
+                    ? "No tags found for filter \"" + filterQuery + "\""
+                    : "No tags defined.";
+        } else {
+            label = "Page " + (currentPage + 1) + "/" + totalPages;
+            if (filterQuery != null) {
+                label += "  (filter: \"" + filterQuery + "\")";
+            }
+        }
+
+        cmd.set("#PageLabel.Text", label);
+        cmd.set("#PrevPageButton.Visible", totalTags > 0 && currentPage > 0);
+        cmd.set("#NextPageButton.Visible", totalTags > 0 && currentPage < totalPages - 1);
 
         // ----- Current nameplate preview (colored) -----
         String previewText;
@@ -243,7 +339,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
             // Try to derive a nice color from the player's rank or active tag
             if (uuid != null) {
-                String rankPrefix = tagManager.getIntegrations().getLuckPermsPrefix(uuid);
+                // Rank prefix from integrations (may contain &#RRGGBB or &x codes)
+                String rankPrefix = TagManager.get().getIntegrations().getLuckPermsPrefix(uuid);
                 previewHex = ColorFormatter.extractFirstHexColor(rankPrefix);
 
                 if (previewHex == null) {
@@ -277,32 +374,92 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             case "close" -> this.close();
 
             case "prev_page" -> {
-                int newPage = Math.max(0, currentPage - 1);
-                if (newPage != currentPage) {
-                    this.close();
-                    reopenAtPage(ref, store, newPage);
-                }
+                if (currentPage <= 0) return;
+                currentPage--;
+
+                UICommandBuilder cmd = new UICommandBuilder();
+                UIEventBuilder evt = new UIEventBuilder();
+                rebuildPage(ref, store, cmd, evt, true);
+                sendUpdate(cmd, null, false);
             }
 
             case "next_page" -> {
-                int newPage = currentPage + 1; // build() clamps
-                this.close();
-                reopenAtPage(ref, store, newPage);
+                // Need snapshot to know max page index
+                List<TagDefinition> tags = createFilteredSnapshot();
+                int totalPages = Math.max(1, (int) Math.ceil(tags.size() / (double) PAGE_SIZE));
+                if (currentPage >= totalPages - 1) return;
+
+                currentPage++;
+
+                UICommandBuilder cmd = new UICommandBuilder();
+                UIEventBuilder evt = new UIEventBuilder();
+                rebuildPage(ref, store, cmd, evt, true);
+                sendUpdate(cmd, null, false);
+            }
+
+            case "set_filter" -> {
+                String newFilter = normalizeFilter(data.filter);
+
+                // If filter changed, clear canUse cache + reset to page 0
+                if (!Objects.equals(filterQuery, newFilter)) {
+                    filterQuery = newFilter;
+                    currentPage = 0;
+                    canUseCache.clear();
+                }
+
+                UICommandBuilder cmd = new UICommandBuilder();
+                UIEventBuilder evt = new UIEventBuilder();
+                rebuildPage(ref, store, cmd, evt, true);
+                sendUpdate(cmd, null, false);
             }
 
             case "tag_click" -> {
                 if (uuid == null) return;
-                String tagId = data.tagId;
-                if (tagId == null) return;
+
+                TagManager manager = TagManager.get();
+
+                // Try to resolve by TagId first (most robust)
+                TagDefinition def = null;
+                String resolvedId = null;
+
+                if (data.tagId != null && !data.tagId.isEmpty()) {
+                    def = manager.getTag(data.tagId);
+                    if (def != null) {
+                        resolvedId = def.getId();
+                    }
+                }
+
+                // Fallback to page+row index if TagId isn't present / couldn't be resolved
+                if (def == null) {
+                    int rowIndex = data.rowIndex;
+                    if (rowIndex < 0 || rowIndex >= MAX_ROWS) {
+                        return; // invalid / missing row
+                    }
+
+                    List<TagDefinition> tags = createFilteredSnapshot();
+                    int startIndex = currentPage * PAGE_SIZE;
+                    int absIndex = startIndex + rowIndex;
+
+                    if (absIndex < 0 || absIndex >= tags.size()) {
+                        return; // clicked on an empty row
+                    }
+
+                    def = tags.get(absIndex);
+                    if (def == null || def.getId() == null || def.getId().isEmpty()) {
+                        return;
+                    }
+                    resolvedId = def.getId();
+                }
+
+                if (resolvedId == null || resolvedId.isEmpty()) {
+                    return;
+                }
 
                 TagPurchaseResult result = TagPurchaseResult.NOT_FOUND;
 
                 try {
-                    TagManager manager = TagManager.get();
-                    TagDefinition def = manager.getTag(tagId);
-
                     // 1) Toggle ownership/equip state
-                    result = manager.toggleTag(playerRef, uuid, tagId);
+                    result = manager.toggleTag(playerRef, uuid, resolvedId);
 
                     // 2) Update nameplate on the world thread (we have store + ref here)
                     Player player = store.getComponent(ref, Player.getComponentType());
@@ -339,36 +496,24 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 } catch (Throwable t) {
                     LOGGER.at(Level.WARNING)
                             .withCause(t)
-                            .log("[MysticNameTags] Failed to handle tag_click for " + tagId);
+                            .log("[MysticNameTags] Failed to handle tag_click for " + resolvedId);
                 }
 
                 // 4) Rebuild the page dynamically so the UI refreshes
                 UICommandBuilder updateCmd = new UICommandBuilder();
-                UIEventBuilder updateEvt   = new UIEventBuilder();
+                UIEventBuilder updateEvt = new UIEventBuilder();
 
-                rebuildPage(ref, store, updateCmd, updateEvt, false);
-
-                sendUpdate(updateCmd, null, false);
+                // You can safely re-register row events here if you prefer:
+                rebuildPage(ref, store, updateCmd, updateEvt, true);
+                sendUpdate(updateCmd, updateEvt, false);
             }
         }
-    }
-
-    private void reopenAtPage(@Nonnull Ref<EntityStore> ref,
-                              @Nonnull Store<EntityStore> store,
-                              int page) {
-        Player player = store.getComponent(ref, Player.getComponentType());
-        if (player == null) {
-            return;
-        }
-
-        MysticNameTagsTagsUI newPage = new MysticNameTagsTagsUI(playerRef, uuid, page);
-        player.getPageManager().openCustomPage(ref, store, newPage);
     }
 
     private void handlePurchaseResult(TagPurchaseResult result, TagDefinition def) {
         String title = "&bMysticNameTags";
 
-        String tagDisplay = def != null ? def.getDisplay() : "&ftag";
+        String tagDisplay = def != null ? def.getDisplay() : "";
         String msg;
 
         switch (result) {
@@ -402,10 +547,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         parsedTitle = ColorFormatter.colorize(parsedTitle);
         parsedMsg   = ColorFormatter.colorize(parsedMsg);
 
-        NotificationUtil.sendNotification(
+        MysticNotificationUtil.send(
                 playerRef.getPacketHandler(),
-                Message.raw(parsedTitle),
-                Message.raw(parsedMsg),
+                parsedTitle,
+                parsedMsg,
                 NotificationStyle.Default
         );
     }
@@ -428,11 +573,36 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                                 e -> e.tagId
                         )
                         .add()
+                        .append(
+                                new KeyedCodec<>("Filter", Codec.STRING),
+                                (e, v) -> e.filter = v,
+                                e -> e.filter
+                        )
+                        .add()
+                        .append(
+                                new KeyedCodec<>("RowIndex", Codec.STRING),
+                                (e, v) -> e.rowIndex = parseRowIndex(v),
+                                e -> (e.rowIndex >= 0 ? String.valueOf(e.rowIndex) : null)
+                        )
+                        .add()
                         .build();
 
         public String action;
         public String tagId;
+        public String filter;
+        public int rowIndex = -1;
 
         public UIEventData() {}
+
+        private static int parseRowIndex(String value) {
+            if (value == null || value.isEmpty()) {
+                return -1;
+            }
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException ignored) {
+                return -1;
+            }
+        }
     }
 }
