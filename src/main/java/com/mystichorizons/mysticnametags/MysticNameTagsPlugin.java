@@ -1,5 +1,6 @@
 package com.mystichorizons.mysticnametags;
 
+import com.hypixel.hytale.common.plugin.PluginManifest;
 import com.hypixel.hytale.event.EventRegistry;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
@@ -12,6 +13,7 @@ import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.placeholders.PlaceholderHook;
 import com.mystichorizons.mysticnametags.tags.TagManager;
+import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
 import java.util.UUID;
@@ -26,6 +28,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     private static MysticNameTagsPlugin instance;
 
     private IntegrationManager integrations;
+    private UpdateChecker updateChecker;
+    private PluginManifest manifest;
 
     public MysticNameTagsPlugin(@Nonnull JavaPluginInit init) {
         super(init);
@@ -51,6 +55,17 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     @Override
     protected void setup() {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Setting up...");
+
+        this.manifest = this.getManifest();
+
+        String version = "unknown";
+        if (manifest != null && manifest.getVersion() != null) {
+            version = manifest.getVersion().toString();
+        }
+
+        this.updateChecker = new UpdateChecker(version);
+        // Synchronous is fine here; if you prefer async, wrap in your scheduler.
+        this.updateChecker.checkForUpdates();
 
         this.integrations = new IntegrationManager();
 
@@ -147,5 +162,17 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Shutting down...");
         NameplateManager.get().clearAll();
         instance = null;
+    }
+
+    public UpdateChecker getUpdateChecker() {
+        return updateChecker;
+    }
+
+    /** Shared "resolved version" helper for UI/commands. */
+    public String getResolvedVersion() {
+        if (manifest != null && manifest.getVersion() != null) {
+            return manifest.getVersion().toString();
+        }
+        return "unknown";
     }
 }
