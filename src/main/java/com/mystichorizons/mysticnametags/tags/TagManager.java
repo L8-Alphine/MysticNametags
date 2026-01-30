@@ -14,15 +14,15 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.Ref;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
+import org.jline.utils.InputStreamReader;
 
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.lang.reflect.Type;
 import java.util.*;
 import java.util.logging.Level;
@@ -34,12 +34,17 @@ public class TagManager {
 
     private static TagManager instance;
 
+    private volatile List<TagDefinition> tagList = Collections.emptyList();
     private final Map<String, TagDefinition> tags = new LinkedHashMap<>();
     private final Map<UUID, PlayerTagData> playerData = new HashMap<>();
     private final Map<UUID, String> lastPlainNameplate = new ConcurrentHashMap<>();
     private final Map<UUID, PlayerRef> onlinePlayers = new ConcurrentHashMap<>();
     private final Map<UUID, World>    onlineWorlds  = new ConcurrentHashMap<>();
     private final IntegrationManager integrations;
+
+    // Cache of "canUseTag" decisions per player + tag id (lowercase).
+    // Avoids repeated permission checks on large tag sets.
+    private final Map<UUID, Map<String, Boolean>> canUseCache = new ConcurrentHashMap<>();
 
     private File configFile;
     private File playerDataFolder;
@@ -73,18 +78,59 @@ public class TagManager {
                 saveDefaultConfig();
             }
 
-            try (FileReader reader = new FileReader(configFile)) {
-                Type listType = new TypeToken<List<TagDefinition>>() {}.getType();
+            try (InputStreamReader reader =
+                         new InputStreamReader(
+                                 new FileInputStream(configFile),
+                                 StandardCharsets.UTF_8)) {
+
+                Type listType = new TypeToken<List<TagDefinition>>(){}.getType();
                 List<TagDefinition> list = GSON.fromJson(reader, listType);
+
+                int rawCount         = (list != null) ? list.size() : 0;
+                int skippedNull      = 0;
+                int skippedNoId      = 0;
+                int overwrittenDupes = 0;
+
                 tags.clear();
+
                 if (list != null) {
                     for (TagDefinition def : list) {
-                        tags.put(def.getId().toLowerCase(Locale.ROOT), def);
+                        if (def == null) {
+                            skippedNull++;
+                            continue;
+                        }
+                        String id = def.getId();
+                        if (id == null || id.trim().isEmpty()) {
+                            skippedNoId++;
+                            continue;
+                        }
+
+                        String key = id.toLowerCase(Locale.ROOT);
+                        if (tags.containsKey(key)) {
+                            overwrittenDupes++;
+                            LOGGER.at(Level.FINE)
+                                    .log("[MysticNameTags] Duplicate tag id '" + key + "' – overwriting previous definition.");
+                        }
+
+                        tags.put(key, def);
                     }
                 }
-            }
 
-            LOGGER.at(Level.INFO).log("[MysticNameTags] Loaded " + tags.size() + " tags.");
+                tagList = List.copyOf(tags.values());
+
+                LOGGER.at(Level.INFO).log("[MysticNameTags] Parsed " + rawCount + " entries from tags.json");
+                if (skippedNull > 0) {
+                    LOGGER.at(Level.WARNING).log("[MysticNameTags] Skipped " + skippedNull + " null tag entries.");
+                }
+                if (skippedNoId > 0) {
+                    LOGGER.at(Level.WARNING).log("[MysticNameTags] Skipped " + skippedNoId + " entries with missing/empty id.");
+                }
+                if (overwrittenDupes > 0) {
+                    LOGGER.at(Level.WARNING).log("[MysticNameTags] " + overwrittenDupes + " entries overwrote an existing tag id.");
+                }
+
+                LOGGER.at(Level.INFO).log("[MysticNameTags] Loaded " + tags.size() + " unique tags.");
+            }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
                     .log("[MysticNameTags] Failed to load tags.json");
@@ -92,7 +138,11 @@ public class TagManager {
     }
 
     private void saveDefaultConfig() {
-        try (FileWriter writer = new FileWriter(configFile)) {
+        try (OutputStreamWriter writer =
+                     new OutputStreamWriter(
+                             new FileOutputStream(configFile),
+                             StandardCharsets.UTF_8)) {
+
             List<TagDefinition> defaults = new ArrayList<>();
 
             TagDefinition mystic = new TagDefinitionBuilder()
@@ -133,6 +183,9 @@ public class TagManager {
         // Re-read tags.json
         instance.loadConfig();
 
+        // Clear "canUse" cache since permissions / tags may change
+        instance.clearCanUseCache();
+
         // Optionally re-apply nameplates for all online players
         instance.refreshAllOnlineNameplates();
 
@@ -152,7 +205,11 @@ public class TagManager {
             return new PlayerTagData();
         }
 
-        try (FileReader reader = new FileReader(file)) {
+        try (InputStreamReader reader =
+                     new InputStreamReader(
+                             new FileInputStream(file),
+                             StandardCharsets.UTF_8)) {
+
             PlayerTagData data = GSON.fromJson(reader, PlayerTagData.class);
             return data != null ? data : new PlayerTagData();
         } catch (Exception e) {
@@ -167,7 +224,11 @@ public class TagManager {
         if (data == null) return;
 
         File file = new File(playerDataFolder, uuid.toString() + ".json");
-        try (FileWriter writer = new FileWriter(file)) {
+        try (OutputStreamWriter writer =
+                     new OutputStreamWriter(
+                             new FileOutputStream(file),
+                             StandardCharsets.UTF_8)) {
+
             GSON.toJson(data, writer);
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
@@ -177,8 +238,21 @@ public class TagManager {
 
     // ------------- Public API -------------
 
+    private void clearCanUseCache() {
+        canUseCache.clear();
+    }
+
+    public void clearCanUseCache(UUID uuid) {
+        if (uuid == null) return;
+        canUseCache.remove(uuid);
+    }
+
     public Collection<TagDefinition> getAllTags() {
         return Collections.unmodifiableCollection(tags.values());
+    }
+
+    public int getTagCount() {
+        return tagList.size();
     }
 
     @Nullable
@@ -214,15 +288,52 @@ public class TagManager {
      * Returns true if the player can use this tag:
      * - already owns it in their saved data, OR
      * - has the permission node configured on the tag.
+     *
+     * Results are cached per-player to keep UI snappy when many tags exist.
      */
     public boolean canUseTag(@Nonnull PlayerRef playerRef,
                              @Nullable UUID uuid,
                              @Nonnull TagDefinition def) {
 
+        String rawId = def.getId();
+        if (rawId == null || rawId.isEmpty()) {
+            return false;
+        }
+
+        String keyId = rawId.toLowerCase(Locale.ROOT);
+
+        // If we have a UUID, try to use cache
+        if (uuid != null) {
+            Map<String, Boolean> perPlayer =
+                    canUseCache.computeIfAbsent(uuid, u -> new ConcurrentHashMap<>());
+
+            Boolean cached = perPlayer.get(keyId);
+            if (cached != null) {
+                return cached;
+            }
+
+            boolean result = internalCanUseTagUnchecked(playerRef, uuid, def, keyId);
+
+            perPlayer.put(keyId, result);
+            return result;
+        }
+
+        // No UUID → do a one-off check (can't cache safely).
+        return internalCanUseTagUnchecked(playerRef, uuid, def, keyId);
+    }
+
+    /**
+     * Actual logic for "canUseTag" without caching concerns.
+     */
+    private boolean internalCanUseTagUnchecked(@Nonnull PlayerRef playerRef,
+                                               @Nullable UUID uuid,
+                                               @Nonnull TagDefinition def,
+                                               @Nonnull String normalizedId) {
+
         // Owned in JSON data?
-        if (uuid != null && def.getId() != null) {
+        if (uuid != null) {
             PlayerTagData data = getOrLoad(uuid);
-            if (data.owns(def.getId().toLowerCase(Locale.ROOT))) {
+            if (data.owns(normalizedId)) {
                 return true;
             }
         }
@@ -323,7 +434,8 @@ public class TagManager {
     }
 
     /**
-     * Build the final colored nameplate text: [Rank] Name [Tag]
+     * Build the final COLORED “[Rank] Name [Tag]” string
+     * for chat / scoreboards / UI previews (NOT for Nameplate component).
      */
     public String buildNameplate(@Nonnull PlayerRef playerRef,
                                  @Nonnull String baseName,
@@ -335,7 +447,7 @@ public class TagManager {
             rank = integrations.getLuckPermsPrefix(uuid);
             TagDefinition active = getEquipped(uuid);
             if (active != null) {
-                tag = active.getDisplay();
+                tag = active.getDisplay(); // e.g. "&#8A2BE2&l[Mystic]"
             }
         }
 
@@ -345,11 +457,42 @@ public class TagManager {
     }
 
     /**
+     * Convenience: full colored “[Rank] Name [Tag]” from PlayerRef.
+     */
+    public String getColoredFullNameplate(@Nonnull PlayerRef playerRef) {
+        UUID uuid = playerRef.getUuid();
+        String baseName = playerRef.getUsername();
+        return buildNameplate(playerRef, baseName, uuid);
+    }
+
+    /**
+     * Convenience: full colored “[Rank] Name [Tag]” from UUID + name
+     * (for places where we don't have a PlayerRef on hand).
+     */
+    public String getColoredFullNameplate(UUID uuid, String baseName) {
+        PlayerRef ref = onlinePlayers.get(uuid);
+        if (ref != null) {
+            return buildNameplate(ref, baseName, uuid);
+        }
+
+        String rank = integrations.getLuckPermsPrefix(uuid);
+        TagDefinition active = getEquipped(uuid);
+        String tagDisplay = (active != null) ? active.getDisplay() : null;
+
+        return Settings.get().formatNameplate(rank, baseName, tagDisplay);
+    }
+
+    /**
+     * Plain “[Rank] Name [Tag]” with all formatting stripped.
+     */
+    public String getPlainFullNameplate(UUID uuid, String baseName) {
+        String colored = getColoredFullNameplate(uuid, baseName);
+        return ColorFormatter.stripFormatting(colored).trim();
+    }
+
+    /**
      * Build the final *plain* nameplate text for Nameplate component:
      * [Rank] Name [Tag], with ALL color codes stripped.
-     *
-     * Nameplate component does not support §-codes or hex, so we must
-     * send plain text only.
      */
     public String buildPlainNameplate(@Nonnull PlayerRef playerRef,
                                       @Nonnull String baseName,
@@ -499,6 +642,7 @@ public class TagManager {
         onlinePlayers.remove(uuid);
         onlineWorlds.remove(uuid);
         forgetNameplate(uuid);
+        clearCanUseCache(uuid);
         // Also clear the NameplateManager cache so restore() never sees stale values
         NameplateManager.get().forget(uuid);
     }
@@ -531,36 +675,6 @@ public class TagManager {
     }
 
     /**
-     * Full colored format: [Rank] Name [Tag]
-     * This is safe for chat / UI, not for Nameplate component.
-     */
-    public String getColoredFullNameplate(@Nonnull PlayerRef playerRef) {
-        UUID uuid = playerRef.getUuid();
-        String baseName = playerRef.getUsername();
-        return buildNameplate(playerRef, baseName, uuid); // already colorized
-    }
-    /**
-     * Full colored “[Rank] Name [Tag]” string for chat / scoreboards (NOT Nameplate).
-     */
-    public String getColoredFullNameplate(UUID uuid, String baseName) {
-        String rank = integrations.getLuckPermsPrefix(uuid);
-        TagDefinition active = getEquipped(uuid);
-        String tagDisplay = (active != null) ? active.getDisplay() : null;
-
-        String formatted = Settings.get().formatNameplate(rank, baseName, tagDisplay);
-        // Use your chat/UI variant – NOT the nameplate-safe one
-        return ColorFormatter.colorize(formatted);
-    }
-
-    /**
-     * Plain “[Rank] Name [Tag]” with all formatting stripped.
-     */
-    public String getPlainFullNameplate(UUID uuid, String baseName) {
-        String colored = getColoredFullNameplate(uuid, baseName);
-        return ColorFormatter.stripFormatting(colored).trim();
-    }
-
-    /**
      * Rebuild and apply nameplates for all currently tracked online players.
      * Called after /tags reload so new tag definitions + perms are reflected.
      */
@@ -588,5 +702,27 @@ public class TagManager {
                         .log("[MysticNameTags] Failed to refresh nameplate during reload for " + uuid);
             }
         }
+    }
+
+    /**
+     * Returns a view of tags for the given page (zero-based).
+     * If page is out of range, it will be clamped.
+     */
+    public List<TagDefinition> getTagsPage(int page, int pageSize) {
+        if (pageSize <= 0 || tagList.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        int total = tagList.size();
+        int totalPages = (int) Math.ceil(total / (double) pageSize);
+        if (totalPages <= 0) {
+            return Collections.emptyList();
+        }
+
+        int safePage = Math.max(0, Math.min(page, totalPages - 1));
+        int start = safePage * pageSize;
+        int end   = Math.min(start + pageSize, total);
+
+        return tagList.subList(start, end); // cheap view, no copy
     }
 }
