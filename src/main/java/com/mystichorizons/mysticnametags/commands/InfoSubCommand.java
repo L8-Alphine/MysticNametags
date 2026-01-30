@@ -3,14 +3,10 @@ package com.mystichorizons.mysticnametags.commands;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.command.system.basecommands.CommandBase;
-
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 
 import javax.annotation.Nonnull;
 
-/**
- * /tags info - Show plugin information
- */
 public class InfoSubCommand extends CommandBase {
 
     public InfoSubCommand() {
@@ -27,12 +23,30 @@ public class InfoSubCommand extends CommandBase {
     protected void executeSync(@Nonnull CommandContext context) {
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
 
+        if (plugin == null) {
+            context.sendMessage(Message.raw("MysticNameTags plugin instance not available."));
+            return;
+        }
+
+        var manifest = plugin.getManifest();
+
+        String name    = plugin.getName();
+        String version = (manifest != null && manifest.getVersion() != null)
+                ? manifest.getVersion().toString()
+                : "unknown";
+
+        String author = "Unknown";
+        if (manifest != null && manifest.getAuthors() != null && !manifest.getAuthors().isEmpty()) {
+            // Depending on the exact API, adjust `.getName()` if needed
+            author = manifest.getAuthors().get(0).getName();
+        }
+
         context.sendMessage(Message.raw(""));
-        context.sendMessage(Message.raw("=== MysticNameTags Info ==="));
-        context.sendMessage(Message.raw("Name: MysticNameTags"));
-        context.sendMessage(Message.raw("Version: 1.0.0"));
-        context.sendMessage(Message.raw("Author: Alphine"));
-        context.sendMessage(Message.raw("Status: " + (plugin != null ? "Running" : "Not loaded")));
+        context.sendMessage(Message.raw("=== " + name + " Info ==="));
+        context.sendMessage(Message.raw("Name: " + name));
+        context.sendMessage(Message.raw("Version: " + version));
+        context.sendMessage(Message.raw("Author: " + author));
+        context.sendMessage(Message.raw("Status: Running"));
         context.sendMessage(Message.raw("===================="));
     }
 }
