@@ -4,17 +4,18 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
+import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.command.system.basecommands.AbstractPlayerCommand;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
-
+import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.ui.MysticNameTagsDashboardUI;
-import com.mystichorizons.mysticnametags.ui.MysticNameTagsTagsUI;
+import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
-import java.util.UUID;
 
 /**
  * /tags ui - Open the plugin dashboard UI
@@ -23,6 +24,9 @@ import java.util.UUID;
  * when opening custom UI pages.
  */
 public class UISubCommand extends AbstractPlayerCommand {
+
+    // Permission node to open the dashboard
+    public static final String PERMISSION_NODE = "mysticnametags.ui.open";
 
     public UISubCommand() {
         super("ui", "Open the plugin dashboard");
@@ -33,6 +37,23 @@ public class UISubCommand extends AbstractPlayerCommand {
     @Override
     protected boolean canGeneratePermission() {
         return false;
+    }
+
+    private boolean hasReloadPermission(@Nonnull CommandContext context) {
+        MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
+        if (plugin == null) {
+            return false;
+        }
+
+        IntegrationManager integrations = plugin.getIntegrations();
+        CommandSender sender = context.sender();
+
+        // Use IntegrationManager, which prefers LuckPerms but falls back to Hytale perms
+        return integrations.hasPermission(sender, PERMISSION_NODE);
+    }
+
+    private Message colored(String text) {
+        return Message.raw(ColorFormatter.colorize(text));
     }
 
     /**
@@ -46,22 +67,42 @@ public class UISubCommand extends AbstractPlayerCommand {
             @Nonnull PlayerRef playerRef,
             @Nonnull World world
     ) {
-        context.sendMessage(Message.raw("Opening MysticNameTags Dashboard..."));
+        if (!hasReloadPermission(context)) {
+            context.sender().sendMessage(
+                    colored("&cYou do not have permission to use this command.")
+            );
+            return;
+        }
+
+        MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
+        if (plugin == null) {
+            context.sender().sendMessage(
+                    colored("&cMysticNameTags is not loaded.")
+            );
+            return;
+        }
+
+        context.sender().sendMessage(
+                colored("&7[&bMysticNameTags&7] &fOpening &bDashboard&f...")
+        );
 
         try {
             // Get the player component (safe - we're on world thread)
             Player player = store.getComponent(ref, Player.getComponentType());
             if (player == null) {
-                context.sendMessage(Message.raw("Error: Could not get Player component."));
+                context.sender().sendMessage(
+                        colored("&cError: Could not get &7Player component."));
                 return;
             }
 
             // Create and open the custom page
             MysticNameTagsDashboardUI dashboardPage = new MysticNameTagsDashboardUI(playerRef);
             player.getPageManager().openCustomPage(ref, store, dashboardPage);
-            context.sendMessage(Message.raw("Dashboard opened. Press ESC to close."));
+            context.sender().sendMessage(
+                    colored("&aDashboard opened. &fPress &7ESC&f to close."));
         } catch (Exception e) {
-            context.sendMessage(Message.raw("Error opening dashboard: " + e.getMessage()));
+            context.sender().sendMessage(
+                    colored("&cError opening dashboard: &7" + e.getMessage()));
         }
     }
 }
