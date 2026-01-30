@@ -14,12 +14,13 @@ $C.@PageOverlay {
       @CloseButton = false;
 
       // Bigger card
-      Anchor: (Width: 720, Height: 520);
+      Anchor: (Width: 900, Height: 680);
 
-      // ===== HEADER (inside DecoratedContainer's #Title) =====
-      Group #Title {
+      // ===== CONTENT AREA =====
+      Group #Content {
         LayoutMode: Top;
-        Padding: (Top: 6, Left: 18, Right: 18, Bottom: 4);
+        Padding: @ContentPadding;
+        Background: #020617(0.94);
 
         Label #TitleLabel {
           Text: "Tags";
@@ -41,13 +42,6 @@ $C.@PageOverlay {
             HorizontalAlignment: Center
           );
         }
-      }
-
-      // ===== CONTENT AREA =====
-      Group #Content {
-        LayoutMode: Top;
-        Padding: @ContentPadding;
-        Background: #020617(0.94);
 
         // Balance
         Label #BalanceLabel {
@@ -63,6 +57,44 @@ $C.@PageOverlay {
           Style: (FontSize: 13, TextColor: #cbd5f5);
         }
 
+        // ===== SEARCH ROW =====
+        Group #SearchRow {
+          LayoutMode: Left;
+          Anchor: (Height: 26);
+          Padding: (Top: 4, Bottom: 4);
+
+          Label {
+            Text: "Search:";
+            Anchor: (Width: 60, Height: 20);
+            Style: (FontSize: 11, TextColor: #96a9be);
+          }
+
+          // Text input from Common.ui
+          $C.@TextField #TagSearchBox {
+            FlexWeight: 0;
+            Anchor: (Width: 320, Height: 22);
+            PlaceholderText: "Search tags...";
+          }
+
+          Group { Anchor: (Width: 8); }
+
+          // Apply filter button
+          $C.@SmallSecondaryTextButton #ApplyFilterButton {
+            @Anchor = (Width: 80, Height: 22);
+            Text: "Apply";
+          }
+
+          Group { Anchor: (Width: 6); }
+
+          // Clear filter button
+          $C.@SmallSecondaryTextButton #ClearFilterButton {
+            @Anchor = (Width: 80, Height: 22);
+            Text: "Clear";
+          }
+
+          Group { FlexWeight: 1; }
+        }
+
         Group { Anchor: (Height: 6); }
         $C.@ContentSeparator { }
         Group { Anchor: (Height: 6); }
@@ -75,7 +107,7 @@ $C.@PageOverlay {
 
           Label {
             Text: "Tag";
-            Anchor: (Width: 320, Height: 18);
+            Anchor: (Width: 500, Height: 18);
             Style: (FontSize: 11, TextColor: #64748b);
           }
 
@@ -102,6 +134,7 @@ $C.@PageOverlay {
           LayoutMode: Top;
           Padding: (Right: 4);
 
+          // Row template: widths adjusted for bigger card
           // Row 0
           Group {
             LayoutMode: Left;
@@ -111,7 +144,7 @@ $C.@PageOverlay {
 
             Label #TagRow0Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -124,7 +157,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow0Button {
-              @Anchor = (Width: 110, Height: 24); // fits "Purchase"
+              @Anchor = (Width: 120, Height: 24); // fits "UNEQUIP"
               Text: "Select";
             }
           }
@@ -138,7 +171,7 @@ $C.@PageOverlay {
 
             Label #TagRow1Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -151,7 +184,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow1Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -165,7 +198,7 @@ $C.@PageOverlay {
 
             Label #TagRow2Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -178,7 +211,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow2Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -192,7 +225,7 @@ $C.@PageOverlay {
 
             Label #TagRow3Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -205,7 +238,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow3Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -219,7 +252,7 @@ $C.@PageOverlay {
 
             Label #TagRow4Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -232,7 +265,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow4Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -246,7 +279,7 @@ $C.@PageOverlay {
 
             Label #TagRow5Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -259,7 +292,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow5Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -273,7 +306,7 @@ $C.@PageOverlay {
 
             Label #TagRow6Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -286,7 +319,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow6Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -300,7 +333,7 @@ $C.@PageOverlay {
 
             Label #TagRow7Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -313,7 +346,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow7Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -327,7 +360,7 @@ $C.@PageOverlay {
 
             Label #TagRow8Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -340,7 +373,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow8Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -354,7 +387,7 @@ $C.@PageOverlay {
 
             Label #TagRow9Name {
               Text: "Tag Name";
-              Anchor: (Width: 320, Height: 20);
+              Anchor: (Width: 500, Height: 20);
               Style: (FontSize: 13, TextColor: #ffffff);
             }
 
@@ -367,7 +400,7 @@ $C.@PageOverlay {
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #TagRow9Button {
-              @Anchor = (Width: 110, Height: 24);
+              @Anchor = (Width: 120, Height: 24);
               Text: "Select";
             }
           }
@@ -381,23 +414,23 @@ $C.@PageOverlay {
           Anchor: (Height: 26);
 
           $C.@SmallSecondaryTextButton #PrevPageButton {
-            @Anchor = (Width: 80, Height: 24);
-            Text: "< Prev";
+            @Anchor = (Width: 100, Height: 24);
+            Text: "Prev";
           }
 
           Group { Anchor: (Width: 8); }
 
           Label #PageLabel {
             Text: "Page 1/1";
-            Anchor: (Width: 180, Height: 20);
+            Anchor: (Width: 300, Height: 20);
             Style: (FontSize: 11, TextColor: #96a9be, HorizontalAlignment: Center);
           }
 
           Group { FlexWeight: 1; }
 
           $C.@SmallSecondaryTextButton #NextPageButton {
-            @Anchor = (Width: 80, Height: 24);
-            Text: "Next >";
+            @Anchor = (Width: 100, Height: 24);
+            Text: "Next";
           }
         }
 
@@ -406,7 +439,7 @@ $C.@PageOverlay {
         // Footer
         Group {
           LayoutMode: Left;
-          Anchor: (Height: 26);
+          Anchor: (Height: 25);
 
           Label {
             Text: "Click a tag to buy/equip.";
@@ -414,10 +447,10 @@ $C.@PageOverlay {
             Style: (FontSize: 11, TextColor: #555555);
           }
 
-          Group { FlexWeight: 1; }
+          Group { FlexWeight: 5; }
 
           $C.@SmallSecondaryTextButton #BottomCloseButton {
-            @Anchor = (Width: 100, Height: 24);
+            @Anchor = (Width: 100, Height: 28);
             Text: "Close";
           }
         }
