@@ -19,6 +19,7 @@ public class Settings {
 
     private static Settings INSTANCE;
 
+    // Example default: "{rank} {name} {tag}"
     private String nameplateFormat = "{rank} {name} {tag}";
     private boolean stripExtraSpaces = true;
 
@@ -65,6 +66,10 @@ public class Settings {
         }
     }
 
+    /**
+     * Build and colorize “[Rank] Name [Tag]” according to the config format.
+     * The format can include hex and legacy color codes.
+     */
     public String formatNameplate(String rank, String name, String tag) {
         String result = nameplateFormat
                 .replace("{rank}", rank == null ? "" : rank)
@@ -75,6 +80,7 @@ public class Settings {
             result = result.replaceAll("\\s+", " ").trim();
         }
 
+        // Apply & / hex colors after placeholder substitution
         return ColorFormatter.colorize(result);
     }
 }
