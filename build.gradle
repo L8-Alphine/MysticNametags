@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.1'
+version = '1.0.2'
 
 repositories {
     mavenCentral()
@@ -44,6 +44,9 @@ dependencies {
 
     // EliteEssentials Support
     compileOnly files('libs/EliteEssentials-1.1.4.jar')
+
+    // TheEconomy Support
+    compileOnly files('libs/EconomySystem-1.0.8.1-beta.jar')
 
     // Luckperms Support
     compileOnly 'net.luckperms:api:5.4'
