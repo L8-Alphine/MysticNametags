@@ -17,7 +17,8 @@
     "CreeperFace:PlaceholderAPI": "*",
     "WiFlowPlaceholderAPI:WiFlowPlaceholderAPI": "*",
     "TheNewEconomy:VaultUnlocked": "*",
-    "com.eliteessentials:EliteEssentials": "*"
+    "com.eliteessentials:EliteEssentials": "*",
+    "Economy:EconomySystem": "*"
   },
   "IncludesAssetPack": true
 }
