@@ -11,6 +11,7 @@ import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.event.user.UserDataRecalculateEvent;
 import net.luckperms.api.model.group.Group;
 import net.luckperms.api.model.user.User;
+import net.luckperms.api.node.Node;
 import net.luckperms.api.query.QueryOptions;
 import org.checkerframework.checker.nullness.compatqual.NonNullDecl;
 
@@ -119,6 +120,35 @@ public class IntegrationManager {
 
         if (ref != null && world != null) {
             manager.refreshNameplate(ref, world);
+        }
+    }
+
+    /**
+     * Grant a permission node to a player using LuckPerms.
+     * Returns true if it appears to succeed, false otherwise.
+     */
+    public boolean grantPermission(@Nonnull UUID uuid, @Nonnull String node) {
+        if (!luckPermsAvailable) {
+            return false;
+        }
+
+        try {
+            User user = luckPerms.getUserManager().getUser(uuid);
+            if (user == null) {
+                // Try to load if not already loaded
+                user = luckPerms.getUserManager().loadUser(uuid).join();
+            }
+            if (user == null) {
+                return false;
+            }
+
+            user.data().add(Node.builder(node).build());
+            luckPerms.getUserManager().saveUser(user);
+            return true;
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to grant permission '" + node + "' to " + uuid);
+            return false;
         }
     }
 
