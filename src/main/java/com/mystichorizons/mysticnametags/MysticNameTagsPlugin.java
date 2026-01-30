@@ -5,6 +5,7 @@ import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.mystichorizons.mysticnametags.commands.MysticNameTagsPluginCommand;
+import com.mystichorizons.mysticnametags.commands.TagsCommand;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
@@ -69,6 +70,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     private void registerCommands() {
         try {
             getCommandRegistry().registerCommand(new MysticNameTagsPluginCommand());
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /mnametags command");
+            getCommandRegistry().registerCommand(new TagsCommand());
             LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /tags command");
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e).log("[MysticNameTags] Failed to register commands");
@@ -118,7 +121,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.INFO).log("[MysticNameTags][Debug] Startup Vault economyObj() = "
                     + manager.economyObj());
         } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
+            LOGGER.at(Level.WARNING)
                     .log("[MysticNameTags][Debug] Error probing VaultUnlocked at startup");
         }
 
@@ -126,8 +129,16 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             boolean enabled = com.eliteessentials.api.EconomyAPI.isEnabled();
             LOGGER.at(Level.INFO).log("[MysticNameTags][Debug] Startup EconomyAPI.isEnabled() = " + enabled);
         } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
+            LOGGER.at(Level.WARNING)
                     .log("[MysticNameTags][Debug] EconomyAPI not reachable at startup");
+        }
+
+        try {
+            boolean primaryAvailable = com.economy.api.EconomyAPI.getInstance() != null;
+            LOGGER.at(Level.INFO).log("[MysticNameTags][Debug] EconomySystem API available = " + primaryAvailable);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING)
+                    .log("[MysticNameTags][Debug] EconomySystem API not reachable at startup");
         }
     }
 
