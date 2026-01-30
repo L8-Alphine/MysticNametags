@@ -392,14 +392,8 @@ public class TagManager {
             return TagPurchaseResult.NOT_FOUND;
         }
 
-        // Permission gating (e.g. crate-only tags)
-        if (def.getPermission() != null && !def.getPermission().isEmpty()) {
-            if (!integrations.hasPermission(playerRef, def.getPermission())) {
-                return TagPurchaseResult.NO_PERMISSION;
-            }
-        }
-
         PlayerTagData data = getOrLoad(uuid);
+
         if (data.owns(def.getId())) {
             data.setEquipped(def.getId());
             savePlayerData(uuid);
@@ -411,6 +405,10 @@ public class TagManager {
             data.addOwned(def.getId());
             data.setEquipped(def.getId());
             savePlayerData(uuid);
+
+            // grant permission if defined
+            maybeGrantPermission(uuid, def.getPermission());
+
             return TagPurchaseResult.UNLOCKED_FREE;
         }
 
@@ -430,6 +428,10 @@ public class TagManager {
         data.addOwned(def.getId());
         data.setEquipped(def.getId());
         savePlayerData(uuid);
+
+        // grant permission if defined
+        maybeGrantPermission(uuid, def.getPermission());
+
         return TagPurchaseResult.UNLOCKED_PAID;
     }
 
@@ -724,5 +726,16 @@ public class TagManager {
         int end   = Math.min(start + pageSize, total);
 
         return tagList.subList(start, end); // cheap view, no copy
+    }
+
+    private void maybeGrantPermission(@Nonnull UUID uuid, @Nullable String perm) {
+        if (perm == null || perm.isEmpty()) {
+            return;
+        }
+        try {
+            integrations.grantPermission(uuid, perm);
+        } catch (Throwable ignored) {
+            // we don't want permission failures to break purchases
+        }
     }
 }
