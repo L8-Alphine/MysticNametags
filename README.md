@@ -31,7 +31,8 @@ Designed for performance, modularity, and large servers.
 - **VaultUnlocked**  
   https://www.curseforge.com/hytale/mods/vaultunlocked
 - **EliteEssentials** https://www.curseforge.com/hytale/mods/eliteessentials
-
+- **WiFlow's PlaceholderAPI** (Must enter their discord to download it since CurseForge decided to remove it due it how it works.)
+- **TheEconomy** https://www.curseforge.com/hytale/mods/theeconomy (Most powerful and most used)
 ---
 
 ## 🖥️ Commands
@@ -97,7 +98,7 @@ If PlaceholderAPI is installed, MysticNameTags registers the following placehold
 | `{mystictags_tag}`       | Colored active tag                       |
 | `{mystictags_tag_plain}` | Plain tag (no colors)                    |
 | `{mystictags_full}`      | Full formatted name (rank + name + tag)  |
-| `{mystictags_full_plain} | Plain formatted name (rank + name + tag) |
+| `{mystictags_full_plain}` | Plain formatted name (rank + name + tag) |
 
 
 > Placeholder availability depends on PlaceholderAPI scope support.
