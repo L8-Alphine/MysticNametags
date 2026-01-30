@@ -123,13 +123,22 @@ public class IntegrationManager {
     }
 
     // ----------------------------------------------------------------
-    // Economy (VaultUnlocked + EliteEssentials – OPTIONAL)
+    // Economy
     // ----------------------------------------------------------------
 
     /**
-     * Primary backend: VaultUnlocked (if present).
-     * Secondary backend: EliteEssentials EconomyAPI (if present and enabled).
+     * Primary backend: EconomySystem (com.economy.api.EconomyAPI) if present.
+     * Secondary backend: VaultUnlocked (if present).
+     * Tertiary backend: EliteEssentials EconomyAPI (if present and enabled).
      */
+    public boolean isPrimaryEconomyAvailable() {
+        try {
+            return EconomySystemSupport.isAvailable();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
+    }
+
     public boolean isVaultAvailable() {
         try {
             return VaultUnlockedSupport.isAvailable();
@@ -150,7 +159,7 @@ public class IntegrationManager {
      * Is there ANY economy available at all?
      */
     public boolean hasAnyEconomy() {
-        return isVaultAvailable() || isEliteEconomyAvailable();
+        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable();
     }
 
     private void logEconomyStatusIfNeeded() {
@@ -158,10 +167,22 @@ public class IntegrationManager {
             return;
         }
 
-        boolean vault = isVaultAvailable();
-        boolean elite = isEliteEconomyAvailable();
+        boolean primary = isPrimaryEconomyAvailable();
+        boolean vault   = isVaultAvailable();
+        boolean elite   = isEliteEconomyAvailable();
 
-        if (vault) {
+        if (primary) {
+            if (vault || elite) {
+                LOGGER.at(Level.INFO).log(
+                        "[MysticNameTags] EconomySystem (com.economy) detected as primary economy. " +
+                                "VaultUnlocked: " + vault + ", EliteEssentials: " + elite + " (fallbacks)."
+                );
+            } else {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] EconomySystem (com.economy) detected – tag purchasing enabled.");
+            }
+            loggedEconomyStatus = true;
+        } else if (vault) {
             if (elite) {
                 LOGGER.at(Level.INFO)
                         .log("[MysticNameTags] VaultUnlocked + EliteEssentials detected – using VaultUnlocked as primary economy backend.");
@@ -175,7 +196,7 @@ public class IntegrationManager {
                     .log("[MysticNameTags] EliteEssentials EconomyAPI detected – tag purchasing enabled.");
             loggedEconomyStatus = true;
         }
-        // If neither is detected yet, we stay quiet and will re-check on the next call.
+        // If none are detected yet, stay quiet and re-check on the next call.
     }
 
     public boolean withdraw(@Nonnull UUID uuid, double amount) {
@@ -185,17 +206,25 @@ public class IntegrationManager {
 
         logEconomyStatusIfNeeded();
 
-        // 1) Prefer VaultUnlocked
+        // 1) EconomySystem (com.economy.api.EconomyAPI)
+        if (isPrimaryEconomyAvailable()) {
+            if (EconomySystemSupport.withdraw(uuid, amount)) {
+                return true;
+            }
+            // fall through to other backends if the call fails for some reason
+        }
+
+        // 2) VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.withdraw(ECON_PLUGIN_NAME, uuid, amount);
         }
 
-        // 2) Fallback to EliteEssentials EconomyAPI
+        // 3) EliteEssentials EconomyAPI
         if (isEliteEconomyAvailable()) {
             return EliteEconomySupport.withdraw(uuid, amount);
         }
 
-        // 3) No economy
+        // 4) No economy
         return false;
     }
 
@@ -206,34 +235,49 @@ public class IntegrationManager {
 
         logEconomyStatusIfNeeded();
 
-        // 1) Prefer VaultUnlocked
+        // 1) EconomySystem
+        if (isPrimaryEconomyAvailable()) {
+            if (EconomySystemSupport.has(uuid, amount)) {
+                return true;
+            }
+            // if it errors we still allow fallback checks
+        }
+
+        // 2) VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid) >= amount;
         }
 
-        // 2) Fallback to EliteEssentials
+        // 3) EliteEssentials
         if (isEliteEconomyAvailable()) {
             return EliteEconomySupport.has(uuid, amount);
         }
 
-        // 3) No economy
+        // 4) No economy
         return false;
     }
 
     public double getBalance(@Nonnull UUID uuid) {
         logEconomyStatusIfNeeded();
 
-        // 1) Prefer VaultUnlocked
+        // 1) EconomySystem
+        if (isPrimaryEconomyAvailable()) {
+            double bal = EconomySystemSupport.getBalance(uuid);
+            // If it returns > 0 OR we know the player exists, we just trust it.
+            return bal;
+        }
+
+        // 2) VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid);
         }
 
-        // 2) Fallback to EliteEssentials
+        // 3) EliteEssentials
         if (isEliteEconomyAvailable()) {
             return EliteEconomySupport.getBalance(uuid);
         }
 
-        // 3) No economy
+        // 4) No economy
         return 0.0D;
     }
 
