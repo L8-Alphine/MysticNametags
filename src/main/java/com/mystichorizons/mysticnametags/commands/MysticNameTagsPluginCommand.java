@@ -14,18 +14,18 @@ import com.hypixel.hytale.server.core.command.system.basecommands.AbstractComman
 public class MysticNameTagsPluginCommand extends AbstractCommandCollection {
 
     public MysticNameTagsPluginCommand() {
-        super("tags", "MysticNameTags plugin commands");
+        super("mnametags", "MysticNameTags plugin commands");
+        this.addAliases("mysticnametags", "mntags");
 
-        // Add subcommands
         this.addSubCommand(new HelpSubCommand());
         this.addSubCommand(new InfoSubCommand());
         this.addSubCommand(new ReloadSubCommand());
         this.addSubCommand(new UISubCommand());
-        this.addSubCommand(new TagsSubCommand());
+        this.addSubCommand(new TagsSubCommand()); // e.g. /mnametags tags
     }
 
     @Override
     protected boolean canGeneratePermission() {
-        return false; // No permission required for base command
+        return false;
     }
 }
