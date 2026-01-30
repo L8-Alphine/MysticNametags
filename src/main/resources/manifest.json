@@ -1,7 +1,7 @@
 {
-  "Group": "com.mystichorizons",
+  "Group": "MysticHorizons",
   "Name": "MysticNameTags",
-  "Version": "1.0.0",
+  "Version": "1.0.3",
   "Description": "A Hytale mod that customizes nameplates and supports luckperms, placeholders, and custom tags.",
   "Authors": [
     {
