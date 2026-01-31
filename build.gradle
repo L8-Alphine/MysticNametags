@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.5'
+version = '1.0.6'
 
 repositories {
     mavenCentral()
@@ -39,6 +39,9 @@ dependencies {
 
     // PermissionsPlus
     compileOnly files('libs/PermissionsPlus-1.1.0.jar')
+
+    // PrefixesPlus
+    compileOnly files('libs/PrefixesPlus-3.2.6.jar')
 }
 
 java {
