@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.3'
+version = '1.0.4'
 
 repositories {
     mavenCentral()
@@ -19,17 +19,8 @@ def projectServerJar = file('server/HytaleServer.jar')
 def siblingServerJar = file('../server/HytaleServer.jar')
 
 dependencies {
-    // Use HytaleServer.jar from libs folder, or fallback to server folders
-    if (serverJarPath.exists()) {
-        compileOnly files(serverJarPath)
-    } else if (projectServerJar.exists()) {
-        compileOnly files(projectServerJar)
-    } else if (siblingServerJar.exists()) {
-        compileOnly files(siblingServerJar)
-    } else {
-        // If none exists, still reference libs for error message clarity
-        compileOnly files('libs/HytaleServer.jar')
-    }
+    compileOnly files('libs/HytaleServer.jar')
+
     // JSR305 annotations (@Nonnull, @Nullable)
     compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
     implementation 'com.google.code.gson:gson:2.10.1'
@@ -43,7 +34,7 @@ dependencies {
     compileOnly 'net.cfh.vault:VaultUnlocked:2.18.3'
 
     // EliteEssentials Support
-    compileOnly files('libs/EliteEssentials-1.1.4.jar')
+    compileOnly files('libs/EliteEssentials-1.1.5.jar')
 
     // TheEconomy Support
     compileOnly files('libs/EconomySystem-1.0.8.1-beta.jar')
