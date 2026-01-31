@@ -38,6 +38,11 @@ public final class UpdateChecker {
     private volatile String latestVersion;
     private volatile boolean checked;
 
+    @Nonnull
+    public String getCurrentVersion() {
+        return currentVersion != null ? currentVersion : "";
+    }
+
     public UpdateChecker(@Nonnull String currentVersion) {
         this.currentVersion = currentVersion;
     }
