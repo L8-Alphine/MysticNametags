@@ -7,164 +7,249 @@ import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.tags.TagManager;
-import net.luckperms.api.LuckPerms;
-import net.luckperms.api.LuckPermsProvider;
-import net.luckperms.api.event.user.UserDataRecalculateEvent;
-import net.luckperms.api.model.group.Group;
-import net.luckperms.api.model.user.User;
-import net.luckperms.api.node.Node;
-import net.luckperms.api.query.QueryOptions;
-import org.checkerframework.checker.nullness.compatqual.NonNullDecl;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.UUID;
 import java.util.logging.Level;
 
+
 public class IntegrationManager {
 
     private static final String ECON_PLUGIN_NAME = "MysticNameTags";
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
-    // ---- LuckPerms ----
-    private LuckPerms luckPerms;
-    private boolean luckPermsAvailable;
+    // Permission backends
+    private LuckPermsSupport luckPermsSupport;
+    private PermissionSupport permissionsBackend; // active backend (LuckPerms / PermissionsPlus / Native)
 
-    // ---- Economy status logging ----
+    // Prefix backend
+    private PrefixesPlusSupport prefixesPlusSupport;
+
+    private enum PermissionBackendType {
+        LUCKPERMS,
+        PERMISSIONS_PLUS,
+        NATIVE
+    }
+
+    private PermissionBackendType activePermissionBackend = PermissionBackendType.NATIVE;
+
+    // Economy flags
     private boolean loggedEconomyStatus = false;
 
     public void init() {
-        setupLuckPerms();
+        setupPermissionBackends();
+        setupPrefixBackends();
+        // economy is unchanged
     }
 
     // ----------------------------------------------------------------
-    // LuckPerms
+    // Backend detection
     // ----------------------------------------------------------------
 
-    private void setupLuckPerms() {
+    private void setupPermissionBackends() {
+        // 1) Try LuckPerms (defensive: may not exist at all)
         try {
-            this.luckPerms = LuckPermsProvider.get();
-            this.luckPermsAvailable = true;
-
+            this.luckPermsSupport = new LuckPermsSupport();
+            if (luckPermsSupport.isAvailable()) {
+                this.permissionsBackend = luckPermsSupport;
+                this.activePermissionBackend = PermissionBackendType.LUCKPERMS;
+                LOGGER.at(Level.INFO).log("[MysticNameTags] Using LuckPerms for permissions.");
+                return;
+            } else {
+                // Not actually available at runtime
+                this.luckPermsSupport = null;
+            }
+        } catch (NoClassDefFoundError e) {
+            // LuckPerms API classes not present on classpath
+            this.luckPermsSupport = null;
             LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] Hooked into LuckPerms " + luckPerms.getPlatform());
-
-            registerLuckPermsListeners();
+                    .log("[MysticNameTags] LuckPerms API not found – skipping LuckPerms integration.");
         } catch (Throwable t) {
-            this.luckPermsAvailable = false;
+            // Any other weirdness, just skip LP
+            this.luckPermsSupport = null;
             LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] LuckPerms not detected! Permissions and rank prefixes disabled.");
+                    .log("[MysticNameTags] Error probing LuckPerms – skipping LuckPerms integration.");
+        }
+
+        // 2) Try PermissionsPlus / PermissionsModule (defensive as well)
+        try {
+            PermissionsPlusSupport permsPlus = new PermissionsPlusSupport();
+            if (permsPlus.isAvailable()) {
+                this.permissionsBackend = permsPlus;
+                this.activePermissionBackend = PermissionBackendType.PERMISSIONS_PLUS;
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] Using PermissionsPlus / PermissionsModule for permissions.");
+                return;
+            }
+        } catch (NoClassDefFoundError e) {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] PermissionsPlus API not found – skipping PermissionsPlus integration.");
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Error probing PermissionsPlus – skipping PermissionsPlus integration.");
+        }
+
+        // 3) Native Hytale permissions only
+        this.permissionsBackend = new NativePermissionsSupport();
+        this.activePermissionBackend = PermissionBackendType.NATIVE;
+        LOGGER.at(Level.INFO)
+                .log("[MysticNameTags] No external permission plugin found – using native Hytale permissions.");
+    }
+
+    private void setupPrefixBackends() {
+        // Try PrefixesPlus first
+        try {
+            this.prefixesPlusSupport = new PrefixesPlusSupport();
+            if (prefixesPlusSupport.isAvailable()) {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] Detected PrefixesPlus – using it for rank prefixes.");
+                return;
+            } else {
+                this.prefixesPlusSupport = null;
+            }
+        } catch (NoClassDefFoundError e) {
+            this.prefixesPlusSupport = null;
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] PrefixesPlus API not found – skipping PrefixesPlus prefix provider.");
+        } catch (Throwable t) {
+            this.prefixesPlusSupport = null;
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Error probing PrefixesPlus – skipping PrefixesPlus prefix provider.");
+        }
+
+        // Fall back to LuckPerms meta if we successfully wired LuckPerms
+        if (luckPermsSupport != null && luckPermsSupport.isAvailable()) {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] Using LuckPerms meta data for rank prefixes.");
+        } else {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] No prefix provider detected – nameplates will only show tags + player names.");
         }
     }
 
-    public boolean isLuckPermsAvailable() {
-        return luckPermsAvailable;
-    }
+    // ----------------------------------------------------------------
+    // Prefix helpers
+    // ----------------------------------------------------------------
 
+    /**
+     * Return the best available rank prefix for this player.
+     * Order: PrefixesPlus -> LuckPerms -> null.
+     */
     @Nullable
-    public String getLuckPermsPrefix(@Nonnull UUID uuid) {
-        if (!luckPermsAvailable) return null;
-
-        User user = luckPerms.getUserManager().getUser(uuid);
-        if (user == null) return null;
-
-        QueryOptions options = luckPerms.getContextManager()
-                .getQueryOptions(user)
-                .orElseGet(() -> luckPerms.getContextManager().getStaticQueryOptions());
-
-        String prefix = user.getCachedData().getMetaData(options).getPrefix();
-        if (prefix != null && !prefix.isEmpty()) {
-            return prefix;
+    public String getPrimaryPrefix(@Nonnull UUID uuid) {
+        if (prefixesPlusSupport != null && prefixesPlusSupport.isAvailable()) {
+            String p = prefixesPlusSupport.getPrefix(uuid);
+            if (p != null && !p.isEmpty()) {
+                return p;
+            }
         }
 
-        Group group = luckPerms.getGroupManager().getGroup(user.getPrimaryGroup());
-        if (group != null) {
-            return group.getCachedData().getMetaData(options).getPrefix();
+        if (luckPermsSupport != null && luckPermsSupport.isAvailable()) {
+            String p = luckPermsSupport.getPrefix(uuid);
+            if (p != null && !p.isEmpty()) {
+                return p;
+            }
         }
 
         return null;
     }
 
-    public boolean hasPermissionWithLuckPerms(@Nonnull UUID uuid, @Nonnull String node) {
-        if (!luckPermsAvailable) return false;
-
-        User user = luckPerms.getUserManager().getUser(uuid);
-        if (user == null) return false;
-
-        return user.getCachedData()
-                .getPermissionData()
-                .checkPermission(node)
-                .asBoolean();
+    /**
+     * Backwards compatible name used by TagManager / API.
+     * Delegates to {@link #getPrimaryPrefix(UUID)}.
+     */
+    @Nullable
+    public String getLuckPermsPrefix(@Nonnull UUID uuid) {
+        return getPrimaryPrefix(uuid);
     }
 
-    private void registerLuckPermsListeners() {
-        luckPerms.getEventBus().subscribe(
-                MysticNameTagsPlugin.getInstance(),
-                UserDataRecalculateEvent.class,
-                event -> {
-                    UUID uuid = event.getUser().getUniqueId();
-                    try {
-                        handleRankChange(uuid);
-                    } catch (Throwable t) {
-                        LOGGER.at(Level.WARNING).withCause(t)
-                                .log("[MysticNameTags] Failed to refresh nameplate for " + uuid);
-                    }
-                }
-        );
+    // ----------------------------------------------------------------
+    // Permission helpers
+    // ----------------------------------------------------------------
+
+    public boolean isLuckPermsAvailable() {
+        return luckPermsSupport != null && luckPermsSupport.isAvailable();
     }
 
-    private void handleRankChange(@Nonnull UUID uuid) {
-        TagManager manager = TagManager.get();
+    public boolean isPermissionsPlusActive() {
+        return activePermissionBackend == PermissionBackendType.PERMISSIONS_PLUS;
+    }
 
-        PlayerRef ref = manager.getOnlinePlayer(uuid);
-        World world   = manager.getOnlineWorld(uuid);
-
-        if (ref != null && world != null) {
-            manager.refreshNameplate(ref, world);
-        }
+    @Nullable
+    public PermissionSupport getPermissionsBackend() {
+        return permissionsBackend;
     }
 
     /**
-     * Grant a permission node to a player using LuckPerms.
-     * Returns true if it appears to succeed, false otherwise.
+     * Generic permission check used by TagManager (player-based).
+     * If no backend knows about the UUID, it falls back to "fail-open"
+     * when LuckPerms is entirely missing, so tags remain usable with
+     * other systems (like crates).
      */
-    public boolean grantPermission(@Nonnull UUID uuid, @Nonnull String node) {
-        if (!luckPermsAvailable) {
+    public boolean hasPermission(@Nonnull PlayerRef playerRef,
+                                 @Nonnull String permissionNode) {
+
+        UUID uuid = getUuidFromPlayerRef(playerRef);
+
+        if (uuid != null && permissionsBackend != null) {
+            if (permissionsBackend.hasPermission(uuid, permissionNode)) {
+                return true;
+            }
+        }
+
+        // If LP is missing entirely fail-open for tag usage
+        // (other systems may unlock tags without perms)
+        if (!isLuckPermsAvailable()) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Permission check for command senders.
+     * - Tries UUID + backend first
+     * - Always falls back to sender.hasPermission(...)
+     */
+    public boolean hasPermission(@Nonnull CommandSender sender,
+                                 @Nonnull String permissionNode) {
+
+        if (sender == null) {
             return false;
         }
 
         try {
-            User user = luckPerms.getUserManager().getUser(uuid);
-            if (user == null) {
-                // Try to load if not already loaded
-                user = luckPerms.getUserManager().loadUser(uuid).join();
+            UUID uuid = sender.getUuid();
+            if (uuid != null && permissionsBackend != null) {
+                if (permissionsBackend.hasPermission(uuid, permissionNode)) {
+                    return true;
+                }
             }
-            if (user == null) {
-                return false;
-            }
+        } catch (Throwable ignored) {
+            // fall through to native perms
+        }
 
-            user.data().add(Node.builder(node).build());
-            luckPerms.getUserManager().saveUser(user);
-            return true;
-        } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] Failed to grant permission '" + node + "' to " + uuid);
+        // Fallback to Hytale's PermissionHolder – covers OP, console, etc.
+        return sender.hasPermission(permissionNode);
+    }
+
+    /**
+     * Grant a permission node to a player using the active backend.
+     * Returns true if it appears to succeed.
+     */
+    public boolean grantPermission(@Nonnull UUID uuid, @Nonnull String node) {
+        if (permissionsBackend == null) {
             return false;
         }
+        return permissionsBackend.grantPermission(uuid, node);
     }
 
     // ----------------------------------------------------------------
-    // Economy
+    // Economy (unchanged)
     // ----------------------------------------------------------------
 
-    /**
-     * Primary backend: EconomySystem (com.economy.api.EconomyAPI) if present
-     * and enabled in settings.
-     * Secondary backend: VaultUnlocked (if present).
-     * Tertiary backend: EliteEssentials EconomyAPI (if present and enabled).
-     */
     public boolean isPrimaryEconomyAvailable() {
-        // Allow server owners to hard-disable EconomySystem usage
         if (!Settings.get().isEconomySystemEnabled()) {
             return false;
         }
@@ -191,9 +276,6 @@ public class IntegrationManager {
         }
     }
 
-    /**
-     * Is there ANY economy available at all?
-     */
     public boolean hasAnyEconomy() {
         return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable();
     }
@@ -232,7 +314,6 @@ public class IntegrationManager {
                     .log("[MysticNameTags] EliteEssentials EconomyAPI detected – tag purchasing enabled.");
             loggedEconomyStatus = true;
         }
-        // If none are detected yet, stay quiet and re-check on the next call.
     }
 
     public boolean withdraw(@Nonnull UUID uuid, double amount) {
@@ -245,7 +326,6 @@ public class IntegrationManager {
         boolean useCoins = Settings.get().isEconomySystemEnabled()
                 && Settings.get().isUseCoinSystem();
 
-        // 1) EconomySystem (com.economy.api.EconomyAPI)
         if (isPrimaryEconomyAvailable()) {
             if (useCoins) {
                 int coinAmount = (int) Math.round(amount);
@@ -257,20 +337,16 @@ public class IntegrationManager {
                     return true;
                 }
             }
-            // fall through to other backends if the call fails for some reason
         }
 
-        // 2) VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.withdraw(ECON_PLUGIN_NAME, uuid, amount);
         }
 
-        // 3) EliteEssentials EconomyAPI
         if (isEliteEconomyAvailable()) {
             return EliteEconomySupport.withdraw(uuid, amount);
         }
 
-        // 4) No economy
         return false;
     }
 
@@ -284,7 +360,6 @@ public class IntegrationManager {
         boolean useCoins = Settings.get().isEconomySystemEnabled()
                 && Settings.get().isUseCoinSystem();
 
-        // 1) EconomySystem
         if (isPrimaryEconomyAvailable()) {
             if (useCoins) {
                 int coinAmount = (int) Math.round(amount);
@@ -296,20 +371,16 @@ public class IntegrationManager {
                     return true;
                 }
             }
-            // if it errors we still allow fallback checks
         }
 
-        // 2) VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid) >= amount;
         }
 
-        // 3) EliteEssentials
         if (isEliteEconomyAvailable()) {
             return EliteEconomySupport.has(uuid, amount);
         }
 
-        // 4) No economy
         return false;
     }
 
@@ -319,87 +390,27 @@ public class IntegrationManager {
         boolean useCoins = Settings.get().isEconomySystemEnabled()
                 && Settings.get().isUseCoinSystem();
 
-        // 1) EconomySystem
         if (isPrimaryEconomyAvailable()) {
             if (useCoins) {
                 int coins = EconomySystemSupport.getCoins(uuid);
-                return coins; // represent coin stack as a double
+                return coins;
             } else {
-                double bal = EconomySystemSupport.getBalance(uuid);
-                return bal;
+                return EconomySystemSupport.getBalance(uuid);
             }
         }
 
-        // 2) VaultUnlocked
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid);
         }
 
-        // 3) EliteEssentials
         if (isEliteEconomyAvailable()) {
             return EliteEconomySupport.getBalance(uuid);
         }
 
-        // 4) No economy
         return 0.0D;
     }
 
-    // ----------------------------------------------------------------
-    // Unified permission entry
-    // ----------------------------------------------------------------
-
-    /**
-     * Permission check for *players* (used in tag logic).
-     * Uses LuckPerms when available; if LP missing, falls back to
-     * "fail-open" so tags remain usable via other means (crates, etc.).
-     */
-    public boolean hasPermission(@Nonnull PlayerRef playerRef,
-                                 @Nonnull String permissionNode) {
-
-        UUID uuid = getUuidFromPlayerRef(playerRef);
-
-        if (uuid != null && hasPermissionWithLuckPerms(uuid, permissionNode)) {
-            return true;
-        }
-
-        // If LP is missing, fail-open for tag usage
-        return !luckPermsAvailable;
-    }
-
-    /**
-     * Permission check for *command senders*.
-     * - If LuckPerms is present, prefers LP via UUID
-     * - Always falls back to sender.hasPermission(...) so Hytale's permission
-     *   system (including console) continues to work.
-     */
-    public boolean hasPermission(@Nonnull CommandSender sender,
-                                 @Nonnull String permissionNode) {
-
-        if (sender == null) {
-            return false;
-        }
-
-        // If LP isn't present, delegate entirely to native perms
-        if (!luckPermsAvailable) {
-            return sender.hasPermission(permissionNode);
-        }
-
-        try {
-            UUID uuid = sender.getUuid();
-            if (uuid != null && hasPermissionWithLuckPerms(uuid, permissionNode)) {
-                return true;
-            }
-        } catch (Throwable ignored) {
-            // Fall through to native perms
-        }
-
-        // Fallback to Hytale's PermissionHolder – covers OP, console, etc.
-        return sender.hasPermission(permissionNode);
-    }
-
-    // ----------------------------------------------------------------
-
-    @NonNullDecl
+    @Nonnull
     private UUID getUuidFromPlayerRef(@Nonnull PlayerRef ref) {
         return ref.getUuid();
     }
