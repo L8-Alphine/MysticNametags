@@ -1,8 +1,8 @@
 {
   "Group": "MysticHorizons",
   "Name": "MysticNameTags",
-  "Version": "1.0.5",
-  "Description": "A Hytale mod that customizes nameplates and supports luckperms, placeholders, and custom tags.",
+  "Version": "1.0.6",
+  "Description": "A Hytale mod that customizes nameplates and supports luckperms, permissionsplus, prefixplus, vaultunlocked, economysystem, wiflow's placeholderapi, placeholders, and custom tags.",
   "Authors": [
     {
       "Name": "Alphine"
@@ -10,15 +10,16 @@
   ],
   "Main": "com.mystichorizons.mysticnametags.MysticNameTagsPlugin",
   "ServerVersion": "*",
-  "Dependencies": {
-    "LuckPerms:LuckPerms": "*"
-  },
+  "Dependencies": {},
   "OptionalDependencies": {
     "CreeperFace:PlaceholderAPI": "*",
     "WiFlowPlaceholderAPI:WiFlowPlaceholderAPI": "*",
     "TheNewEconomy:VaultUnlocked": "*",
     "com.eliteessentials:EliteEssentials": "*",
-    "Economy:EconomySystem": "*"
+    "Economy:EconomySystem": "*",
+    "Azeys:PrefixesPlus": "*",
+    "LuckPerms:LuckPerms": "*",
+    "PermissionsPlus:PermissionsPlus": "*"
   },
   "IncludesAssetPack": true
 }
