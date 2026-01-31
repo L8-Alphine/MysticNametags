@@ -340,6 +340,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 String plainTag = manager.getPlainActiveTag(uuid);
 
                 boolean lp = integrations.isLuckPermsAvailable();
+                boolean permsPlus = integrations.isPermissionsPlusActive();
                 boolean econPrimary = integrations.isPrimaryEconomyAvailable();
                 boolean econVault = integrations.isVaultAvailable();
                 boolean econElite = integrations.isEliteEconomyAvailable();
@@ -356,6 +357,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                         .append("  Active Tag (colored): ").append(coloredTag).append('\n')
                         .append("  Active Tag (plain):   ").append(plainTag).append('\n')
                         .append("  LuckPerms: ").append(lp).append('\n')
+                        .append("  PermissionsPlus active: ").append(permsPlus).append('\n')
                         .append("  Economy: primary=").append(econPrimary)
                         .append(", vault=").append(econVault)
                         .append(", elite=").append(econElite)
@@ -407,20 +409,31 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         TagManager tagManager = TagManager.get();
         IntegrationManager integrations = tagManager.getIntegrations();
 
-        boolean lp = integrations.isLuckPermsAvailable();
+        boolean lp          = integrations.isLuckPermsAvailable();
+        boolean permsPlus   = integrations.isPermissionsPlusActive();
         boolean econPrimary = integrations.isPrimaryEconomyAvailable();
-        boolean econVault = integrations.isVaultAvailable();
-        boolean econElite = integrations.isEliteEconomyAvailable();
+        boolean econVault   = integrations.isVaultAvailable();
+        boolean econElite   = integrations.isEliteEconomyAvailable();
 
         StringBuilder integrationsText = new StringBuilder("Integrations: ");
 
-        integrationsText.append(lp ? "LuckPerms " : "LuckPerms (none) ");
-        integrationsText.append("| Economy: ");
+        // Permissions stack
+        if (lp) {
+            integrationsText.append("LuckPerms");
+        } else {
+            integrationsText.append("LuckPerms (none)");
+        }
+
+        if (permsPlus) {
+            integrationsText.append(" + PermissionsPlus");
+        }
+
+        integrationsText.append(" | Economy: ");
 
         if (econPrimary) {
-            integrationsText.append("EconomySystem ");
+            integrationsText.append("EconomySystem");
             if (econVault || econElite) {
-                integrationsText.append("(fallback: ");
+                integrationsText.append(" (fallback: ");
                 if (econVault) integrationsText.append("VaultUnlocked ");
                 if (econElite) integrationsText.append("EliteEssentials ");
                 integrationsText.append(")");
