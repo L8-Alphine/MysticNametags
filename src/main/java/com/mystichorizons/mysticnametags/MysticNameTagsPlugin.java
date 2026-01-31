@@ -6,6 +6,7 @@ import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.mystichorizons.mysticnametags.commands.MysticNameTagsPluginCommand;
+import com.mystichorizons.mysticnametags.commands.TagsAdminCommand;
 import com.mystichorizons.mysticnametags.commands.TagsCommand;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
@@ -88,6 +89,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /mnametags command");
             getCommandRegistry().registerCommand(new TagsCommand());
             LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /tags command");
+            getCommandRegistry().registerCommand(new TagsAdminCommand());
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /tagsadmin command");
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e).log("[MysticNameTags] Failed to register commands");
         }
