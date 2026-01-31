@@ -388,7 +388,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             // Try to derive a nice color from the player's rank or active tag
             if (uuid != null) {
                 // Rank prefix from integrations (may contain &#RRGGBB or &x codes)
-                String rankPrefix = TagManager.get().getIntegrations().getLuckPermsPrefix(uuid);
+                String rankPrefix = TagManager.get().getIntegrations().getPrimaryPrefix(uuid);
                 previewHex = ColorFormatter.extractFirstHexColor(rankPrefix);
 
                 if (previewHex == null) {
