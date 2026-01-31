@@ -14,7 +14,6 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.Ref;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
-import org.jline.utils.InputStreamReader;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -479,7 +478,8 @@ public class TagManager {
         String tag  = null;
 
         if (uuid != null) {
-            rank = integrations.getLuckPermsPrefix(uuid);
+            // Use the unified prefix backend (PrefixesPlus -> LuckPerms -> none)
+            rank = integrations.getPrimaryPrefix(uuid);
             TagDefinition active = getEquipped(uuid);
             if (active != null) {
                 tag = active.getDisplay(); // e.g. "&#8A2BE2&l[Mystic]"
@@ -510,11 +510,13 @@ public class TagManager {
             return buildNameplate(ref, baseName, uuid);
         }
 
-        String rank = integrations.getLuckPermsPrefix(uuid);
+        // Fallback path when we only have UUID + base name
+        String rank = integrations.getPrimaryPrefix(uuid);
         TagDefinition active = getEquipped(uuid);
         String tagDisplay = (active != null) ? active.getDisplay() : null;
 
-        return Settings.get().formatNameplate(rank, baseName, tagDisplay);
+        String formatted = Settings.get().formatNameplate(rank, baseName, tagDisplay);
+        return ColorFormatter.colorize(formatted);
     }
 
     /**
@@ -536,8 +538,8 @@ public class TagManager {
         String tagPlain  = null;
 
         if (uuid != null) {
-            // LuckPerms prefix may contain & / § and hex – strip it
-            String rank = integrations.getLuckPermsPrefix(uuid);
+            // Unified prefix backend
+            String rank = integrations.getPrimaryPrefix(uuid);
             if (rank != null && !rank.isEmpty()) {
                 rankPlain = ColorFormatter.stripFormatting(rank).trim();
             }
