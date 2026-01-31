@@ -1,6 +1,5 @@
 package com.mystichorizons.mysticnametags.commands;
 
-import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.command.system.basecommands.CommandBase;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
@@ -51,17 +50,22 @@ public class InfoSubCommand extends CommandBase {
         IntegrationManager integrations = tagManager.getIntegrations();
 
         boolean lp          = integrations.isLuckPermsAvailable();
+        boolean permsPlus   = integrations.isPermissionsPlusActive();
         boolean econPrimary = integrations.isPrimaryEconomyAvailable();
         boolean econVault   = integrations.isVaultAvailable();
         boolean econElite   = integrations.isEliteEconomyAvailable();
 
         StringBuilder integrationLine = new StringBuilder("&7Integrations: ");
 
-        // LuckPerms status
+        // Permissions stack
         if (lp) {
             integrationLine.append("&aLuckPerms");
         } else {
             integrationLine.append("&cLuckPerms (none)");
+        }
+
+        if (permsPlus) {
+            integrationLine.append("&7 + &bPermissionsPlus");
         }
 
         integrationLine.append("&7 | Economy: ");
@@ -70,7 +74,7 @@ public class InfoSubCommand extends CommandBase {
         if (econPrimary) {
             integrationLine.append("&aEconomySystem");
             if (econVault || econElite) {
-                integrationLine.append(" &7(fallback: ");
+                integrationLine.append("&7 (fallback: ");
                 if (econVault) integrationLine.append("&bVaultUnlocked&7 ");
                 if (econElite) integrationLine.append("&dEliteEssentials&7 ");
                 integrationLine.append("&7)");
