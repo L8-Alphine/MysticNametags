@@ -771,4 +771,103 @@ public class TagManager {
             // we don't want permission failures to break purchases
         }
     }
+
+    // ============================================================
+    // Admin helpers – bypass economy & normal permission flow
+    // ============================================================
+
+    /**
+     * Admin-only: grant a tag to a player, optionally equip it.
+     * Skips economy and permission checks.
+     *
+     * @return true if the tag exists and was added (or already owned), false if tag doesn't exist.
+     */
+    public boolean adminGiveTag(@Nonnull UUID uuid,
+                                @Nonnull String id,
+                                boolean equip) {
+
+        TagDefinition def = getTag(id);
+        if (def == null) {
+            return false; // unknown id
+        }
+
+        String keyId = def.getId().toLowerCase(Locale.ROOT);
+
+        PlayerTagData data = getOrLoad(uuid);
+        // Add to owned set
+        data.addOwned(keyId);
+
+        if (equip) {
+            data.setEquipped(keyId);
+        }
+
+        savePlayerData(uuid);
+        clearCanUseCache(uuid);
+
+        // Refresh nameplate if they're online
+        PlayerRef ref = onlinePlayers.get(uuid);
+        World world   = onlineWorlds.get(uuid);
+        if (ref != null && world != null) {
+            refreshNameplate(ref, world);
+        }
+
+        return true;
+    }
+
+    /**
+     * Admin-only: remove a specific tag from a player.
+     *
+     * @return true if the tag existed in their data and was removed.
+     */
+    public boolean adminRemoveTag(@Nonnull UUID uuid,
+                                  @Nonnull String id) {
+
+        PlayerTagData data = getOrLoad(uuid);
+        String keyId = id.toLowerCase(Locale.ROOT);
+
+        boolean removed = data.getOwned().remove(keyId);
+        if (!removed) {
+            return false;
+        }
+
+        // If it was equipped, unequip
+        if (keyId.equalsIgnoreCase(data.getEquipped())) {
+            data.setEquipped(null);
+        }
+
+        savePlayerData(uuid);
+        clearCanUseCache(uuid);
+
+        PlayerRef ref = onlinePlayers.get(uuid);
+        World world   = onlineWorlds.get(uuid);
+        if (ref != null && world != null) {
+            refreshNameplate(ref, world);
+        }
+
+        return true;
+    }
+
+    /**
+     * Admin-only: wipe all owned/equipped tags for a player.
+     */
+    public boolean adminResetTags(@Nonnull UUID uuid) {
+        PlayerTagData data = getOrLoad(uuid);
+        if (data.getOwned().isEmpty() && data.getEquipped() == null) {
+            return false; // nothing to reset
+        }
+
+        data.getOwned().clear();
+        data.setEquipped(null);
+
+        savePlayerData(uuid);
+        clearCanUseCache(uuid);
+
+        PlayerRef ref = onlinePlayers.get(uuid);
+        World world   = onlineWorlds.get(uuid);
+        if (ref != null && world != null) {
+            refreshNameplate(ref, world);
+        }
+
+        return true;
+    }
 }
