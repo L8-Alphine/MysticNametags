@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.4'
+version = '1.0.5'
 
 repositories {
     mavenCentral()
@@ -12,11 +12,6 @@ repositories {
         url "https://repo.codemc.io/repository/creatorfromhell/"
     }
 }
-
-// Server JAR location - update this path if needed
-def serverJarPath = file('libs/HytaleServer.jar')
-def projectServerJar = file('server/HytaleServer.jar')
-def siblingServerJar = file('../server/HytaleServer.jar')
 
 dependencies {
     compileOnly files('libs/HytaleServer.jar')
@@ -41,6 +36,9 @@ dependencies {
 
     // Luckperms Support
     compileOnly 'net.luckperms:api:5.4'
+
+    // PermissionsPlus
+    compileOnly files('libs/PermissionsPlus-1.1.0.jar')
 }
 
 java {
