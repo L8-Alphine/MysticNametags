@@ -330,6 +330,23 @@ public class TagManager {
                                                @Nonnull TagDefinition def,
                                                @Nonnull String normalizedId) {
 
+        boolean fullGate = Settings.get().isFullPermissionGateEnabled();
+        String perm = def.getPermission();
+
+        // If full gate is enabled and a permission is defined,
+        // the permission MUST be present for this tag – even if
+        // the player "owns" it via JSON.
+        if (fullGate && perm != null && !perm.isEmpty()) {
+            try {
+                if (!integrations.hasPermission(playerRef, perm)) {
+                    return false;
+                }
+            } catch (Throwable ignored) {
+                // If we can't check perms, treat as not granted
+                return false;
+            }
+        }
+
         // Owned in JSON data?
         if (uuid != null) {
             PlayerTagData data = getOrLoad(uuid);
@@ -338,13 +355,13 @@ public class TagManager {
             }
         }
 
-        // Permission-based access?
-        String perm = def.getPermission();
+        // Permission-based access as an alternate path when the full gate
+        // is disabled (or when no permission is defined).
         if (perm != null && !perm.isEmpty()) {
             try {
                 return integrations.hasPermission(playerRef, perm);
             } catch (Throwable ignored) {
-                // If integrations fail for some reason, fall through to "false"
+                // fall through
             }
         }
 
@@ -392,6 +409,22 @@ public class TagManager {
             return TagPurchaseResult.NOT_FOUND;
         }
 
+        boolean fullGate = Settings.get().isFullPermissionGateEnabled();
+        String perm = def.getPermission();
+
+        // If full permission gate is enabled and this tag has a permission
+        // node, require it up-front before ANY other logic (owning,
+        // purchasing, etc.).
+        if (fullGate && perm != null && !perm.isEmpty()) {
+            try {
+                if (!integrations.hasPermission(playerRef, perm)) {
+                    return TagPurchaseResult.NO_PERMISSION;
+                }
+            } catch (Throwable ignored) {
+                return TagPurchaseResult.NO_PERMISSION;
+            }
+        }
+
         PlayerTagData data = getOrLoad(uuid);
 
         if (data.owns(def.getId())) {
@@ -406,8 +439,8 @@ public class TagManager {
             data.setEquipped(def.getId());
             savePlayerData(uuid);
 
-            // grant permission if defined
-            maybeGrantPermission(uuid, def.getPermission());
+            // grant permission if defined (for non-full-gate setups)
+            maybeGrantPermission(uuid, perm);
 
             return TagPurchaseResult.UNLOCKED_FREE;
         }
@@ -429,8 +462,8 @@ public class TagManager {
         data.setEquipped(def.getId());
         savePlayerData(uuid);
 
-        // grant permission if defined
-        maybeGrantPermission(uuid, def.getPermission());
+        // grant permission if defined (for non-full-gate setups)
+        maybeGrantPermission(uuid, perm);
 
         return TagPurchaseResult.UNLOCKED_PAID;
     }

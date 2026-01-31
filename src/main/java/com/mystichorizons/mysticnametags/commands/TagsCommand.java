@@ -4,12 +4,14 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
+import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.command.system.basecommands.AbstractPlayerCommand;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.ui.MysticNameTagsTagsUI;
+import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
 import java.util.UUID;
@@ -24,7 +26,13 @@ public class TagsCommand extends AbstractPlayerCommand {
 
     @Override
     protected boolean canGeneratePermission() {
+        // Keep this public; don't let the framework auto-generate a node.
         return false;
+    }
+
+    private Message colored(String text) {
+        // Let ColorFormatter interpret & and hex codes into a styled Message.
+        return ColorFormatter.toMessage(text);
     }
 
     @Override
@@ -35,25 +43,30 @@ public class TagsCommand extends AbstractPlayerCommand {
             @Nonnull PlayerRef playerRef,
             @Nonnull World world
     ) {
+        CommandSender sender = context.sender();
+
+        // Get the Player component on the world thread
         Player player = store.getComponent(ref, Player.getComponentType());
         if (player == null) {
-            context.sendMessage(Message.raw("Error: Could not get Player component."));
+            sender.sendMessage(colored("&cError: &7Could not get Player component."));
             return;
         }
 
         UUID uuid = playerRef.getUuid();
         if (uuid == null) {
-            context.sendMessage(Message.raw("Error: Could not determine your account id."));
+            sender.sendMessage(colored("&cError: &7Could not determine your account id."));
             return;
         }
 
-        context.sendMessage(Message.raw("Opening MysticNameTags Tag Selector..."));
+        sender.sendMessage(colored("&7[&bMysticNameTags&7] &fOpening &bTag Selector&f..."));
 
         try {
             MysticNameTagsTagsUI page = new MysticNameTagsTagsUI(playerRef, uuid);
             player.getPageManager().openCustomPage(ref, store, page);
         } catch (Exception e) {
-            context.sendMessage(Message.raw("Error opening tag selector: " + e.getMessage()));
+            sender.sendMessage(
+                    colored("&cError opening tag selector: &7" + e.getMessage())
+            );
         }
     }
 }

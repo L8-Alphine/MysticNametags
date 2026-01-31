@@ -45,7 +45,8 @@ public class ReloadSubCommand extends CommandBase {
     }
 
     private Message colored(String text) {
-        return Message.raw(ColorFormatter.colorize(text));
+        // Let ColorFormatter interpret & and hex codes into a styled Message.
+        return ColorFormatter.toMessage(text);
     }
 
     @Override

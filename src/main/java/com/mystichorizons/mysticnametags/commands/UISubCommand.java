@@ -53,7 +53,8 @@ public class UISubCommand extends AbstractPlayerCommand {
     }
 
     private Message colored(String text) {
-        return Message.raw(ColorFormatter.colorize(text));
+        // Let ColorFormatter interpret & and hex codes into a styled Message.
+        return ColorFormatter.toMessage(text);
     }
 
     /**

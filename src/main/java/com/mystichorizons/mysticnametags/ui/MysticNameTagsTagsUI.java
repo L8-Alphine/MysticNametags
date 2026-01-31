@@ -16,6 +16,8 @@ import com.hypixel.hytale.server.core.ui.builder.UICommandBuilder;
 import com.hypixel.hytale.server.core.ui.builder.UIEventBuilder;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
@@ -170,6 +172,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                              boolean registerRowEvents) {
 
         TagManager tagManager = TagManager.get();
+        IntegrationManager integrations = tagManager.getIntegrations();
 
         // Snapshot of tags for this filter
         List<TagDefinition> tags = createFilteredSnapshot();
@@ -204,17 +207,25 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         // ---- Economy status + balance (once per rebuild) ----
         double balance = 0.0;
         boolean econEnabled = false;
+        boolean usingCoins = false;
+
         try {
             if (uuid != null) {
-                econEnabled = tagManager.getIntegrations().hasAnyEconomy();
+                econEnabled = integrations.hasAnyEconomy();
                 if (econEnabled) {
-                    balance = tagManager.getIntegrations().getBalance(uuid);
+                    balance = integrations.getBalance(uuid);
+
+                    usingCoins = Settings.get().isEconomySystemEnabled()
+                            && Settings.get().isUseCoinSystem()
+                            && integrations.isPrimaryEconomyAvailable();
                 }
             }
         } catch (Throwable ignored) { }
 
         if (!econEnabled) {
             cmd.set("#BalanceLabel.Text", "Balance: N/A (no economy found)");
+        } else if (usingCoins) {
+            cmd.set("#BalanceLabel.Text", "Coins: " + (long) balance);
         } else {
             cmd.set("#BalanceLabel.Text", "Balance: " + balance);
         }
@@ -225,15 +236,32 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             TagDefinition def = tags.get(i);
 
             String nameSelector   = "#TagRow" + row + "Name";
+            String descSelector   = "#TagRow" + row + "Description";
             String priceSelector  = "#TagRow" + row + "Price";
             String buttonSelector = "#TagRow" + row + "Button";
 
-            String rawDisplay = def.getDisplay();
+            String rawDisplay      = def.getDisplay();
+            String rawDescription  = def.getDescription();
 
-            // Plain text for UI label, but preserves Unicode symbols
+            // ---- Name (with color extracted from codes) ----
             String nameText = ColorFormatter.stripFormatting(rawDisplay);
-            String hex      = ColorFormatter.extractUiTextColor(rawDisplay);
+            String nameHex  = ColorFormatter.extractUiTextColor(rawDisplay);
 
+            // ---- Description: strip color codes, but let it be colored via codes too ----
+            String descText = rawDescription != null
+                    ? ColorFormatter.stripFormatting(rawDescription)
+                    : "";
+
+            // Soft length cap so long lore doesn’t blow the row
+            if (descText.length() > 90) {
+                descText = descText.substring(0, 87) + "...";
+            }
+
+            String descHex = (rawDescription != null)
+                    ? ColorFormatter.extractFirstHexColor(rawDescription)
+                    : null;
+
+            // ---- Price text ----
             String priceText;
             if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
                 priceText = "Free";
@@ -244,13 +272,18 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             }
 
             cmd.set(nameSelector + ".Text", nameText);
+            cmd.set(descSelector + ".Text", descText);
             cmd.set(priceSelector + ".Text", priceText);
 
-            if (hex != null) {
-                cmd.set(nameSelector + ".Style.TextColor", "#" + hex);
+            // Override UI label colors if hex codes were present
+            if (nameHex != null) {
+                cmd.set(nameSelector + ".Style.TextColor", "#" + nameHex);
+            }
+            if (descHex != null) {
+                cmd.set(descSelector + ".Style.TextColor", "#" + descHex);
             }
 
-            // Determine button label based on usage/equipped state
+            // ---- Determine button label based on usage/equipped state ----
             boolean canUse;
             Boolean cached = canUseCache.get(def.getId());
             if (cached != null) {
@@ -260,33 +293,29 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 canUseCache.put(def.getId(), canUse);
             }
 
-            // Determine state flags
             boolean isEquipped = equippedId != null
                     && equippedId.equalsIgnoreCase(def.getId());
 
-            boolean owns = uuid != null && tagManager.ownsTag(uuid, def.getId());
-            boolean isFree = !def.isPurchasable() || def.getPrice() <= 0.0D;
+            boolean owns    = uuid != null && tagManager.ownsTag(uuid, def.getId());
+            boolean isFree  = !def.isPurchasable() || def.getPrice() <= 0.0D;
             boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
 
             String buttonText;
             if (isEquipped) {
                 buttonText = "Unequip";
             } else if (isFree) {
-                // Free tag
                 if (!owns) {
                     buttonText = "Unlock";
                 } else {
                     buttonText = "Equip";
                 }
             } else if (hasCost) {
-                // Paid tag
                 if (!owns) {
                     buttonText = "Buy";
                 } else {
                     buttonText = "Equip";
                 }
             } else {
-                // Fallback – shouldn't really happen with current config model
                 buttonText = "Equip";
             }
 
@@ -294,10 +323,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
             // show row
             cmd.set(nameSelector + ".Visible", true);
+            cmd.set(descSelector + ".Visible", true);
             cmd.set(priceSelector + ".Visible", true);
             cmd.set(buttonSelector + ".Visible", true);
 
-            // Row button binding – only TagId, no RowIndex needed
+            // Row button binding
             if (registerRowEvents) {
                 EventData rowEvent = new EventData()
                         .append("Action", "tag_click")
@@ -307,7 +337,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                         CustomUIEventBindingType.Activating,
                         buttonSelector,
                         rowEvent,
-                        false // non-locking click for Equip/Purchase/Unequip
+                        false
                 );
             }
         }
@@ -315,10 +345,12 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         // Hide unused rows
         for (; row < MAX_ROWS; row++) {
             String nameSelector   = "#TagRow" + row + "Name";
+            String descSelector   = "#TagRow" + row + "Description";
             String priceSelector  = "#TagRow" + row + "Price";
             String buttonSelector = "#TagRow" + row + "Button";
 
             cmd.set(nameSelector + ".Visible", false);
+            cmd.set(descSelector + ".Visible", false);
             cmd.set(priceSelector + ".Visible", false);
             cmd.set(buttonSelector + ".Visible", false);
         }

@@ -5,6 +5,7 @@ import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
@@ -157,11 +158,16 @@ public class IntegrationManager {
     // ----------------------------------------------------------------
 
     /**
-     * Primary backend: EconomySystem (com.economy.api.EconomyAPI) if present.
+     * Primary backend: EconomySystem (com.economy.api.EconomyAPI) if present
+     * and enabled in settings.
      * Secondary backend: VaultUnlocked (if present).
      * Tertiary backend: EliteEssentials EconomyAPI (if present and enabled).
      */
     public boolean isPrimaryEconomyAvailable() {
+        // Allow server owners to hard-disable EconomySystem usage
+        if (!Settings.get().isEconomySystemEnabled()) {
+            return false;
+        }
         try {
             return EconomySystemSupport.isAvailable();
         } catch (NoClassDefFoundError e) {
@@ -236,10 +242,20 @@ public class IntegrationManager {
 
         logEconomyStatusIfNeeded();
 
+        boolean useCoins = Settings.get().isEconomySystemEnabled()
+                && Settings.get().isUseCoinSystem();
+
         // 1) EconomySystem (com.economy.api.EconomyAPI)
         if (isPrimaryEconomyAvailable()) {
-            if (EconomySystemSupport.withdraw(uuid, amount)) {
-                return true;
+            if (useCoins) {
+                int coinAmount = (int) Math.round(amount);
+                if (EconomySystemSupport.withdrawCoins(uuid, coinAmount)) {
+                    return true;
+                }
+            } else {
+                if (EconomySystemSupport.withdraw(uuid, amount)) {
+                    return true;
+                }
             }
             // fall through to other backends if the call fails for some reason
         }
@@ -265,10 +281,20 @@ public class IntegrationManager {
 
         logEconomyStatusIfNeeded();
 
+        boolean useCoins = Settings.get().isEconomySystemEnabled()
+                && Settings.get().isUseCoinSystem();
+
         // 1) EconomySystem
         if (isPrimaryEconomyAvailable()) {
-            if (EconomySystemSupport.has(uuid, amount)) {
-                return true;
+            if (useCoins) {
+                int coinAmount = (int) Math.round(amount);
+                if (EconomySystemSupport.hasCoins(uuid, coinAmount)) {
+                    return true;
+                }
+            } else {
+                if (EconomySystemSupport.has(uuid, amount)) {
+                    return true;
+                }
             }
             // if it errors we still allow fallback checks
         }
@@ -290,11 +316,18 @@ public class IntegrationManager {
     public double getBalance(@Nonnull UUID uuid) {
         logEconomyStatusIfNeeded();
 
+        boolean useCoins = Settings.get().isEconomySystemEnabled()
+                && Settings.get().isUseCoinSystem();
+
         // 1) EconomySystem
         if (isPrimaryEconomyAvailable()) {
-            double bal = EconomySystemSupport.getBalance(uuid);
-            // If it returns > 0 OR we know the player exists, we just trust it.
-            return bal;
+            if (useCoins) {
+                int coins = EconomySystemSupport.getCoins(uuid);
+                return coins; // represent coin stack as a double
+            } else {
+                double bal = EconomySystemSupport.getBalance(uuid);
+                return bal;
+            }
         }
 
         // 2) VaultUnlocked

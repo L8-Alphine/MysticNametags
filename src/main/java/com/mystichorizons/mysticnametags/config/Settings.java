@@ -15,13 +15,53 @@ import java.util.logging.Level;
 public class Settings {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    private static final Gson GSON = new GsonBuilder()
+            .setPrettyPrinting()
+            .disableHtmlEscaping()
+            .create();
 
     private static Settings INSTANCE;
 
     // Example default: "{rank} {name} {tag}"
     private String nameplateFormat = "{rank} {name} {tag}";
     private boolean stripExtraSpaces = true;
+
+    /**
+     * If true, MysticNameTags will treat the EconomySystem
+     * (com.economy.*) as a valid primary economy backend.
+     *
+     * If false, the integration layer will pretend the primary economy
+     * does not exist and will fall back to VaultUnlocked / EliteEssentials
+     * only.
+     */
+    private boolean economySystemEnabled = true;
+
+    /**
+     * When using the EconomySystem and this flag is true, MysticNameTags
+     * will use the "cash / coin" balance instead of the standard balance
+     * for tag purchasing.
+     *
+     * This only affects the EconomySystem backend – VaultUnlocked and
+     * EliteEssentials continue to use their normal balances.
+     */
+    private boolean useCoinSystem = false;
+
+    /**
+     * When enabled, tag permission nodes act as a full gate:
+     *
+     *  - If a tag has a permission (`permission` in tags.json), that
+     *    permission MUST be granted for the player to:
+     *       * see the tag as usable, and
+     *       * successfully purchase/equip it.
+     *
+     *  - Ownership alone (crate unlocks, etc.) is not enough if the
+     *    permission is missing.
+     *
+     * When disabled, permissions are treated as an alternate way to
+     * access tags (as in earlier builds): owning the tag OR having the
+     * permission is enough.
+     */
+    private boolean fullPermissionGate = false;
 
     public static void init() {
         INSTANCE = new Settings();
@@ -39,30 +79,43 @@ public class Settings {
 
     private void load() {
         File file = getFile();
+
+        // If the file doesn't exist, write out a brand-new one with defaults.
         if (!file.exists()) {
-            saveDefaults();
+            saveToDisk();
             return;
         }
 
         try (FileReader reader = new FileReader(file)) {
             Settings loaded = GSON.fromJson(reader, Settings.class);
             if (loaded != null) {
-                this.nameplateFormat = loaded.nameplateFormat;
-                this.stripExtraSpaces = loaded.stripExtraSpaces;
+                this.nameplateFormat     = loaded.nameplateFormat;
+                this.stripExtraSpaces    = loaded.stripExtraSpaces;
+                this.economySystemEnabled = loaded.economySystemEnabled;
+                this.useCoinSystem        = loaded.useCoinSystem;
+                this.fullPermissionGate   = loaded.fullPermissionGate;
             }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
                     .log("[MysticNameTags] Failed to load settings.json, using defaults.");
         }
+
+        // Always re-save after loading so any *new* fields get written
+        // back out with their current values (including defaults).
+        saveToDisk();
     }
 
-    private void saveDefaults() {
+    /**
+     * Writes the current in-memory settings to settings.json.
+     * This is used both for first-run defaults and for upgrading old files.
+     */
+    private void saveToDisk() {
         File file = getFile();
         try (FileWriter writer = new FileWriter(file)) {
             GSON.toJson(this, writer);
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
-                    .log("[MysticNameTags] Failed to save default settings.json");
+                    .log("[MysticNameTags] Failed to save settings.json");
         }
     }
 
@@ -82,5 +135,21 @@ public class Settings {
 
         // Apply & / hex colors after placeholder substitution
         return ColorFormatter.colorize(result);
+    }
+
+    // ---------------------------------------------------------------------
+    // Getters for flags
+    // ---------------------------------------------------------------------
+
+    public boolean isEconomySystemEnabled() {
+        return economySystemEnabled;
+    }
+
+    public boolean isUseCoinSystem() {
+        return useCoinSystem;
+    }
+
+    public boolean isFullPermissionGateEnabled() {
+        return fullPermissionGate;
     }
 }

@@ -13,7 +13,7 @@ $C.@PageOverlay {
       @ContentPadding = Padding(Full: 14);
       @CloseButton = false;
 
-      Anchor: (Width: 1000, Height: 680);
+      Anchor: (Width: 1000, Height: 840);
 
       // ===== 2-COLUMN CONTENT AREA =====
       Group #RootContent {
@@ -23,7 +23,7 @@ $C.@PageOverlay {
         // ===== LEFT: MAIN TAG LIST =====
         Group #Content {
           LayoutMode: Top;
-          Anchor: (Width: 700, Height: 640);
+          Anchor: (Width: 700, Height: 780);
           Background: #020617(0.94);
           Padding: (Full: 12);
 
@@ -136,17 +136,30 @@ $C.@PageOverlay {
             LayoutMode: Top;
             Padding: (Right: 4);
 
+            // Row template: 10 copies
+
             // Row 0
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow0Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow0Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow0Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow0Price {
@@ -166,14 +179,25 @@ $C.@PageOverlay {
             // Row 1
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow1Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow1Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow1Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow1Price {
@@ -193,14 +217,25 @@ $C.@PageOverlay {
             // Row 2
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow2Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow2Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow2Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow2Price {
@@ -220,14 +255,25 @@ $C.@PageOverlay {
             // Row 3
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow3Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow3Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow3Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow3Price {
@@ -247,14 +293,25 @@ $C.@PageOverlay {
             // Row 4
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow4Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow4Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow4Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow4Price {
@@ -274,14 +331,25 @@ $C.@PageOverlay {
             // Row 5
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow5Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow5Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow5Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow5Price {
@@ -301,14 +369,25 @@ $C.@PageOverlay {
             // Row 6
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow6Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow6Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow6Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow6Price {
@@ -328,14 +407,25 @@ $C.@PageOverlay {
             // Row 7
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow7Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow7Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow7Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow7Price {
@@ -355,14 +445,25 @@ $C.@PageOverlay {
             // Row 8
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
+              Anchor: (Height: 48);
               Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow8Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow8Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow8Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow8Price {
@@ -382,14 +483,25 @@ $C.@PageOverlay {
             // Row 9
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 36);
-              Padding: (Left: 10, Right: 10);
+              Anchor: (Height: 48);
+              Padding: (Left: 10, Right: 10, Bottom: 3);
               Background: #020617(0.9);
 
-              Label #TagRow9Name {
-                Text: "Tag Name";
-                Anchor: (Width: 400, Height: 20);
-                Style: (FontSize: 13, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 400, Height: 32);
+
+                Label #TagRow9Name {
+                  Text: "Tag Name";
+                  Anchor: (Height: 18);
+                  Style: (FontSize: 13, TextColor: #ffffff);
+                }
+
+                Label #TagRow9Description {
+                  Text: "Short description of this tag.";
+                  Anchor: (Height: 14);
+                  Style: (FontSize: 11, TextColor: #94a3b8);
+                }
               }
 
               Label #TagRow9Price {
@@ -466,7 +578,7 @@ $C.@PageOverlay {
         // ===== RIGHT: HOW IT WORKS SIDEBAR =====
         Group #HowItWorksPanel {
           LayoutMode: Top;
-          Anchor: (Width: 250, Height: 640);
+          Anchor: (Width: 250, Height: 780);
           Background: #020617(0.94);
           Padding: (Full: 10);
 
@@ -508,7 +620,7 @@ $C.@PageOverlay {
           }
 
           Label {
-            Text: "   - Free (auto-unlock)";
+            Text: "   - Free (no cost)";
             Anchor: (Height: 16);
             Style: (FontSize: 11, TextColor: #cbd5f5);
           }
@@ -521,6 +633,26 @@ $C.@PageOverlay {
 
           Label {
             Text: "   - Purchasable with currency";
+            Anchor: (Height: 16);
+            Style: (FontSize: 11, TextColor: #cbd5f5);
+          }
+
+          Group { Anchor: (Height: 6); }
+
+          Label {
+            Text: "• If a tag has a permission,";
+            Anchor: (Height: 16);
+            Style: (FontSize: 11, TextColor: #cbd5f5);
+          }
+
+          Label {
+            Text: "  you must have it to see, buy,";
+            Anchor: (Height: 16);
+            Style: (FontSize: 11, TextColor: #cbd5f5);
+          }
+
+          Label {
+            Text: "  unlock, or equip that tag.";
             Anchor: (Height: 16);
             Style: (FontSize: 11, TextColor: #cbd5f5);
           }
