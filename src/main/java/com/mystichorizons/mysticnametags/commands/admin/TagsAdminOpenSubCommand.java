@@ -17,15 +17,11 @@ import java.util.UUID;
 
 public class TagsAdminOpenSubCommand extends AbstractTagsAdminSubCommand {
 
-    /**
-     * /tagsadmin open <player>
-     * Required player argument parsed by the command framework.
-     */
     @Nonnull
     private final RequiredArg<PlayerRef> targetArg =
             this.withRequiredArg(
                     "player",
-                    "Player to open the tag UI for", // plain description is fine
+                    "Player to open the tag UI for",
                     ArgTypes.PLAYER_REF
             );
 
@@ -34,11 +30,7 @@ public class TagsAdminOpenSubCommand extends AbstractTagsAdminSubCommand {
     }
 
     @Override
-    protected void execute(@Nonnull CommandContext context,
-                           @Nonnull Store<EntityStore> store,
-                           @Nonnull Ref<EntityStore> ref,
-                           @Nonnull PlayerRef senderRef,
-                           @Nonnull World world) {
+    protected void executeAdmin(@Nonnull CommandContext context) {
 
         if (!hasAdminPermission(context)) {
             context.sender().sendMessage(
@@ -47,10 +39,8 @@ public class TagsAdminOpenSubCommand extends AbstractTagsAdminSubCommand {
             return;
         }
 
-        // Will already have been validated by the framework
         PlayerRef targetRef = targetArg.get(context);
         if (targetRef == null) {
-            // Extremely defensive; normally RequiredArg guarantees non-null
             context.sender().sendMessage(
                     colored("&cCould not resolve target player.")
             );
@@ -65,16 +55,9 @@ public class TagsAdminOpenSubCommand extends AbstractTagsAdminSubCommand {
             return;
         }
 
+        // Safe to grab store + world ref on this thread
         Store<EntityStore> targetStore = targetEntityRef.getStore();
-        Player targetPlayer = targetStore.getComponent(targetEntityRef, Player.getComponentType());
-        if (targetPlayer == null) {
-            context.sender().sendMessage(
-                    colored("&cError: &7Could not get Player component for '&f" +
-                            targetRef.getUsername() + "&7'.")
-            );
-            return;
-        }
-
+        World targetWorld = ((EntityStore) targetStore.getExternalData()).getWorld();
         UUID targetUuid = targetRef.getUuid();
 
         context.sender().sendMessage(
@@ -82,12 +65,21 @@ public class TagsAdminOpenSubCommand extends AbstractTagsAdminSubCommand {
                         targetRef.getUsername() + "&f...")
         );
 
-        // Ensure page open runs on the target's world thread
-        World targetWorld = ((EntityStore) targetStore.getExternalData()).getWorld();
+        // Hop onto the world thread before touching the Store / Player
         targetWorld.execute(() -> {
             try {
+                Player targetPlayer = targetStore.getComponent(targetEntityRef, Player.getComponentType());
+                if (targetPlayer == null) {
+                    context.sender().sendMessage(
+                            colored("&cError: &7Could not get Player component for '&f" +
+                                    targetRef.getUsername() + "&7'.")
+                    );
+                    return;
+                }
+
                 MysticNameTagsTagsUI page = new MysticNameTagsTagsUI(targetRef, targetUuid);
                 targetPlayer.getPageManager().openCustomPage(targetEntityRef, targetStore, page);
+
             } catch (Exception e) {
                 context.sender().sendMessage(
                         colored("&cError opening tag selector for '&f" +

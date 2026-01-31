@@ -2,9 +2,9 @@ package com.mystichorizons.mysticnametags.commands;
 
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.NameMatching;
+import com.hypixel.hytale.server.core.command.system.AbstractCommand;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.command.system.CommandSender;
-import com.hypixel.hytale.server.core.command.system.basecommands.AbstractPlayerCommand;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
@@ -14,22 +14,16 @@ import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Base for /tagsadmin subcommands.
  *
- * NOTE: extends AbstractPlayerCommand, so these are player-only for now.
- * If you want console support later, we can swap this to AbstractCommand.
+ * Extends AbstractCommand so subcommands can be executed
+ * by BOTH players and console.
  */
-public abstract class AbstractTagsAdminSubCommand extends AbstractPlayerCommand {
+public abstract class AbstractTagsAdminSubCommand extends AbstractCommand {
 
-    /**
-     * Root admin permission. Having this grants access to all /tagsadmin subcommands.
-     *
-     * Per-subcommand permissions are derived automatically as:
-     *   mysticnametags.admin.<subcommand-name>
-     * e.g. mysticnametags.admin.open, mysticnametags.admin.givetag, ...
-     */
     public static final String PERM_TAGS_ADMIN_ROOT = "mysticnametags.admin";
 
     protected AbstractTagsAdminSubCommand(@Nonnull String name, @Nonnull String description) {
@@ -39,6 +33,7 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractPlayerCommand 
 
     @Override
     protected boolean canGeneratePermission() {
+        // We handle permissions manually via IntegrationManager.
         return false;
     }
 
@@ -46,17 +41,14 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractPlayerCommand 
         return ColorFormatter.toMessage(text);
     }
 
+    @Nullable
     protected IntegrationManager getIntegrations() {
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
         return plugin != null ? plugin.getIntegrations() : null;
     }
 
-    /**
-     * Returns the per-subcommand permission, e.g. "mysticnametags.admin.givetag".
-     */
     @Nonnull
     protected String getSubcommandPermission() {
-        // getName() comes from AbstractAsyncCommand / AbstractCommandBase
         String subName = this.getName();
         if (subName == null) {
             subName = "";
@@ -65,11 +57,6 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractPlayerCommand 
         return PERM_TAGS_ADMIN_ROOT + "." + subName;
     }
 
-    /**
-     * Checks if the sender has either:
-     *  - the root permission: mysticnametags.admin
-     *  - the subcommand-specific permission: mysticnametags.admin.<subcommand>
-     */
     protected boolean hasAdminPermission(@Nonnull CommandContext context) {
         IntegrationManager integrations = getIntegrations();
         if (integrations == null) {
@@ -78,7 +65,6 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractPlayerCommand 
 
         CommandSender sender = context.sender();
 
-        // Root + sub-node
         String rootPerm = PERM_TAGS_ADMIN_ROOT;
         String subPerm  = getSubcommandPermission();
 
@@ -86,10 +72,6 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractPlayerCommand 
                 || integrations.hasPermission(sender, subPerm);
     }
 
-    /**
-     * Resolve an online player by username using the Universe registry.
-     * Uses PARTIAL matching (like vanilla tab-complete).
-     */
     @Nullable
     protected PlayerRef findOnlinePlayer(String inputName) {
         if (inputName == null || inputName.isEmpty()) {
@@ -97,4 +79,20 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractPlayerCommand 
         }
         return Universe.get().getPlayerByUsername(inputName, NameMatching.STARTS_WITH_IGNORE_CASE);
     }
+
+    /**
+     * This is the method that AbstractCommand expects.
+     * We delegate to our own void method and then immediately
+     * complete the future.
+     */
+    @Override
+    public CompletableFuture<Void> execute(@Nonnull CommandContext context) {
+        executeAdmin(context);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Subclasses implement this with their actual logic.
+     */
+    protected abstract void executeAdmin(@Nonnull CommandContext context);
 }
