@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  *   <li>Query tags and player ownership</li>
  *   <li>Purchase / equip / toggle tags</li>
  *   <li>Formatted nameplate building (colored + plain)</li>
- *   <li>Economy + LuckPerms information (prefix, balance, etc.)</li>
+ *   <li>Rank prefix + economy information</li>
  *   <li>Placeholder expansion for simple text formats</li>
  *   <li>Notification helpers using MysticNameTags&apos; color parser</li>
  * </ul>
@@ -261,20 +261,31 @@ public final class MysticNameTagsAPI {
     }
 
     // ---------------------------------------------------------------------
-    // LuckPerms & economy helpers
+    // Rank prefix & economy helpers
     // ---------------------------------------------------------------------
 
     /**
-     * Returns the LuckPerms prefix for a player, or null if none.
-     * (This is the raw prefix, including any color codes it might contain.)
+     * Returns the best available rank prefix for a player, or null.
+     *
+     * Order of resolution:
+     * <ul>
+     *   <li>PrefixesPlus (if installed)</li>
+     *   <li>LuckPerms meta prefix (if installed)</li>
+     *   <li>null otherwise</li>
+     * </ul>
+     *
+     * <p><b>Note:</b> The method name is kept as {@code getLuckPermsPrefix}
+     * for backwards compatibility, but the actual source may be PrefixesPlus
+     * or LuckPerms depending on what is available.</p>
      */
     @Nullable
     public static String getLuckPermsPrefix(@Nonnull UUID uuid) {
-        return integrations().getLuckPermsPrefix(uuid);
+        return integrations().getPrimaryPrefix(uuid);
     }
 
     /**
-     * Returns the LuckPerms prefix stripped of all color codes, or null.
+     * Returns the rank prefix stripped of all color codes, or null.
+     * This uses {@link #getLuckPermsPrefix(UUID)} under the hood.
      */
     @Nullable
     public static String getLuckPermsPrefixPlain(@Nonnull UUID uuid) {
@@ -344,8 +355,8 @@ public final class MysticNameTagsAPI {
      *   <li>%mystic_tag_plain%    – plain tag text</li>
      *   <li>%mystic_full%         – colored "[Rank] Name [Tag]"</li>
      *   <li>%mystic_full_plain%   – plain "[Rank] Name [Tag]"</li>
-     *   <li>%mystic_rank%         – colored LuckPerms prefix</li>
-     *   <li>%mystic_rank_plain%   – plain LuckPerms prefix</li>
+     *   <li>%mystic_rank%         – colored rank prefix (PrefixesPlus/LuckPerms)</li>
+     *   <li>%mystic_rank_plain%   – plain rank prefix</li>
      *   <li>%mystic_balance%      – numeric balance</li>
      * </ul>
      *
