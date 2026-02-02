@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.7'
+version = '1.0.8'
 
 repositories {
     mavenCentral()
@@ -34,6 +34,9 @@ dependencies {
     // TheEconomy Support
     compileOnly files('libs/EconomySystem-1.0.8.1-beta.jar')
 
+    // EcoTale Support
+    compileOnly files('libs/Ecotale-1.0.7.jar')
+
     // Luckperms Support
     compileOnly 'net.luckperms:api:5.4'
 
@@ -42,6 +45,9 @@ dependencies {
 
     // PrefixesPlus
     compileOnly files('libs/PrefixesPlus-3.2.6.jar')
+
+    //RPGLeveling Support
+    compileOnly files('libs/RPGLeveling-0.2.1.jar')
 }
 
 java {
