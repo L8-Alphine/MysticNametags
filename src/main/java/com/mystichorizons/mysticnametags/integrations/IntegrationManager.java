@@ -276,8 +276,16 @@ public class IntegrationManager {
         }
     }
 
+    public boolean isEcoTaleAvailable() {
+        try {
+            return EcoTaleSupport.isAvailable();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
+    }
+
     public boolean hasAnyEconomy() {
-        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable();
+        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable() || isEliteEconomyAvailable();
     }
 
     private void logEconomyStatusIfNeeded() {
@@ -286,18 +294,33 @@ public class IntegrationManager {
         }
 
         boolean primary = isPrimaryEconomyAvailable();
+        boolean ecoTale = isEcoTaleAvailable();
         boolean vault   = isVaultAvailable();
         boolean elite   = isEliteEconomyAvailable();
 
         if (primary) {
-            if (vault || elite) {
+            if (ecoTale || vault || elite) {
                 LOGGER.at(Level.INFO).log(
                         "[MysticNameTags] EconomySystem (com.economy) detected as primary economy. " +
-                                "VaultUnlocked: " + vault + ", EliteEssentials: " + elite + " (fallbacks)."
+                                "EcoTale: " + ecoTale +
+                                ", VaultUnlocked: " + vault +
+                                ", EliteEssentials: " + elite + " (fallbacks)."
                 );
             } else {
                 LOGGER.at(Level.INFO)
                         .log("[MysticNameTags] EconomySystem (com.economy) detected – tag purchasing enabled.");
+            }
+            loggedEconomyStatus = true;
+        } else if (ecoTale) {
+            if (vault || elite) {
+                LOGGER.at(Level.INFO).log(
+                        "[MysticNameTags] EcoTale detected as primary economy backend. " +
+                                "VaultUnlocked: " + vault +
+                                ", EliteEssentials: " + elite + " (fallbacks)."
+                );
+            } else {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] EcoTale detected – tag purchasing enabled.");
             }
             loggedEconomyStatus = true;
         } else if (vault) {
@@ -339,6 +362,11 @@ public class IntegrationManager {
             }
         }
 
+        // EcoTale
+        if (isEcoTaleAvailable()) {
+            return EcoTaleSupport.withdraw(uuid, amount);
+        }
+
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.withdraw(ECON_PLUGIN_NAME, uuid, amount);
         }
@@ -373,6 +401,11 @@ public class IntegrationManager {
             }
         }
 
+        // EcoTale
+        if (isEcoTaleAvailable()) {
+            return EcoTaleSupport.getBalance(uuid) >= amount;
+        }
+
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid) >= amount;
         }
@@ -397,6 +430,11 @@ public class IntegrationManager {
             } else {
                 return EconomySystemSupport.getBalance(uuid);
             }
+        }
+
+        // EcoTale
+        if (isEcoTaleAvailable()) {
+            return EcoTaleSupport.getBalance(uuid);
         }
 
         if (isVaultAvailable()) {
