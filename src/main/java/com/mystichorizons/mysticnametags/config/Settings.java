@@ -51,7 +51,8 @@ public class Settings {
      *
      *  - If a tag has a permission (`permission` in tags.json), that
      *    permission MUST be granted for the player to:
-     *       * see the tag as usable, and
+     *       * see the tag in the UI,
+     *       * see it as usable,
      *       * successfully purchase/equip it.
      *
      *  - Ownership alone (crate unlocks, etc.) is not enough if the
@@ -59,7 +60,7 @@ public class Settings {
      *
      * When disabled, permissions are treated as an alternate way to
      * access tags (as in earlier builds): owning the tag OR having the
-     * permission is enough.
+     * permission is enough, and all tags are listed in the UI.
      */
     private boolean fullPermissionGate = false;
 
