@@ -14,6 +14,7 @@ import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.placeholders.PlaceholderHook;
 import com.mystichorizons.mysticnametags.tags.TagManager;
+import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
@@ -111,6 +112,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     protected void start() {
         this.integrations.init();
 
+        MysticLog.init(this);
+
         LOGGER.at(Level.INFO).log("[MysticNameTags] Started!");
         LOGGER.at(Level.INFO).log("[MysticNameTags] Use /tags help for commands");
 
@@ -163,8 +166,17 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     @Override
     protected void shutdown() {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Shutting down...");
-        NameplateManager.get().clearAll();
-        instance = null;
+
+        try {
+            NameplateManager.get().clearAll();
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING)
+                    .withCause(t)
+                    .log("[MysticNameTags] Error while clearing nameplates during shutdown.");
+        } finally {
+            MysticLog.shutdown();
+            instance = null;
+        }
     }
 
     public UpdateChecker getUpdateChecker() {
