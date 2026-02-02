@@ -131,26 +131,55 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         TagManager tagManager = TagManager.get();
         Collection<TagDefinition> all = tagManager.getAllTags();
 
-        if (filterQuery == null) {
+        boolean fullGate = Settings.get().isFullPermissionGateEnabled();
+
+        // Fast path: no filter and no full gate → just dump everything
+        if (!fullGate && filterQuery == null) {
             return new ArrayList<>(all);
         }
 
-        String needle = filterQuery.toLowerCase(Locale.ROOT);
+        String needle = (filterQuery != null)
+                ? filterQuery.toLowerCase(Locale.ROOT)
+                : null;
+
         List<TagDefinition> filtered = new ArrayList<>();
 
         for (TagDefinition def : all) {
-            String id = def.getId() != null ? def.getId() : "";
-            String display = def.getDisplay() != null ? def.getDisplay() : "";
-            String descr   = def.getDescription() != null ? def.getDescription() : "";
+            if (def == null) continue;
 
-            String plainDisplay = ColorFormatter.stripFormatting(display);
-
-            String haystack =
-                    (id + " " + plainDisplay + " " + descr).toLowerCase(Locale.ROOT);
-
-            if (haystack.contains(needle)) {
-                filtered.add(def);
+            // ----------------------------------------------------
+            // 1) Full permission gate: hide tags the player can't use
+            // ----------------------------------------------------
+            if (fullGate) {
+                String perm = def.getPermission();
+                if (perm != null && !perm.isEmpty()) {
+                    // No UUID? Treat as no access just to be safe.
+                    if (uuid == null || !tagManager.canUseTag(playerRef, uuid, def)) {
+                        continue; // 🔒 hide this tag from the list
+                    }
+                }
+                // Tags with no permission node are always visible
             }
+
+            // ----------------------------------------------------
+            // 2) Optional text filter (search)
+            // ----------------------------------------------------
+            if (needle != null) {
+                String id       = def.getId() != null ? def.getId() : "";
+                String display  = def.getDisplay() != null ? def.getDisplay() : "";
+                String descr    = def.getDescription() != null ? def.getDescription() : "";
+
+                String plainDisplay = ColorFormatter.stripFormatting(display);
+
+                String haystack = (id + " " + plainDisplay + " " + descr)
+                        .toLowerCase(Locale.ROOT);
+
+                if (!haystack.contains(needle)) {
+                    continue; // doesn't match filter
+                }
+            }
+
+            filtered.add(def);
         }
 
         return filtered;
