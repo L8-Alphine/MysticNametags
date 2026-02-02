@@ -1,8 +1,9 @@
-// MysticNameTags Dashboard UI
-// Import Common.ui for reusable components
+// MysticNameTags Dashboard UI (sidebar-style)
+
+// Common UI helpers
 $C = "../Common.ui";
 
-// Custom button styles
+// Primary/secondary button styles (bottom + quick actions)
 @PrimaryButton = TextButtonStyle(
   Default: (Background: #3a7bd5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
   Hovered: (Background: #4a8be5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
@@ -15,335 +16,507 @@ $C = "../Common.ui";
   Pressed: (Background: #1b2532, LabelStyle: (FontSize: 14, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
 );
 
-// Main container
+// Sidebar tab styles
+@SidebarButtonStyle = TextButtonStyle(
+  Default: (Background: #0a0f14, LabelStyle: (FontSize: 13, TextColor: #8a9aaa, RenderBold: false)),
+  Hovered: (Background: #1a2332(0.5), LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: false)),
+  Pressed: (Background: #1a2332(0.7), LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: false)),
+  Disabled: (Background: #0a0f14, LabelStyle: (FontSize: 13, TextColor: #5a6570, RenderBold: false)),
+  Sounds: $C.@ButtonSounds,
+);
+
+@SidebarButtonFocusedStyle = TextButtonStyle(
+  Default: (Background: #4a7bc8, LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: true)),
+  Hovered: (Background: #5a8bd8, LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: true)),
+  Pressed: (Background: #3a6bb8, LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: true)),
+  Disabled: (Background: #3a5f9f, LabelStyle: (FontSize: 13, TextColor: #b0c0d0, RenderBold: true)),
+  Sounds: $C.@ButtonSounds,
+);
+
+// Root
 Group {
-  // Match Tags UI width and feel more like a full panel
   Anchor: (Width: 1000, Height: 620);
   Background: #141c26(0.98);
-  LayoutMode: Top;
-  Padding: (Full: 24);
-
-  // Title
-  Label {
-    Text: "MysticNameTags Dashboard";
-    Anchor: (Height: 44);
-    Style: (FontSize: 26, TextColor: #ffffff, HorizontalAlignment: Center, RenderBold: true);
-  }
-
-  // Separator
-  Group { Anchor: (Height: 1); Background: #2b3542; }
-  Group { Anchor: (Height: 14); }
-
-  // Status text (runtime-updated)
-  Label #StatusText {
-    Text: "Welcome to MysticNameTags!";
-    Anchor: (Height: 30);
-    Style: (FontSize: 16, TextColor: #96a9be, HorizontalAlignment: Center);
-  }
-
-  Group { Anchor: (Height: 10); }
-
-  // Quick info rows
-  Group {
-    LayoutMode: Top;
-    Anchor: (Height: 90);
-
-    Label #VersionLabel {
-      Text: "Version: dev";
-      Anchor: (Height: 22);
-      Style: (FontSize: 13, TextColor: #b6c9de);
-    }
-
-    Label #IntegrationsLabel {
-      Text: "Integrations: (detecting...)";
-      Anchor: (Height: 22);
-      Style: (FontSize: 13, TextColor: #b6c9de);
-    }
-
-    Label #TagCountLabel {
-      Text: "Loaded Tags: 0";
-      Anchor: (Height: 22);
-      Style: (FontSize: 13, TextColor: #b6c9de);
-    }
-  }
-
-  Group { Anchor: (Height: 8); }
-
-  // Resource stats
-  Group {
-    LayoutMode: Top;
-    Anchor: (Height: 60);
-
-    Label #CpuLabel {
-      Text: "CPU: N/A";
-      Anchor: (Height: 24);
-      Style: (FontSize: 12, TextColor: #6e7da1);
-    }
-
-    Label #RamLabel {
-      Text: "RAM: N/A";
-      Anchor: (Height: 24);
-      Style: (FontSize: 12, TextColor: #6e7da1);
-    }
-  }
-
-  Group { Anchor: (Height: 10); }
+  LayoutMode: Left;
+  Padding: (Full: 0);
 
   // ======================
-  // Tabs header
+  // Sidebar
   // ======================
-  Group #TabHeader {
-    LayoutMode: Left;
-    Anchor: (Height: 32);
-    Background: #101623;
-    Padding: (Full: 4);
-
-    TextButton #OverviewTabButton {
-      Text: "Overview";
-      Anchor: (Width: 120, Height: 24);
-      Style: @SecondaryButton;
-    }
-
-    Group { Anchor: (Width: 8); }
-
-    TextButton #IntegrationsTabButton {
-      Text: "Integrations";
-      Anchor: (Width: 140, Height: 24);
-      Style: @SecondaryButton;
-    }
-
-    Group { Anchor: (Width: 8); }
-
-    TextButton #DebugTabButton {
-      Text: "Debug";
-      Anchor: (Width: 120, Height: 24);
-      Style: @SecondaryButton;
-    }
-  }
-
-  Group { Anchor: (Height: 8); }
-
-  // ======================
-  // Tabs content area
-  // ======================
-  Group #TabContent {
+  Group #Sidebar {
+    Anchor: (Width: 210);
     LayoutMode: Top;
-    Anchor: (Height: 220);
-    Background: #1c2432;
-    Padding: (Full: 10);
-
-    // --- Overview / How it works ---
-    Group #TabOverviewPanel {
-      LayoutMode: Top;
-      Anchor: (Full: 1);
-
-      Label {
-        Text: "How it works";
-        Anchor: (Height: 22);
-        Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
-      }
-
-      Label {
-        Text: "- Use /tags to open the Tag Selector";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Equip tags you own or purchase";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Nameplates refresh automatically on rank/tag change";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Use this dashboard to reload config and view status";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-    }
-
-    // --- Integrations details ---
-    Group #TabIntegrationsPanel {
-      LayoutMode: Top;
-      Anchor: (Full: 1);
-
-      Label {
-        Text: "Integrations";
-        Anchor: (Height: 22);
-        Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
-      }
-
-      Label {
-        Text: "- LuckPerms provides rank prefixes and permissions.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Economy priority: EconomySystem -> VaultUnlocked -> EliteEssentials.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Free tags still require permission nodes to be granted.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Dashboard shows which backends are currently detected.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-    }
-
-    // --- Debug info help ---
-    Group #TabDebugPanel {
-      LayoutMode: Top;
-      Anchor: (Full: 1);
-
-      Label {
-        Text: "Debug & Support";
-        Anchor: (Height: 22);
-        Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
-      }
-
-      Label {
-        Text: "- Use 'Debug Snapshot' to print a full status line to console.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Snapshot includes active tag, integrations and version info.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Attach that output when opening a bug report.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-
-      Label {
-        Text: "- Use 'Refresh Nameplate' after changing rank/tag manually.";
-        Anchor: (Height: 18);
-        Style: (FontSize: 12, TextColor: #96a9be);
-      }
-    }
-  }
-
-  Group { Anchor: (Height: 10); }
-
-  // Quick Actions box
-  Group {
-    LayoutMode: Top;
-    Anchor: (Height: 120);
-    Background: #1c2432;
-    Padding: (Full: 10);
+    Background: #0a0f14;
+    Padding: (Left: 14, Right: 14, Top: 16, Bottom: 16);
 
     Label {
-      Text: "Quick Actions";
-      Anchor: (Height: 22);
-      Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
+      Text: "MysticNameTags";
+      Anchor: (Height: 26);
+      Style: (FontSize: 18, TextColor: #ffffff, RenderBold: true);
     }
 
+    Label {
+      Text: "Dashboard";
+      Anchor: (Height: 18);
+      Style: (FontSize: 12, TextColor: #6e7da1);
+    }
+
+    Group { Anchor: (Height: 14); }
+
+    Label {
+      Text: "Sections";
+      Anchor: (Height: 18);
+      Style: (FontSize: 12, TextColor: #6e7da1, RenderBold: true);
+    }
+
+    Group { Anchor: (Height: 6); }
+
+    // Overview nav
+    Group {
+      LayoutMode: Top;
+      Anchor: (Height: 44);
+
+      TextButton #OverviewTabButtonSelected {
+        Text: "Overview";
+        Anchor: (Height: 36);
+        Style: @SidebarButtonFocusedStyle;
+        Visible: true;
+      }
+
+      TextButton #OverviewTabButton {
+        Text: "Overview";
+        Anchor: (Height: 36);
+        Style: @SidebarButtonStyle;
+        Visible: false;
+      }
+    }
+
+    Group { Anchor: (Height: 6); }
+
+    // Integrations nav
+    Group {
+      LayoutMode: Top;
+      Anchor: (Height: 44);
+
+      TextButton #IntegrationsTabButtonSelected {
+        Text: "Integrations";
+        Anchor: (Height: 36);
+        Style: @SidebarButtonFocusedStyle;
+        Visible: false;
+      }
+
+      TextButton #IntegrationsTabButton {
+        Text: "Integrations";
+        Anchor: (Height: 36);
+        Style: @SidebarButtonStyle;
+        Visible: true;
+      }
+    }
+
+    Group { Anchor: (Height: 6); }
+
+    // Debug nav
+    Group {
+      LayoutMode: Top;
+      Anchor: (Height: 44);
+
+      TextButton #DebugTabButtonSelected {
+        Text: "Debug & Support";
+        Anchor: (Height: 36);
+        Style: @SidebarButtonFocusedStyle;
+        Visible: false;
+      }
+
+      TextButton #DebugTabButton {
+        Text: "Debug & Support";
+        Anchor: (Height: 36);
+        Style: @SidebarButtonStyle;
+        Visible: true;
+      }
+    }
+
+    // Sidebar filler
+    Group { FlexWeight: 1; }
+
+    Label {
+      Text: "Use /mntag to open";
+      Anchor: (Height: 16);
+      Style: (FontSize: 11, TextColor: #4c5568);
+    }
+  }
+
+  // ======================
+  // Main content area
+  // ======================
+  Group #MainArea {
+    FlexWeight: 1;
+    LayoutMode: Top;
+    Padding: (Left: 18, Right: 18, Top: 18, Bottom: 16);
+
+    // Title row + close hint
     Group {
       LayoutMode: Left;
-      Anchor: (Height: 64);
+      Anchor: (Height: 40);
 
-      TextButton #OpenTagsButton {
-        Text: "Open Tag UI";
-        Anchor: (Width: 130, Height: 44);
+      Label {
+        Text: "MysticNameTags Dashboard";
+        Anchor: (Height: 40);
+        Style: (FontSize: 22, TextColor: #ffffff, RenderBold: true);
+        FlexWeight: 1;
+      }
+
+      Label {
+        Text: "Press ESC to close";
+        Anchor: (Height: 18);
+        Style: (FontSize: 11, TextColor: #555555);
+      }
+    }
+
+    Group { Anchor: (Height: 4); }
+    Group { Anchor: (Height: 1); Background: #2b3542; }
+    Group { Anchor: (Height: 10); }
+
+    // Status text
+    Label #StatusText {
+      Text: "Welcome to MysticNameTags!";
+      Anchor: (Height: 28);
+      Style: (FontSize: 15, TextColor: #96a9be);
+    }
+
+    Group { Anchor: (Height: 8); }
+
+    // Quick info (version + integrations + tags)
+    Group {
+      LayoutMode: Top;
+      Anchor: (Height: 86);
+      Background: #1c2432;
+      Padding: (Full: 10);
+
+      Label #VersionLabel {
+        Text: "Version: dev";
+        Anchor: (Height: 22);
+        Style: (FontSize: 13, TextColor: #b6c9de);
+      }
+
+      Label #IntegrationsLabel {
+        Text: "Integrations: (detecting...)";
+        Anchor: (Height: 22);
+        Style: (FontSize: 13, TextColor: #b6c9de);
+      }
+
+      Label #TagCountLabel {
+        Text: "Loaded Tags: 0";
+        Anchor: (Height: 22);
+        Style: (FontSize: 13, TextColor: #b6c9de);
+      }
+    }
+
+    Group { Anchor: (Height: 8); }
+
+    // Resource stats row
+    Group {
+      LayoutMode: Top;
+      Anchor: (Height: 56);
+      Background: #1c2432;
+      Padding: (Full: 10);
+
+      Label #CpuLabel {
+        Text: "CPU (JVM): N/A";
+        Anchor: (Height: 20);
+        Style: (FontSize: 12, TextColor: #6e7da1);
+      }
+
+      Label #RamLabel {
+        Text: "RAM (JVM): N/A";
+        Anchor: (Height: 20);
+        Style: (FontSize: 12, TextColor: #6e7da1);
+      }
+    }
+
+    Group { Anchor: (Height: 10); }
+
+    // ======================
+    // Tab content with scrollbar
+    // ======================
+    Group #TabContentContainer {
+      FlexWeight: 1;
+      LayoutMode: Top;
+      Background: #1c2432;
+      Padding: (Full: 8);
+
+      Group #TabScroll {
+        LayoutMode: TopScrolling;
+        Anchor: (Full: 1);
+        Padding: (Left: 2, Right: 6, Top: 2, Bottom: 2);
+        ScrollbarStyle: $C.@DefaultScrollbarStyle;
+
+        Group {
+          LayoutMode: Top;
+
+          // --- Overview ---
+          Group #TabOverviewPanel {
+            LayoutMode: Top;
+            Anchor: (Full: 1);
+
+            Label {
+              Text: "Overview";
+              Anchor: (Height: 22);
+              Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
+            }
+
+            Label {
+              Text: "- Use /tags to open the Tag Selector.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Equip tags you own or purchase via your economy plugin.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Nameplates refresh automatically when ranks/tags change.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Use this dashboard to reload config, clear caches and debug.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Group { Anchor: (Height: 6); }
+
+            Label {
+              Text: "Hints";
+              Anchor: (Height: 20);
+              Style: (FontSize: 12, TextColor: #ffffff, RenderBold: true);
+            }
+
+            Label {
+              Text: "- Add tags in tags.json, then click Reload to apply them.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Use /tagsadmin givetag <player> <id> to grant tags directly.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Use the Quick Actions box below for common admin tasks.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+          }
+
+          // --- Integrations ---
+          Group #TabIntegrationsPanel {
+            LayoutMode: Top;
+            Anchor: (Full: 1);
+            Visible: false;
+
+            Label {
+              Text: "Integrations";
+              Anchor: (Height: 22);
+              Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
+            }
+
+            Label {
+              Text: "- LuckPerms + PermissionsPlus provide rank groups and permissions.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Economy priority: EconomySystem → EcoTale → VaultUnlocked → EliteEssentials.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Free tags still require appropriate permission nodes.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- The summary above shows which backends are currently detected.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Group { Anchor: (Height: 8); }
+
+            Label {
+              Text: "Economy tips";
+              Anchor: (Height: 20);
+              Style: (FontSize: 12, TextColor: #ffffff, RenderBold: true);
+            }
+
+            Label {
+              Text: "- If no economy is detected, tag prices are ignored.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Use debug snapshot to confirm which economy backend is active.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+          }
+
+          // --- Debug ---
+          Group #TabDebugPanel {
+            LayoutMode: Top;
+            Anchor: (Full: 1);
+            Visible: false;
+
+            Label {
+              Text: "Debug & Support";
+              Anchor: (Height: 22);
+              Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
+            }
+
+            Label {
+              Text: "- 'Debug Snapshot' prints full plugin state to console/logs.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Snapshot includes active tag, integrations, and version info.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- Attach that output when opening a bug report.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- 'Refresh Nameplate' re-sends the current tag to your nameplate.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label {
+              Text: "- 'Clear Cache' forgets local tag + nameplate cache for you.";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+          }
+        }
+      }
+    }
+
+    Group { Anchor: (Height: 10); }
+
+    // ======================
+    // Quick actions
+    // ======================
+    Group {
+      LayoutMode: Top;
+      Anchor: (Height: 120);
+      Background: #1c2432;
+      Padding: (Full: 10);
+
+      Label {
+        Text: "Quick Actions";
+        Anchor: (Height: 22);
+        Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
+      }
+
+      Group {
+        LayoutMode: Left;
+        Anchor: (Height: 64);
+
+        TextButton #OpenTagsButton {
+          Text: "Open Tag UI";
+          Anchor: (Width: 130, Height: 44);
+          Style: @SecondaryButton;
+        }
+
+        Group { Anchor: (Width: 10); }
+
+        TextButton #ClearCacheButton {
+          Text: "Clear Cache";
+          Anchor: (Width: 130, Height: 44);
+          Style: @SecondaryButton;
+        }
+
+        Group { Anchor: (Width: 10); }
+
+        TextButton #RefreshNameplateButton {
+          Text: "Refresh Nameplate";
+          Anchor: (Width: 160, Height: 44);
+          Style: @SecondaryButton;
+        }
+
+        Group { Anchor: (Width: 10); }
+
+        TextButton #DebugSnapshotButton {
+          Text: "Debug Snapshot";
+          Anchor: (Width: 160, Height: 44);
+          Style: @SecondaryButton;
+        }
+      }
+    }
+
+    Group { Anchor: (Height: 10); }
+
+    // ======================
+    // Bottom buttons row
+    // ======================
+    Group {
+      LayoutMode: Left;
+      Anchor: (Height: 56);
+
+      TextButton #RefreshButton {
+        Text: "Refresh";
+        Anchor: (Width: 100, Height: 44);
+        Style: @PrimaryButton;
+      }
+
+      Group { Anchor: (Width: 12); }
+
+      TextButton #ReloadButton {
+        Text: "Reload";
+        Anchor: (Width: 100, Height: 44);
         Style: @SecondaryButton;
       }
 
-      Group { Anchor: (Width: 10); }
+      Group { Anchor: (Width: 12); }
 
-      TextButton #ClearCacheButton {
-        Text: "Clear Cache";
-        Anchor: (Width: 130, Height: 44);
+      TextButton #ModPageButton {
+        Text: "Mod Page";
+        Anchor: (Width: 110, Height: 44);
         Style: @SecondaryButton;
       }
 
-      Group { Anchor: (Width: 10); }
+      Group { Anchor: (Width: 12); }
 
-      TextButton #RefreshNameplateButton {
-        Text: "Refresh Nameplate";
-        Anchor: (Width: 160, Height: 44);
+      TextButton #BugReportButton {
+        Text: "Report Bug";
+        Anchor: (Width: 120, Height: 44);
         Style: @SecondaryButton;
       }
 
-      Group { Anchor: (Width: 10); }
+      Group { Anchor: (Width: 12); }
 
-      TextButton #DebugSnapshotButton {
-        Text: "Debug Snapshot";
-        Anchor: (Width: 160, Height: 44);
+      TextButton #CloseButton {
+        Text: "Close";
+        Anchor: (Width: 90, Height: 44);
         Style: @SecondaryButton;
       }
     }
-  }
-
-  // Spacer – pushes bottom row down
-  Group { FlexWeight: 1; }
-
-  // Buttons row
-  Group {
-    LayoutMode: Left;
-    Anchor: (Height: 56);
-
-    TextButton #RefreshButton {
-      Text: "Refresh";
-      Anchor: (Width: 100, Height: 44);
-      Style: @PrimaryButton;
-    }
-
-    Group { Anchor: (Width: 12); }
-
-    TextButton #ReloadButton {
-      Text: "Reload";
-      Anchor: (Width: 100, Height: 44);
-      Style: @SecondaryButton;
-    }
-
-    Group { Anchor: (Width: 12); }
-
-    TextButton #ModPageButton {
-      Text: "Mod Page";
-      Anchor: (Width: 110, Height: 44);
-      Style: @SecondaryButton;
-    }
-
-    Group { Anchor: (Width: 12); }
-
-    TextButton #BugReportButton {
-      Text: "Report Bug";
-      Anchor: (Width: 120, Height: 44);
-      Style: @SecondaryButton;
-    }
-
-    Group { Anchor: (Width: 12); }
-
-    TextButton #CloseButton {
-      Text: "Close";
-      Anchor: (Width: 90, Height: 44);
-      Style: @SecondaryButton;
-    }
-  }
-
-  // Footer
-  Group { Anchor: (Height: 10); }
-  Label {
-    Text: "Press ESC to close";
-    Anchor: (Height: 18);
-    Style: (FontSize: 11, TextColor: #555555, HorizontalAlignment: Center);
   }
 }
