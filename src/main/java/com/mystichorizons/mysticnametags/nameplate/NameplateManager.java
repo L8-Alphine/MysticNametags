@@ -33,12 +33,12 @@ public class NameplateManager {
 
         store.assertThread(); // defensive – will throw clearly if misused
 
-
-        if (MysticNameTagsPlugin.RPGLeveling()) {
-            int level = RPGLevelingAPI.get().getPlayerLevel(uuid);
-
-            newText = newText + " [Lvl. "  + level + "]";
-        }
+//
+//        if (MysticNameTagsPlugin.isRpgLevelingAvailable()) {
+//            int level = RPGLevelingAPI.get().getPlayerLevel(uuid);
+//
+//            newText = newText + " [Lvl. "  + level + "]";
+//        }
 
         Nameplate nameplate = store.getComponent(entityRef, Nameplate.getComponentType());
         if (nameplate == null) {
