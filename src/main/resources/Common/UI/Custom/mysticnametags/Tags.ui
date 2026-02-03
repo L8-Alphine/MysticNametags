@@ -13,7 +13,8 @@ $C.@PageOverlay {
       @ContentPadding = Padding(Full: 14);
       @CloseButton = false;
 
-      Anchor: (Width: 1000, Height: 840);
+      // Slightly taller
+      Anchor: (Width: 1400, Height: 760);
 
       // ===== 2-COLUMN CONTENT AREA =====
       Group #RootContent {
@@ -23,15 +24,16 @@ $C.@PageOverlay {
         // ===== LEFT: MAIN TAG LIST =====
         Group #Content {
           LayoutMode: Top;
-          Anchor: (Width: 700, Height: 780);
+          // Taller so footer has more breathing room
+          Anchor: (Width: 1000, Height: 690);
           Background: #020617(0.94);
-          Padding: (Full: 12);
+          Padding: (Left: 14, Top: 14, Right: 14, Bottom: 22);
 
           Label #TitleLabel {
             Text: "Tags";
-            Anchor: (Height: 22);
+            Anchor: (Height: 24);
             Style: (
-              FontSize: 18,
+              FontSize: 22,
               TextColor: #ffffff,
               RenderBold: true,
               HorizontalAlignment: Center
@@ -42,7 +44,7 @@ $C.@PageOverlay {
             Text: "Equip unlocked titles or purchase new ones.";
             Anchor: (Height: 18);
             Style: (
-              FontSize: 11,
+              FontSize: 13,
               TextColor: #cbd5f5,
               HorizontalAlignment: Center
             );
@@ -52,54 +54,87 @@ $C.@PageOverlay {
           Label #BalanceLabel {
             Text: "Balance: loading...";
             Anchor: (Height: 20);
-            Style: (FontSize: 13, TextColor: #cbd5f5);
+            Style: (FontSize: 14, TextColor: #cbd5f5);
           }
 
           // Current nameplate preview
           Label #CurrentNameplateLabel {
             Text: "Current: (loading...)";
             Anchor: (Height: 20);
-            Style: (FontSize: 13, TextColor: #cbd5f5);
+            Style: (FontSize: 14, TextColor: #cbd5f5);
           }
 
           // ===== SEARCH ROW =====
           Group #SearchRow {
             LayoutMode: Left;
-            Anchor: (Height: 26);
+            Anchor: (Height: 30);
             Padding: (Top: 4, Bottom: 4);
 
             Label {
               Text: "Search:";
-              Anchor: (Width: 60, Height: 20);
-              Style: (FontSize: 11, TextColor: #96a9be);
+              Anchor: (Width: 70, Height: 22);
+              Style: (FontSize: 12, TextColor: #96a9be);
             }
 
             $C.@TextField #TagSearchBox {
               FlexWeight: 0;
-              Anchor: (Width: 320, Height: 22);
+              Anchor: (Width: 420, Height: 24);
               PlaceholderText: "Search tags...";
             }
 
             Group { Anchor: (Width: 8); }
 
             $C.@SmallSecondaryTextButton #ApplyFilterButton {
-              @Anchor = (Width: 80, Height: 22);
-              Text: "Apply";
+              @Anchor = (Width: 84, Height: 24);
+              Text: "APPLY";
             }
 
             Group { Anchor: (Width: 6); }
 
             $C.@SmallSecondaryTextButton #ClearFilterButton {
-              @Anchor = (Width: 80, Height: 22);
-              Text: "Clear";
+              @Anchor = (Width: 84, Height: 24);
+              Text: "CLEAR";
             }
 
             Group { FlexWeight: 1; }
           }
 
-          Group { Anchor: (Height: 6); }
+          // Category row
+          Group #CategoryRow {
+            LayoutMode: Left;
+            Anchor: (Height: 24);
+            Padding: (Top: 2, Bottom: 2);
+
+            Label {
+              Text: "Category:";
+              Anchor: (Width: 80, Height: 20);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Label #CategoryValueLabel {
+              Text: "All";
+              Anchor: (Width: 140, Height: 20);
+              Style: (FontSize: 12, TextColor: #cbd5f5);
+            }
+
+            Group { FlexWeight: 1; }
+
+            $C.@SmallSecondaryTextButton #PrevCategoryButton {
+              @Anchor = (Width: 26, Height: 22);
+              Text: "<";
+            }
+
+            Group { Anchor: (Width: 4); }
+
+            $C.@SmallSecondaryTextButton #NextCategoryButton {
+              @Anchor = (Width: 26, Height: 22);
+              Text: ">";
+            }
+          }
+
+          Group { Anchor: (Height: 4); }
           $C.@ContentSeparator { }
-          Group { Anchor: (Height: 6); }
+          Group { Anchor: (Height: 4); }
 
           // List header
           Group #ListHeader {
@@ -109,22 +144,31 @@ $C.@PageOverlay {
 
             Label {
               Text: "Tag";
-              Anchor: (Width: 400, Height: 18);
-              Style: (FontSize: 11, TextColor: #64748b);
+              Anchor: (Width: 420, Height: 20);
+              Style: (FontSize: 12, TextColor: #64748b);
             }
 
             Label {
+              Text: "Category";
+              Anchor: (Width: 120, Height: 20);
+              Style: (FontSize: 12, TextColor: #64748b);
+            }
+
+            // Spacer so Category and Cost don’t touch
+            Group { Anchor: (Width: 12); }
+
+            Label {
               Text: "Cost";
-              Anchor: (Width: 150, Height: 18);
-              Style: (FontSize: 11, TextColor: #64748b);
+              Anchor: (Width: 130, Height: 20);
+              Style: (FontSize: 12, TextColor: #64748b);
             }
 
             Group { FlexWeight: 1; }
 
             Label {
               Text: "Action";
-              Anchor: (Width: 80, Height: 18);
-              Style: (FontSize: 11, TextColor: #64748b);
+              Anchor: (Width: 100, Height: 20);
+              Style: (FontSize: 12, TextColor: #64748b);
             }
           }
 
@@ -136,42 +180,55 @@ $C.@PageOverlay {
             LayoutMode: Top;
             Padding: (Right: 4);
 
-            // Row template: 10 copies
-
             // Row 0
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow0Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow0Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow0CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow0Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow0Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow0Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -179,37 +236,52 @@ $C.@PageOverlay {
             // Row 1
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow1Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow1Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow1CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow1Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow1Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow1Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -217,37 +289,52 @@ $C.@PageOverlay {
             // Row 2
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow2Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow2Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow2CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow2Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow2Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow2Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -255,37 +342,52 @@ $C.@PageOverlay {
             // Row 3
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow3Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow3Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow3CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow3Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow3Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow3Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -293,37 +395,52 @@ $C.@PageOverlay {
             // Row 4
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow4Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow4Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow4CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow4Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow4Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow4Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -331,37 +448,52 @@ $C.@PageOverlay {
             // Row 5
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow5Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow5Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow5CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow5Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow5Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow5Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -369,37 +501,52 @@ $C.@PageOverlay {
             // Row 6
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow6Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow6Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow6CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow6Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow6Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow6Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -407,37 +554,52 @@ $C.@PageOverlay {
             // Row 7
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow7Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow7Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow7CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow7Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow7Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow7Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -445,37 +607,52 @@ $C.@PageOverlay {
             // Row 8
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow8Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow8Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow8CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow8Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow8Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow8Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -483,37 +660,52 @@ $C.@PageOverlay {
             // Row 9
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 48);
-              Padding: (Left: 10, Right: 10, Bottom: 3);
-              Background: #020617(0.9);
+              Anchor: (Height: 42);
+              Padding: (Left: 12, Right: 12, Bottom: 4);
+              Background: #020617(0.86);
 
               Group {
                 LayoutMode: Top;
-                Anchor: (Width: 400, Height: 32);
+                Anchor: (Width: 420, Height: 32);
 
                 Label #TagRow9Name {
                   Text: "Tag Name";
                   Anchor: (Height: 18);
-                  Style: (FontSize: 13, TextColor: #ffffff);
+                  Style: (FontSize: 15, TextColor: #ffffff);
                 }
 
                 Label #TagRow9Description {
                   Text: "Short description of this tag.";
                   Anchor: (Height: 14);
-                  Style: (FontSize: 11, TextColor: #94a3b8);
+                  Style: (FontSize: 12, TextColor: #94a3b8);
                 }
               }
 
+              Group #TagRow9CategoryPill {
+                LayoutMode: Left;
+                Anchor: (Width: 120, Height: 20);
+                Padding: (Left: 6, Right: 6, Top: 2, Bottom: 2);
+                Background: #020617(0.9);
+
+                Label #TagRow9Category {
+                  Text: "Category";
+                  Anchor: (Full: 1);
+                  Style: (FontSize: 11, TextColor: #cbd5f5, HorizontalAlignment: Center);
+                }
+              }
+
+              Group { Anchor: (Width: 12); }
+
               Label #TagRow9Price {
                 Text: "Price";
-                Anchor: (Width: 150, Height: 20);
-                Style: (FontSize: 12, TextColor: #b6c9de);
+                Anchor: (Width: 130, Height: 20);
+                Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow9Button {
-                @Anchor = (Width: 120, Height: 24);
+                @Anchor = (Width: 130, Height: 22);
                 Text: "Select";
               }
             }
@@ -521,13 +713,13 @@ $C.@PageOverlay {
 
           Group { Anchor: (Height: 6); }
 
-          // ===== PAGE CONTROLS (page number centered) =====
+          // ===== PAGE CONTROLS =====
           Group #PageControls {
             LayoutMode: Left;
-            Anchor: (Height: 26);
+            Anchor: (Height: 24);
 
             $C.@SmallSecondaryTextButton #PrevPageButton {
-              @Anchor = (Width: 100, Height: 24);
+              @Anchor = (Width: 110, Height: 22);
               Text: "Prev";
             }
 
@@ -535,168 +727,193 @@ $C.@PageOverlay {
 
             Label #PageLabel {
               Text: "Page 1/1";
-              Anchor: (Width: 200, Height: 20);
-              Style: (FontSize: 11, TextColor: #96a9be, HorizontalAlignment: Center);
+              Anchor: (Width: 220, Height: 20);
+              Style: (FontSize: 12, TextColor: #96a9be, HorizontalAlignment: Center);
             }
 
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #NextPageButton {
-              @Anchor = (Width: 100, Height: 24);
+              @Anchor = (Width: 110, Height: 22);
               Text: "Next";
             }
           }
 
-          // Spacer to push the footer closer to the bottom of the card
-          Group { FlexWeight: 1; }
-
-          Group { Anchor: (Height: 4); }
+          // Bigger gap before footer so NEXT/CLOSE feel comfortably inside
+          Group { Anchor: (Height: 18); }
 
           // ===== FOOTER =====
           Group {
             LayoutMode: Left;
-            Anchor: (Height: 25);
+            Anchor: (Height: 26);
 
             Label {
               Text: "Click a tag to buy/equip.";
-              Anchor: (Height: 16);
-              Style: (FontSize: 11, TextColor: #555555);
+              Anchor: (Height: 20);
+              Style: (FontSize: 12, TextColor: #64748b);
             }
 
             Group { FlexWeight: 1; }
 
             $C.@SmallSecondaryTextButton #BottomCloseButton {
-              @Anchor = (Width: 100, Height: 28);
-              Text: "Close";
+              @Anchor = (Width: 110, Height: 26);
+              Text: "CLOSE";
             }
           }
         }
 
-        // Spacer between main column and sidebar (wider is fine)
+        // Spacer between main column and sidebar
         Group { Anchor: (Width: 20); }
 
         // ===== RIGHT: HOW IT WORKS SIDEBAR =====
         Group #HowItWorksPanel {
           LayoutMode: Top;
-          Anchor: (Width: 250, Height: 780);
+          Anchor: (Width: 340, Height: 690);
           Background: #020617(0.94);
-          Padding: (Full: 10);
+          Padding: (Full: 12);
 
           Label {
             Text: "How it works";
-            Anchor: (Height: 22);
+            Anchor: (Height: 24);
             Style: (
-              FontSize: 14,
+              FontSize: 15,
               TextColor: #ffffff,
               RenderBold: true
             );
           }
 
-          // Bullet lines – no \n needed
           Label {
             Text: "• Use /tags to open this menu.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "• Left panel shows all available tags.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "  You can filter them using the search box.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
-          Group { Anchor: (Height: 6); }
+          Group { Anchor: (Height: 8); }
 
           Label {
             Text: "• Tags may be:";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "   - Free (no cost)";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "   - Permission-only";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "   - Purchasable with currency";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
-          Group { Anchor: (Height: 6); }
+          Group { Anchor: (Height: 8); }
 
           Label {
             Text: "• If a tag has a permission,";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "  you must have it to see, buy,";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "  unlock, or equip that tag.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
-          Group { Anchor: (Height: 6); }
+          Group { Anchor: (Height: 8); }
 
           Label {
             Text: "• Click a tag to purchase or equip it.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "  Your active tag is shown in the preview.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
-          Group { Anchor: (Height: 6); }
+          Group { Anchor: (Height: 8); }
 
           Label {
             Text: "• Nameplates are plain text only,";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "  but chat and UI use full colors.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
-          Group { Anchor: (Height: 6); }
+          Group { Anchor: (Height: 8); }
 
           Label {
             Text: "• Staff can use the dashboard UI";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
 
           Label {
             Text: "  to reload tags and debug issues.";
-            Anchor: (Height: 16);
-            Style: (FontSize: 11, TextColor: #cbd5f5);
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
+          }
+
+          Group { Anchor: (Height: 8); }
+
+          Label {
+            Text: "• Tags can be grouped by category.";
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
+          }
+
+          Label {
+            Text: "  Use the arrows to switch categories.";
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
+          }
+
+          Group { Anchor: (Height: 8); }
+
+          Label {
+            Text: "• With Full Permission Gate enabled,";
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
+          }
+
+          Label {
+            Text: "  tags you don't have access to are hidden.";
+            Anchor: (Height: 18);
+            Style: (FontSize: 12, TextColor: #cbd5f5);
           }
         }
       }
