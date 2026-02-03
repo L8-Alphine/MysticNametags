@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.8'
+version = '1.0.9'
 
 repositories {
     mavenCentral()
@@ -47,7 +47,7 @@ dependencies {
     compileOnly files('libs/PrefixesPlus-3.2.6.jar')
 
     //RPGLeveling Support
-    compileOnly files('libs/RPGLeveling-0.2.1.jar')
+    compileOnly files('libs/RPGLeveling-0.2.2.jar')
 }
 
 java {
