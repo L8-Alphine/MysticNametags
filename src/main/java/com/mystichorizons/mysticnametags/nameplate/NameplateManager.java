@@ -4,6 +4,8 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
 import java.util.Map;
@@ -30,6 +32,13 @@ public class NameplateManager {
                       @Nonnull String newText) {
 
         store.assertThread(); // defensive – will throw clearly if misused
+
+
+        if (MysticNameTagsPlugin.RPGLeveling()) {
+            int level = RPGLevelingAPI.get().getPlayerLevel(uuid);
+
+            newText = newText + " [Lvl. "  + level + "]";
+        }
 
         Nameplate nameplate = store.getComponent(entityRef, Nameplate.getComponentType());
         if (nameplate == null) {

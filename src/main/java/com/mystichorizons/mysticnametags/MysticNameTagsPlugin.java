@@ -190,4 +190,12 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         }
         return "unknown";
     }
+
+
+    public static boolean RPGLeveling(){
+        // add conf support
+        return true;
+    }
+
+
 }
