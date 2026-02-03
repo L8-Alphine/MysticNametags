@@ -41,7 +41,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
-    // 10 rows, 10 tags per page
+    // 10 rows per page
     private static final int MAX_ROWS  = 10;
     private static final int PAGE_SIZE = 10;
 
@@ -53,6 +53,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     // Optional filter applied server-side (case-insensitive, mutable)
     private String filterQuery;
+
+    // Category: 0 = All, 1..N = actual categories from TagManager
+    private int categoryIndex = 0;
 
     // Per-page instance cache: tagId -> canUse
     private final Map<String, Boolean> canUseCache = new HashMap<>();
@@ -118,6 +121,17 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                         .append("Filter", "")
         );
 
+        evt.addEventBinding(
+                CustomUIEventBindingType.Activating,
+                "#PrevCategoryButton",
+                EventData.of("Action", "prev_category")
+        );
+        evt.addEventBinding(
+                CustomUIEventBindingType.Activating,
+                "#NextCategoryButton",
+                EventData.of("Action", "next_category")
+        );
+
         // Fill the dynamic content (rows, balance, preview)
         rebuildPage(ref, store, cmd, evt, true);
     }
@@ -131,10 +145,19 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         TagManager tagManager = TagManager.get();
         Collection<TagDefinition> all = tagManager.getAllTags();
 
-        boolean fullGate = Settings.get().isFullPermissionGateEnabled();
+        boolean fullGate        = Settings.get().isFullPermissionGateEnabled();
+        boolean debugShowHidden = tagManager.isShowHiddenTagsForDebug();
 
-        // Fast path: no filter and no full gate → just dump everything
-        if (!fullGate && filterQuery == null) {
+        // Selected category (0 = All, 1..N = actual category list)
+        List<String> categories = tagManager.getCategories();
+        boolean hasCategories   = !categories.isEmpty();
+        String selectedCategory = null;
+        if (hasCategories && categoryIndex > 0 && categoryIndex <= categories.size()) {
+            selectedCategory = categories.get(categoryIndex - 1);
+        }
+
+        // Fast path: no filter, no full gate, no category filter → dump everything
+        if (!fullGate && filterQuery == null && selectedCategory == null) {
             return new ArrayList<>(all);
         }
 
@@ -147,35 +170,41 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         for (TagDefinition def : all) {
             if (def == null) continue;
 
-            // ----------------------------------------------------
             // 1) Full permission gate: hide tags the player can't use
-            // ----------------------------------------------------
+            //    unless debug mode says "show hidden".
             if (fullGate) {
                 String perm = def.getPermission();
                 if (perm != null && !perm.isEmpty()) {
-                    // No UUID? Treat as no access just to be safe.
-                    if (uuid == null || !tagManager.canUseTag(playerRef, uuid, def)) {
-                        continue; // 🔒 hide this tag from the list
+                    boolean canUse = uuid != null && tagManager.canUseTag(playerRef, uuid, def);
+
+                    if (!canUse && !debugShowHidden) {
+                        continue;
                     }
                 }
-                // Tags with no permission node are always visible
             }
 
-            // ----------------------------------------------------
             // 2) Optional text filter (search)
-            // ----------------------------------------------------
             if (needle != null) {
                 String id       = def.getId() != null ? def.getId() : "";
                 String display  = def.getDisplay() != null ? def.getDisplay() : "";
                 String descr    = def.getDescription() != null ? def.getDescription() : "";
+                String category = def.getCategory() != null ? def.getCategory() : "";
 
                 String plainDisplay = ColorFormatter.stripFormatting(display);
 
-                String haystack = (id + " " + plainDisplay + " " + descr)
+                String haystack = (id + " " + plainDisplay + " " + descr + " " + category)
                         .toLowerCase(Locale.ROOT);
 
                 if (!haystack.contains(needle)) {
                     continue; // doesn't match filter
+                }
+            }
+
+            // 3) Category filter (if something other than "All" selected)
+            if (selectedCategory != null) {
+                String defCat = def.getCategory();
+                if (defCat == null || !defCat.equalsIgnoreCase(selectedCategory)) {
+                    continue;
                 }
             }
 
@@ -202,6 +231,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         TagManager tagManager = TagManager.get();
         IntegrationManager integrations = tagManager.getIntegrations();
+        boolean fullGate        = Settings.get().isFullPermissionGateEnabled();
+        boolean debugShowHidden = tagManager.isShowHiddenTagsForDebug();
 
         // Snapshot of tags for this filter
         List<TagDefinition> tags = createFilteredSnapshot();
@@ -254,7 +285,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         if (!econEnabled) {
             cmd.set("#BalanceLabel.Text", "Balance: N/A (no economy found)");
         } else if (usingCoins) {
-            cmd.set("#BalanceLabel.Text", "Coins: " + (long) balance);
+            cmd.set("#BalanceLabel.Text", "Cash: " + (long) balance);
         } else {
             cmd.set("#BalanceLabel.Text", "Balance: " + balance);
         }
@@ -264,10 +295,12 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         for (int i = startIndex; i < endIndex && row < MAX_ROWS; i++, row++) {
             TagDefinition def = tags.get(i);
 
-            String nameSelector   = "#TagRow" + row + "Name";
-            String descSelector   = "#TagRow" + row + "Description";
-            String priceSelector  = "#TagRow" + row + "Price";
-            String buttonSelector = "#TagRow" + row + "Button";
+            String nameSelector           = "#TagRow" + row + "Name";
+            String descSelector           = "#TagRow" + row + "Description";
+            String priceSelector          = "#TagRow" + row + "Price";
+            String buttonSelector         = "#TagRow" + row + "Button";
+            String categoryPillSelector   = "#TagRow" + row + "CategoryPill";
+            String categorySelector       = "#TagRow" + row + "Category";
 
             String rawDisplay      = def.getDisplay();
             String rawDescription  = def.getDescription();
@@ -276,7 +309,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             String nameText = ColorFormatter.stripFormatting(rawDisplay);
             String nameHex  = ColorFormatter.extractUiTextColor(rawDisplay);
 
-            // ---- Description: strip color codes, but let it be colored via codes too ----
+            // ---- Description: strip color codes ----
             String descText = rawDescription != null
                     ? ColorFormatter.stripFormatting(rawDescription)
                     : "";
@@ -295,9 +328,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
                 priceText = "Free";
             } else if (!econEnabled) {
-                priceText = def.getPrice() + " coins (economy disabled)";
+                priceText = def.getPrice() + " (economy disabled)";
+            } else if (usingCoins) {
+                priceText = def.getPrice() + " Cash";
             } else {
-                priceText = def.getPrice() + " coins";
+                priceText = def.getPrice() + " Coins";
             }
 
             cmd.set(nameSelector + ".Text", nameText);
@@ -330,27 +365,58 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
 
             String buttonText;
-            if (isEquipped) {
-                buttonText = "Unequip";
-            } else if (isFree) {
-                if (!owns) {
-                    buttonText = "Unlock";
-                } else {
-                    buttonText = "Equip";
-                }
-            } else if (hasCost) {
-                if (!owns) {
-                    buttonText = "Buy";
-                } else {
-                    buttonText = "Equip";
-                }
+            boolean isLockedByPerm = false;
+            String perm = def.getPermission();
+
+            // In Full Gate mode, permission is required to use the tag at all.
+            if (fullGate && perm != null && !perm.isEmpty() && !canUse) {
+                isLockedByPerm = true;
+            }
+
+            if (isLockedByPerm && debugShowHidden) {
+                // Visible only for admin debugging.
+                buttonText = "No access";
+
+                // Grey the row + category so it's obvious this is just a debug ghost row.
+                cmd.set(nameSelector + ".Style.TextColor", "#6b7280");
+                cmd.set(descSelector + ".Style.TextColor", "#6b7280");
+                cmd.set(categorySelector + ".Style.TextColor", "#9ca3af");
             } else {
-                buttonText = "Equip";
+                if (isEquipped) {
+                    buttonText = "Unequip";
+                } else if (isFree) {
+                    if (!owns) {
+                        buttonText = "Unlock";
+                    } else {
+                        buttonText = "Equip";
+                    }
+                } else if (hasCost) {
+                    if (!owns) {
+                        buttonText = "Buy";
+                    } else {
+                        buttonText = "Equip";
+                    }
+                } else {
+                    buttonText = "Equip";
+                }
             }
 
             cmd.set(buttonSelector + ".Text", buttonText);
 
-            // show row
+            // ---- Category pill text + visibility ----
+            String category = def.getCategory();
+            if (category == null || category.trim().isEmpty()) {
+                cmd.set(categoryPillSelector + ".Visible", false);
+                cmd.set(categorySelector + ".Visible", false);
+            } else {
+                cmd.set(categoryPillSelector + ".Visible", true);
+                cmd.set(categorySelector + ".Visible", true);
+                cmd.set(categorySelector + ".Text", category);
+                // reset to normal color in case previous state was "locked/grey"
+                cmd.set(categorySelector + ".Style.TextColor", "#cbd5f5");
+            }
+
+            // Make sure the main fields for this row are visible when reused
             cmd.set(nameSelector + ".Visible", true);
             cmd.set(descSelector + ".Visible", true);
             cmd.set(priceSelector + ".Visible", true);
@@ -360,7 +426,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             if (registerRowEvents) {
                 EventData rowEvent = new EventData()
                         .append("Action", "tag_click")
-                        .append("TagId", def.getId() != null ? def.getId() : "");
+                        .append("TagId", def.getId() != null ? def.getId() : "")
+                        .append("RowIndex", String.valueOf(row));
 
                 evt.addEventBinding(
                         CustomUIEventBindingType.Activating,
@@ -373,15 +440,19 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         // Hide unused rows
         for (; row < MAX_ROWS; row++) {
-            String nameSelector   = "#TagRow" + row + "Name";
-            String descSelector   = "#TagRow" + row + "Description";
-            String priceSelector  = "#TagRow" + row + "Price";
-            String buttonSelector = "#TagRow" + row + "Button";
+            String nameSelector           = "#TagRow" + row + "Name";
+            String descSelector           = "#TagRow" + row + "Description";
+            String priceSelector          = "#TagRow" + row + "Price";
+            String buttonSelector         = "#TagRow" + row + "Button";
+            String categoryPillSelector   = "#TagRow" + row + "CategoryPill";
+            String categorySelector       = "#TagRow" + row + "Category";
 
             cmd.set(nameSelector + ".Visible", false);
             cmd.set(descSelector + ".Visible", false);
             cmd.set(priceSelector + ".Visible", false);
             cmd.set(buttonSelector + ".Visible", false);
+            cmd.set(categoryPillSelector + ".Visible", false);
+            cmd.set(categorySelector + ".Visible", false);
         }
 
         // Page label + enable/disable arrows
@@ -400,6 +471,20 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#PageLabel.Text", label);
         cmd.set("#PrevPageButton.Visible", totalTags > 0 && currentPage > 0);
         cmd.set("#NextPageButton.Visible", totalTags > 0 && currentPage < totalPages - 1);
+
+        // ---- Category label + visibility ----
+        List<String> categories = tagManager.getCategories();
+        boolean hasCategories = !categories.isEmpty();
+
+        String categoryLabel = "All";
+        if (hasCategories && categoryIndex > 0 && categoryIndex <= categories.size()) {
+            categoryLabel = categories.get(categoryIndex - 1);
+        }
+
+        cmd.set("#CategoryValueLabel.Text", categoryLabel);
+        cmd.set("#CategoryValueLabel.Visible", hasCategories);
+        cmd.set("#PrevCategoryButton.Visible", hasCategories);
+        cmd.set("#NextCategoryButton.Visible", hasCategories);
 
         // ----- Current nameplate preview (colored) -----
         String previewText;
@@ -483,6 +568,54 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                     currentPage = 0;
                     canUseCache.clear();
                 }
+
+                UICommandBuilder cmd = new UICommandBuilder();
+                UIEventBuilder evt = new UIEventBuilder();
+                rebuildPage(ref, store, cmd, evt, true);
+                sendUpdate(cmd, null, false);
+            }
+
+            case "prev_category" -> {
+                TagManager tagManager = TagManager.get();
+                List<String> cats = tagManager.getCategories();
+                int maxIndex = cats.isEmpty() ? 0 : cats.size(); // 0 = All, 1..maxIndex = categories
+
+                if (maxIndex == 0) {
+                    categoryIndex = 0; // no categories
+                } else {
+                    // rotate backwards in range [0, maxIndex]
+                    categoryIndex--;
+                    if (categoryIndex < 0) {
+                        categoryIndex = maxIndex; // wrap from All → last category
+                    }
+                }
+
+                currentPage = 0;
+                canUseCache.clear();
+
+                UICommandBuilder cmd = new UICommandBuilder();
+                UIEventBuilder evt = new UIEventBuilder();
+                rebuildPage(ref, store, cmd, evt, true);
+                sendUpdate(cmd, null, false);
+            }
+
+            case "next_category" -> {
+                TagManager tagManager = TagManager.get();
+                List<String> cats = tagManager.getCategories();
+                int maxIndex = cats.isEmpty() ? 0 : cats.size(); // 0 = All, 1..maxIndex = categories
+
+                if (maxIndex == 0) {
+                    categoryIndex = 0;
+                } else {
+                    // rotate forward in range [0, maxIndex]
+                    categoryIndex++;
+                    if (categoryIndex > maxIndex) {
+                        categoryIndex = 0; // wrap back to All
+                    }
+                }
+
+                currentPage = 0;
+                canUseCache.clear();
 
                 UICommandBuilder cmd = new UICommandBuilder();
                 UIEventBuilder evt = new UIEventBuilder();
@@ -580,7 +713,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 UICommandBuilder updateCmd = new UICommandBuilder();
                 UIEventBuilder updateEvt = new UIEventBuilder();
 
-                // You can safely re-register row events here if you prefer:
                 rebuildPage(ref, store, updateCmd, updateEvt, true);
                 sendUpdate(updateCmd, updateEvt, false);
             }
