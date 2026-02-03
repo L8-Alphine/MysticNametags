@@ -64,6 +64,21 @@ public class Settings {
      */
     private boolean fullPermissionGate = false;
 
+    /**
+     * If true, MysticNameTags will append the RPGLeveling
+     * player level to nameplates (e.g. "Name [Lvl. 18]"),
+     * assuming the RPGLeveling API is available.
+     */
+    private boolean rpgLevelingNameplatesEnabled = false;
+
+    /**
+     * Interval (in seconds) for refreshing RPGLeveling
+     * levels on nameplates for online players.
+     *
+     * Minimum enforced at 5 seconds.
+     */
+    private int rpgLevelingRefreshSeconds = 30;
+
     public static void init() {
         INSTANCE = new Settings();
         INSTANCE.load();
@@ -81,7 +96,6 @@ public class Settings {
     private void load() {
         File file = getFile();
 
-        // If the file doesn't exist, write out a brand-new one with defaults.
         if (!file.exists()) {
             saveToDisk();
             return;
@@ -90,19 +104,19 @@ public class Settings {
         try (FileReader reader = new FileReader(file)) {
             Settings loaded = GSON.fromJson(reader, Settings.class);
             if (loaded != null) {
-                this.nameplateFormat     = loaded.nameplateFormat;
-                this.stripExtraSpaces    = loaded.stripExtraSpaces;
-                this.economySystemEnabled = loaded.economySystemEnabled;
-                this.useCoinSystem        = loaded.useCoinSystem;
-                this.fullPermissionGate   = loaded.fullPermissionGate;
+                this.nameplateFormat       = loaded.nameplateFormat;
+                this.stripExtraSpaces      = loaded.stripExtraSpaces;
+                this.economySystemEnabled  = loaded.economySystemEnabled;
+                this.useCoinSystem         = loaded.useCoinSystem;
+                this.fullPermissionGate    = loaded.fullPermissionGate;
+                this.rpgLevelingNameplatesEnabled = loaded.rpgLevelingNameplatesEnabled;
+                this.rpgLevelingRefreshSeconds    = loaded.rpgLevelingRefreshSeconds;
             }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
                     .log("[MysticNameTags] Failed to load settings.json, using defaults.");
         }
 
-        // Always re-save after loading so any *new* fields get written
-        // back out with their current values (including defaults).
         saveToDisk();
     }
 
@@ -152,5 +166,13 @@ public class Settings {
 
     public boolean isFullPermissionGateEnabled() {
         return fullPermissionGate;
+    }
+
+    public boolean isRpgLevelingNameplatesEnabled() {
+        return rpgLevelingNameplatesEnabled;
+    }
+
+    public int getRpgLevelingRefreshSeconds() {
+        return Math.max(5, rpgLevelingRefreshSeconds);
     }
 }
