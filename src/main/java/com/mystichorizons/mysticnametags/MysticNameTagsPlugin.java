@@ -19,6 +19,9 @@ import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
 /**
@@ -28,6 +31,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
     private static MysticNameTagsPlugin instance;
+    private ScheduledExecutorService levelScheduler;
 
     private IntegrationManager integrations;
     private UpdateChecker updateChecker;
@@ -161,11 +165,36 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.WARNING)
                     .log("[MysticNameTags][Debug] EconomySystem API not reachable at startup");
         }
+
+        // ─────────────────────────────────────────
+        // RPGLeveling nameplate refresher
+        // ─────────────────────────────────────────
+        int intervalSec = Settings.get().getRpgLevelingRefreshSeconds();
+
+        levelScheduler = Executors.newSingleThreadScheduledExecutor(
+                r -> {
+                    Thread t = new Thread(r, "MysticNameTags-LevelRefresher");
+                    t.setDaemon(true);
+                    return t;
+                });
+
+        levelScheduler.scheduleAtFixedRate(
+                new com.mystichorizons.mysticnametags.nameplate.LevelNameplateRefreshTask(),
+                intervalSec,
+                intervalSec,
+                TimeUnit.SECONDS
+        );
     }
 
     @Override
     protected void shutdown() {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Shutting down...");
+
+        try {
+            if (levelScheduler != null) {
+                levelScheduler.shutdownNow();
+            }
+        } catch (Throwable ignored) {}
 
         try {
             NameplateManager.get().clearAll();
@@ -192,9 +221,18 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     }
 
 
-    public static boolean RPGLeveling(){
-        // add conf support
-        return true;
+    public static boolean isRpgLevelingAvailable() {
+        try {
+            if (!Settings.get().isRpgLevelingNameplatesEnabled()) {
+                return false;
+            }
+
+            // Safe probe of the API
+            org.zuxaw.plugin.api.RPGLevelingAPI api = org.zuxaw.plugin.api.RPGLevelingAPI.get();
+            return api != null;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
 
