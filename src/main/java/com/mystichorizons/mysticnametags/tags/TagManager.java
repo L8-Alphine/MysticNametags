@@ -29,7 +29,16 @@ import java.util.logging.Level;
 public class TagManager {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    private static final Gson GSON = new GsonBuilder()
+            .setPrettyPrinting()
+            .disableHtmlEscaping()
+            .create();
+
+    /**
+     * Default category used when upgrading tags.json entries that
+     * are missing a category (older plugin versions).
+     */
+    private static final String DEFAULT_CATEGORY = "General";
 
     private static TagManager instance;
 
@@ -45,6 +54,12 @@ public class TagManager {
     // Avoids repeated permission checks on large tag sets.
     private final Map<UUID, Map<String, Boolean>> canUseCache = new ConcurrentHashMap<>();
 
+    private volatile List<String> categories = Collections.emptyList();
+
+    // When true, the tags UI will still LIST tags that would normally be
+    // hidden by Full Permission Gate, so staff can see/debug them.
+    private volatile boolean showHiddenTagsForDebug = false;
+
     private File configFile;
     private File playerDataFolder;
 
@@ -55,6 +70,18 @@ public class TagManager {
 
     public static TagManager get() {
         return instance;
+    }
+
+    public List<String> getCategories() {
+        return categories;
+    }
+
+    public boolean isShowHiddenTagsForDebug() {
+        return showHiddenTagsForDebug;
+    }
+
+    public void setShowHiddenTagsForDebug(boolean showHiddenTagsForDebug) {
+        this.showHiddenTagsForDebug = showHiddenTagsForDebug;
     }
 
     private TagManager(@Nonnull IntegrationManager integrations) {
@@ -77,62 +104,140 @@ public class TagManager {
                 saveDefaultConfig();
             }
 
+            List<TagDefinition> list;
             try (InputStreamReader reader =
                          new InputStreamReader(
                                  new FileInputStream(configFile),
                                  StandardCharsets.UTF_8)) {
 
                 Type listType = new TypeToken<List<TagDefinition>>(){}.getType();
-                List<TagDefinition> list = GSON.fromJson(reader, listType);
+                list = GSON.fromJson(reader, listType);
+            }
 
-                int rawCount         = (list != null) ? list.size() : 0;
-                int skippedNull      = 0;
-                int skippedNoId      = 0;
-                int overwrittenDupes = 0;
+            int rawCount         = (list != null) ? list.size() : 0;
+            int skippedNull      = 0;
+            int skippedNoId      = 0;
+            int overwrittenDupes = 0;
 
-                tags.clear();
+            // ----- Auto-upgrade: ensure all tags have a category -----
+            boolean upgradedCategories = upgradeCategoriesIfNeeded(list);
 
-                if (list != null) {
-                    for (TagDefinition def : list) {
-                        if (def == null) {
-                            skippedNull++;
-                            continue;
-                        }
-                        String id = def.getId();
-                        if (id == null || id.trim().isEmpty()) {
-                            skippedNoId++;
-                            continue;
-                        }
+            tags.clear();
 
-                        String key = id.toLowerCase(Locale.ROOT);
-                        if (tags.containsKey(key)) {
-                            overwrittenDupes++;
-                            LOGGER.at(Level.FINE)
-                                    .log("[MysticNameTags] Duplicate tag id '" + key + "' – overwriting previous definition.");
-                        }
+            if (list != null) {
+                for (TagDefinition def : list) {
+                    if (def == null) {
+                        skippedNull++;
+                        continue;
+                    }
+                    String id = def.getId();
+                    if (id == null || id.trim().isEmpty()) {
+                        skippedNoId++;
+                        continue;
+                    }
 
-                        tags.put(key, def);
+                    String key = id.toLowerCase(Locale.ROOT);
+                    if (tags.containsKey(key)) {
+                        overwrittenDupes++;
+                        LOGGER.at(Level.FINE)
+                                .log("[MysticNameTags] Duplicate tag id '" + key + "' – overwriting previous definition.");
+                    }
+
+                    tags.put(key, def);
+                }
+            }
+
+            // Rebuild tagList
+            tagList = List.copyOf(tags.values());
+
+            // rebuild category list from current definitions
+            Set<String> catSet = new LinkedHashSet<>();
+            for (TagDefinition def : tags.values()) {
+                String cat = def.getCategory();
+                if (cat != null) {
+                    cat = cat.trim();
+                    if (!cat.isEmpty()) {
+                        catSet.add(cat);
                     }
                 }
-
-                tagList = List.copyOf(tags.values());
-
-                LOGGER.at(Level.INFO).log("[MysticNameTags] Parsed " + rawCount + " entries from tags.json");
-                if (skippedNull > 0) {
-                    LOGGER.at(Level.WARNING).log("[MysticNameTags] Skipped " + skippedNull + " null tag entries.");
-                }
-                if (skippedNoId > 0) {
-                    LOGGER.at(Level.WARNING).log("[MysticNameTags] Skipped " + skippedNoId + " entries with missing/empty id.");
-                }
-                if (overwrittenDupes > 0) {
-                    LOGGER.at(Level.WARNING).log("[MysticNameTags] " + overwrittenDupes + " entries overwrote an existing tag id.");
-                }
-
-                LOGGER.at(Level.INFO).log("[MysticNameTags] Loaded " + tags.size() + " unique tags.");
             }
+            categories = List.copyOf(catSet);
+
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Parsed " + rawCount + " entries from tags.json");
+            if (skippedNull > 0) {
+                LOGGER.at(Level.WARNING).log("[MysticNameTags] Skipped " + skippedNull + " null tag entries.");
+            }
+            if (skippedNoId > 0) {
+                LOGGER.at(Level.WARNING).log("[MysticNameTags] Skipped " + skippedNoId + " entries with missing/empty id.");
+            }
+            if (overwrittenDupes > 0) {
+                LOGGER.at(Level.WARNING).log("[MysticNameTags] " + overwrittenDupes + " entries overwrote an existing tag id.");
+            }
+
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Loaded " + tags.size() + " unique tags.");
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Detected " + categories.size() + " categories: " + categories);
+
+            // If we upgraded any entries (added default categories),
+            // write the new structure back to disk so the file is permanently updated.
+            if (upgradedCategories && list != null) {
+                saveConfig(list);
+            }
+
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
                     .log("[MysticNameTags] Failed to load tags.json");
+        }
+    }
+
+    /**
+     * Auto-upgrade step: ensure every tag has a non-empty category.
+     * This is mainly for older tags.json files created before categories existed.
+     *
+     * @param list the parsed tag list (may be null)
+     * @return true if any tag was modified and the file should be saved back.
+     */
+    private boolean upgradeCategoriesIfNeeded(@Nullable List<TagDefinition> list) {
+        if (list == null || list.isEmpty()) {
+            return false;
+        }
+
+        boolean changed = false;
+
+        for (TagDefinition def : list) {
+            if (def == null) {
+                continue;
+            }
+
+            String cat = def.getCategory();
+            if (cat == null || cat.trim().isEmpty()) {
+                // Because TagDefinition lives in the same package, we can safely
+                // access its package-private field or setter here.
+                def.setCategory(DEFAULT_CATEGORY); // if you don't have a setter, use: def.category = DEFAULT_CATEGORY;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] Auto-updated tags.json: missing categories set to '" + DEFAULT_CATEGORY + "'.");
+        }
+
+        return changed;
+    }
+
+    /**
+     * Writes the given tag list back to tags.json using the shared GSON instance.
+     */
+    private void saveConfig(@Nonnull List<TagDefinition> list) {
+        try (OutputStreamWriter writer =
+                     new OutputStreamWriter(
+                             new FileOutputStream(configFile),
+                             StandardCharsets.UTF_8)) {
+
+            GSON.toJson(list, writer);
+        } catch (Exception e) {
+            LOGGER.at(Level.WARNING).withCause(e)
+                    .log("[MysticNameTags] Failed to write upgraded tags.json");
         }
     }
 
@@ -151,6 +256,7 @@ public class TagManager {
                     .price(0)
                     .purchasable(false)
                     .permission("mysticnametags.tag.mystic")
+                    .category("Special")
                     .build();
 
             TagDefinition dragon = new TagDefinitionBuilder()
@@ -160,6 +266,7 @@ public class TagManager {
                     .price(5000)
                     .purchasable(true)
                     .permission("mysticnametags.tag.dragon")
+                    .category("Legendary")
                     .build();
 
             defaults.add(mystic);
@@ -633,6 +740,11 @@ public class TagManager {
 
         public TagDefinitionBuilder permission(String p) {
             def.permission = p;
+            return this;
+        }
+
+        public TagDefinitionBuilder category(String c) {
+            def.category = c;
             return this;
         }
 
