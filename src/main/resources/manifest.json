@@ -19,7 +19,8 @@
     "Economy:EconomySystem": "*",
     "Azeys:PrefixesPlus": "*",
     "LuckPerms:LuckPerms": "*",
-    "PermissionsPlus:PermissionsPlus": "*"
+    "PermissionsPlus:PermissionsPlus": "*",
+    "Zuxaw:RPGLeveling": "*"
   },
   "IncludesAssetPack": true
 }
