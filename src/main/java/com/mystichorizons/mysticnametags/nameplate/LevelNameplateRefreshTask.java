@@ -2,6 +2,7 @@ package com.mystichorizons.mysticnametags.nameplate;
 
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -13,8 +14,11 @@ import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
 import java.util.UUID;
+import java.util.logging.Level;
 
 public class LevelNameplateRefreshTask implements Runnable {
+
+    private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
     @Override
     public void run() {
@@ -31,12 +35,7 @@ public class LevelNameplateRefreshTask implements Runnable {
             return;
         }
 
-        RPGLevelingAPI api;
-        try {
-            api = RPGLevelingAPI.get();
-        } catch (Throwable t) {
-            return;
-        }
+        RPGLevelingAPI api = RPGLevelingAPI.get();
         if (api == null) {
             return;
         }
@@ -55,7 +54,8 @@ public class LevelNameplateRefreshTask implements Runnable {
                               @Nonnull TagManager tagManager,
                               @Nonnull RPGLevelingAPI api) {
 
-        Store<EntityStore> store = world.getEntityStore().getStore();
+        EntityStore entityStore = world.getEntityStore();
+        Store<EntityStore> store = entityStore.getStore();
 
         for (PlayerRef playerRef : world.getPlayerRefs()) {
             if (playerRef == null) continue;
@@ -69,15 +69,25 @@ public class LevelNameplateRefreshTask implements Runnable {
             String baseName = playerRef.getUsername();
             if (baseName == null) baseName = "Player";
 
-            // Build the "rank + tag" piece using MysticNameTags
+            // Build the "rank + tag" piece using MysticNameTags (plain text for nameplate)
             String plainNameplate = tagManager.buildPlainNameplate(playerRef, baseName, uuid);
 
-            // Fetch RPG level
-            int level;
+            int level = 1; // sensible default
+
             try {
-                level = api.getPlayerLevel(uuid);
+                // IMPORTANT: use the PlayerRef + Store overload so we hit live data
+                RPGLevelingAPI.PlayerLevelInfo info = api.getPlayerLevelInfo(playerRef, store);
+                if (info != null) {
+                    int apiLevel = info.getLevel();
+                    if (apiLevel > 0) {
+                        level = apiLevel;
+                    }
+                }
             } catch (Throwable t) {
-                level = 1;
+                LOGGER.at(Level.WARNING).log(
+                        "[MysticNameTags] Failed to fetch RPG level for " +
+                                baseName + " (" + uuid + "), defaulting to 1" + t
+                );
             }
 
             String finalText = plainNameplate + " [Lvl. " + level + "]";
