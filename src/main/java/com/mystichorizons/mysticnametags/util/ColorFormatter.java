@@ -356,11 +356,42 @@ public final class ColorFormatter {
                                 parts.add(buildSegment(segment, currentColor, bold, italic));
                             }
                         }
-                        currentColor = new Color(Integer.parseInt(hexPart, 16));
+                        try {
+                            currentColor = new Color(Integer.parseInt(hexPart, 16));
+                        } catch (NumberFormatException ignored) {}
+
                         i += 8;
                         textStart = i;
                         continue;
                     }
+                }
+
+                // Expanded hex: &x&F&F&0&0&0&0 / §x§f§f§0§0§0§0
+                if ((next == 'x' || next == 'X') && i + 13 < text.length()) {
+                    // flush pending text
+                    if (i > textStart) {
+                        String segment = text.substring(textStart, i);
+                        if (!segment.isEmpty()) {
+                            parts.add(buildSegment(segment, currentColor, bold, italic));
+                        }
+                    }
+
+                    StringBuilder hex = new StringBuilder(6);
+                    // marker, x, then 6 pairs of (marker, digit)
+                    for (int j = i + 2; j <= i + 12; j += 2) {
+                        char digit = text.charAt(j + 1);
+                        hex.append(Character.toLowerCase(digit));
+                    }
+
+                    try {
+                        currentColor = new Color(Integer.parseInt(hex.toString(), 16));
+                    } catch (NumberFormatException ignored) {
+                        // if invalid, keep old color
+                    }
+
+                    i += 14;       // skip &x + 6 pairs
+                    textStart = i;
+                    continue;
                 }
 
                 char code = Character.toLowerCase(next);
