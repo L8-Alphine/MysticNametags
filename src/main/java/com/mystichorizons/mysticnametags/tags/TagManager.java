@@ -8,6 +8,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.nameplate.NameplateTextResolver;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -45,7 +46,8 @@ public class TagManager {
     private volatile List<TagDefinition> tagList = Collections.emptyList();
     private final Map<String, TagDefinition> tags = new LinkedHashMap<>();
     private final Map<UUID, PlayerTagData> playerData = new HashMap<>();
-    private final Map<UUID, String> lastPlainNameplate = new ConcurrentHashMap<>();
+    // Cache of the last applied nameplate text (colored or plain)
+    private final Map<UUID, String> lastNameplateText = new ConcurrentHashMap<>();
     private final Map<UUID, PlayerRef> onlinePlayers = new ConcurrentHashMap<>();
     private final Map<UUID, World>    onlineWorlds  = new ConcurrentHashMap<>();
     private final IntegrationManager integrations;
@@ -593,9 +595,10 @@ public class TagManager {
             }
         }
 
-        // Full colored string for chat / UI preview, NOT for the Nameplate component
-        String formatted = Settings.get().formatNameplate(rank, baseName, tag);
-        return ColorFormatter.colorize(formatted);
+//        // Full colored string for chat / UI preview, NOT for the Nameplate component
+//        String formatted = Settings.get().formatNameplate(rank, baseName, tag);
+//        return ColorFormatter.colorize(formatted);
+        return NameplateTextResolver.build(playerRef, rank, baseName, tag);
     }
 
     /**
@@ -614,6 +617,8 @@ public class TagManager {
     public String getColoredFullNameplate(UUID uuid, String baseName) {
         PlayerRef ref = onlinePlayers.get(uuid);
         if (ref != null) {
+            // NameplateTextResolver.build should already be returning something
+            // suitable for chat/scoreboard (with &# codes, WiFlow/helpch applied, etc.)
             return buildNameplate(ref, baseName, uuid);
         }
 
@@ -623,7 +628,8 @@ public class TagManager {
         String tagDisplay = (active != null) ? active.getDisplay() : null;
 
         String formatted = Settings.get().formatNameplate(rank, baseName, tagDisplay);
-        return ColorFormatter.colorize(formatted);
+        // Again: keep &#RRGGBB, normalize only § → &
+        return ColorFormatter.translateAlternateColorCodes('§', formatted);
     }
 
     /**
@@ -681,12 +687,27 @@ public class TagManager {
         UUID uuid = playerRef.getUuid();
         String baseName = playerRef.getUsername();
 
-        // Build plain text (no color codes) off-thread.
-        String plain = buildPlainNameplate(playerRef, baseName, uuid);
+        // Build final nameplate text (rank/name/tag) using config format,
+        // optional WiFlow + helpch placeholders, then colorization.
+        String rank = null;
+        String tag  = null;
+
+        if (uuid != null) {
+            // Unified prefix backend (PrefixesPlus -> LuckPerms -> none)
+            rank = integrations.getPrimaryPrefix(uuid);
+
+            TagDefinition active = getEquipped(uuid);
+            if (active != null) {
+                // Raw display string (may contain placeholders + color codes)
+                tag = active.getDisplay();
+            }
+        }
+
+        String finalText = NameplateTextResolver.build(playerRef, rank, baseName, tag);
 
         // If nothing changed, don't spam the world thread.
-        String previous = lastPlainNameplate.put(uuid, plain);
-        if (previous != null && previous.equals(plain)) {
+        String previous = lastNameplateText.put(uuid, finalText);
+        if (previous != null && previous.equals(finalText)) {
             return;
         }
 
@@ -700,7 +721,7 @@ public class TagManager {
                     return;
                 }
 
-                NameplateManager.get().apply(uuid, store, ref, plain);
+                NameplateManager.get().apply(uuid, store, ref, finalText);
             } catch (Exception e) {
                 LOGGER.at(Level.WARNING).withCause(e)
                         .log("[MysticNameTags] Failed to refresh nameplate for %s", baseName);
@@ -776,7 +797,7 @@ public class TagManager {
      * Clear cached nameplate when the player fully leaves.
      */
     public void forgetNameplate(@Nonnull UUID uuid) {
-        lastPlainNameplate.remove(uuid);
+        lastNameplateText.remove(uuid);
     }
 
     // ---- Online tracking (for fast, low-cost refreshes) ----
@@ -806,13 +827,27 @@ public class TagManager {
         return onlineWorlds.get(uuid);
     }
 
+//    public String getColoredActiveTag(@Nonnull UUID uuid) {
+//        TagDefinition def = getEquipped(uuid);
+//        if (def == null) {
+//            return "";
+//        }
+//        // def.getDisplay() is like "&#8A2BE2&l[Mystic]"
+//        return ColorFormatter.colorize(def.getDisplay());
+//    }
     public String getColoredActiveTag(@Nonnull UUID uuid) {
         TagDefinition def = getEquipped(uuid);
         if (def == null) {
             return "";
         }
-        // def.getDisplay() is like "&#8A2BE2&l[Mystic]"
-        return ColorFormatter.colorize(def.getDisplay());
+
+        String display = def.getDisplay();
+        if (display == null) {
+            return "";
+        }
+
+        // For placeholders/chat: keep &#RRGGBB intact, just normalize § → &
+        return ColorFormatter.translateAlternateColorCodes('§', display);
     }
 
     public String getPlainActiveTag(@Nonnull UUID uuid) {
