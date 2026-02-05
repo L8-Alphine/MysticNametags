@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.0.9'
+version = '1.1.0'
 
 repositories {
     mavenCentral()
@@ -22,14 +22,14 @@ dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
 
     // PlaceholderAPI
-    compileOnly files('libs/PlaceholderAPI-2.0.jar')
-    compileOnly files('libs/WiFlowPlaceholderAPI-1.0.0.jar') // Better PlaceholderAPI overall with a better system
+    compileOnly files('libs/WiFlowPlaceholderAPI-1.0.0.jar')
+    compileOnly files('libs/PlaceholderAPI-1.0.3-CurseForge.jar')
 
     // VaultUnlocked Support
     compileOnly 'net.cfh.vault:VaultUnlocked:2.18.3'
 
     // EliteEssentials Support
-    compileOnly files('libs/EliteEssentials-1.1.5.jar')
+    compileOnly files('libs/EliteEssentials-1.1.6.jar')
 
     // TheEconomy Support
     compileOnly files('libs/EconomySystem-1.0.8.1-beta.jar')
@@ -48,6 +48,9 @@ dependencies {
 
     //RPGLeveling Support
     compileOnly files('libs/RPGLeveling-0.2.2.jar')
+
+    // TEMP
+    compileOnly files('libs/HyThroneUtils-0.1.0.jar')
 }
 
 java {
