@@ -542,7 +542,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 UICommandBuilder cmd = new UICommandBuilder();
                 UIEventBuilder evt = new UIEventBuilder();
                 rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, null, false);
+                sendUpdate(cmd, evt, false);
             }
 
             case "next_page" -> {
@@ -556,7 +556,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 UICommandBuilder cmd = new UICommandBuilder();
                 UIEventBuilder evt = new UIEventBuilder();
                 rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, null, false);
+                sendUpdate(cmd, evt, false);
             }
 
             case "set_filter" -> {
@@ -572,7 +572,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 UICommandBuilder cmd = new UICommandBuilder();
                 UIEventBuilder evt = new UIEventBuilder();
                 rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, null, false);
+                sendUpdate(cmd, evt, false);
             }
 
             case "prev_category" -> {
@@ -596,7 +596,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 UICommandBuilder cmd = new UICommandBuilder();
                 UIEventBuilder evt = new UIEventBuilder();
                 rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, null, false);
+                sendUpdate(cmd, evt, false);
             }
 
             case "next_category" -> {
@@ -620,7 +620,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 UICommandBuilder cmd = new UICommandBuilder();
                 UIEventBuilder evt = new UIEventBuilder();
                 rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, null, false);
+                sendUpdate(cmd, evt, false);
             }
 
             case "tag_click" -> {
