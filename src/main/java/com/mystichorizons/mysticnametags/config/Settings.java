@@ -26,13 +26,31 @@ public class Settings {
     private String nameplateFormat = "{rank} {name} {tag}";
     private boolean stripExtraSpaces = true;
 
+    // --- Placeholder toggles -------------------------------------------------
+
+    /**
+     * If true, MysticNameTags will run WiFlowPlaceholderAPI on the
+     * built nameplate text before colorization.
+     *
+     * NOTE: This flag is automatically updated at runtime based on
+     * whether the WiFlowPlaceholderAPI classes are present.
+     */
+    private boolean wiFlowPlaceholdersEnabled = false;
+
+    /**
+     * If true, MysticNameTags will run at.helpch.placeholderapi on the
+     * built nameplate text before colorization.
+     *
+     * NOTE: This flag is automatically updated at runtime based on
+     * whether the at.helpch PlaceholderAPI classes are present.
+     */
+    private boolean helpchPlaceholderApiEnabled = false;
+
+    // --- Economy / permission / RPG flags (existing) -------------------------
+
     /**
      * If true, MysticNameTags will treat the EconomySystem
      * (com.economy.*) as a valid primary economy backend.
-     *
-     * If false, the integration layer will pretend the primary economy
-     * does not exist and will fall back to VaultUnlocked / EliteEssentials
-     * only.
      */
     private boolean economySystemEnabled = true;
 
@@ -40,44 +58,27 @@ public class Settings {
      * When using the EconomySystem and this flag is true, MysticNameTags
      * will use the "cash / coin" balance instead of the standard balance
      * for tag purchasing.
-     *
-     * This only affects the EconomySystem backend – VaultUnlocked and
-     * EliteEssentials continue to use their normal balances.
      */
     private boolean useCoinSystem = false;
 
     /**
-     * When enabled, tag permission nodes act as a full gate:
-     *
-     *  - If a tag has a permission (`permission` in tags.json), that
-     *    permission MUST be granted for the player to:
-     *       * see the tag in the UI,
-     *       * see it as usable,
-     *       * successfully purchase/equip it.
-     *
-     *  - Ownership alone (crate unlocks, etc.) is not enough if the
-     *    permission is missing.
-     *
-     * When disabled, permissions are treated as an alternate way to
-     * access tags (as in earlier builds): owning the tag OR having the
-     * permission is enough, and all tags are listed in the UI.
+     * When enabled, tag permission nodes act as a full gate.
      */
     private boolean fullPermissionGate = false;
 
     /**
-     * If true, MysticNameTags will append the RPGLeveling
-     * player level to nameplates (e.g. "Name [Lvl. 18]"),
-     * assuming the RPGLeveling API is available.
+     * If true, MysticNameTags will append the RPGLeveling player level
+     * to nameplates (assuming the API is available).
      */
     private boolean rpgLevelingNameplatesEnabled = false;
 
     /**
      * Interval (in seconds) for refreshing RPGLeveling
      * levels on nameplates for online players.
-     *
-     * Minimum enforced at 5 seconds.
      */
     private int rpgLevelingRefreshSeconds = 30;
+
+    // ---------------------------------------------------------------------
 
     public static void init() {
         INSTANCE = new Settings();
@@ -97,6 +98,8 @@ public class Settings {
         File file = getFile();
 
         if (!file.exists()) {
+            // First run – defaults + auto-detection
+            applyAutoPlaceholderDetection();
             saveToDisk();
             return;
         }
@@ -106,6 +109,11 @@ public class Settings {
             if (loaded != null) {
                 this.nameplateFormat       = loaded.nameplateFormat;
                 this.stripExtraSpaces      = loaded.stripExtraSpaces;
+
+                // Start with whatever was in the file
+                this.wiFlowPlaceholdersEnabled   = loaded.wiFlowPlaceholdersEnabled;
+                this.helpchPlaceholderApiEnabled = loaded.helpchPlaceholderApiEnabled;
+
                 this.economySystemEnabled  = loaded.economySystemEnabled;
                 this.useCoinSystem         = loaded.useCoinSystem;
                 this.fullPermissionGate    = loaded.fullPermissionGate;
@@ -117,6 +125,10 @@ public class Settings {
                     .log("[MysticNameTags] Failed to load settings.json, using defaults.");
         }
 
+        // After loading, auto-enable/disable placeholder backends
+        applyAutoPlaceholderDetection();
+
+        // Always write back, so settings.json reflects actual environment
         saveToDisk();
     }
 
@@ -134,11 +146,65 @@ public class Settings {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Auto-detection for placeholder backends
+    // ---------------------------------------------------------------------
+
     /**
-     * Build and colorize “[Rank] Name [Tag]” according to the config format.
-     * The format can include hex and legacy color codes.
+     * Detect whether WiFlowPlaceholderAPI / at.helpch PlaceholderAPI
+     * are available on the classpath and automatically toggle the
+     * corresponding flags.
      */
-    public String formatNameplate(String rank, String name, String tag) {
+    private void applyAutoPlaceholderDetection() {
+        boolean wiFlowPresent = false;
+        boolean helpchPresent = false;
+
+        // WiFlow: com.wiflow.placeholderapi.WiFlowPlaceholderAPI
+        try {
+            Class.forName("com.wiflow.placeholderapi.WiFlowPlaceholderAPI");
+            wiFlowPresent = true;
+        } catch (ClassNotFoundException ignored) {
+            wiFlowPresent = false;
+        }
+
+        // at.helpch PlaceholderAPI
+        try {
+            Class.forName("at.helpch.placeholderapi.PlaceholderAPI");
+            helpchPresent = true;
+        } catch (ClassNotFoundException ignored) {
+            helpchPresent = false;
+        }
+
+        if (this.wiFlowPlaceholdersEnabled != wiFlowPresent) {
+            this.wiFlowPlaceholdersEnabled = wiFlowPresent;
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] WiFlowPlaceholderAPI "
+                            + (wiFlowPresent ? "detected – enabling WiFlow placeholders." :
+                            "not found – disabling WiFlow placeholders."));
+        }
+
+        if (this.helpchPlaceholderApiEnabled != helpchPresent) {
+            this.helpchPlaceholderApiEnabled = helpchPresent;
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] at.helpch PlaceholderAPI "
+                            + (helpchPresent ? "detected – enabling helpch placeholders." :
+                            "not found – disabling helpch placeholders."));
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Nameplate formatting
+    // ---------------------------------------------------------------------
+
+    /**
+     * Build “[Rank] Name [Tag]” according to the config format,
+     * without applying colorization. Used as the base for
+     * placeholder resolution.
+     *
+     * The format can contain:
+     *   {rank}, {name}, {tag}
+     */
+    public String formatNameplateRaw(String rank, String name, String tag) {
         String result = nameplateFormat
                 .replace("{rank}", rank == null ? "" : rank)
                 .replace("{name}", name == null ? "" : name)
@@ -148,8 +214,17 @@ public class Settings {
             result = result.replaceAll("\\s+", " ").trim();
         }
 
-        // Apply & / hex colors after placeholder substitution
-        return ColorFormatter.colorize(result);
+        return result;
+    }
+
+    /**
+     * Backwards-compatible helper that also applies ColorFormatter.
+     * For nameplates, prefer using formatNameplateRaw(...) +
+     * placeholder resolution + final ColorFormatter.colorize(...).
+     */
+    public String formatNameplate(String rank, String name, String tag) {
+        String raw = formatNameplateRaw(rank, name, tag);
+        return ColorFormatter.colorize(raw);
     }
 
     // ---------------------------------------------------------------------
@@ -174,5 +249,13 @@ public class Settings {
 
     public int getRpgLevelingRefreshSeconds() {
         return Math.max(5, rpgLevelingRefreshSeconds);
+    }
+
+    public boolean isWiFlowPlaceholdersEnabled() {
+        return wiFlowPlaceholdersEnabled;
+    }
+
+    public boolean isHelpchPlaceholderApiEnabled() {
+        return helpchPlaceholderApiEnabled;
     }
 }
