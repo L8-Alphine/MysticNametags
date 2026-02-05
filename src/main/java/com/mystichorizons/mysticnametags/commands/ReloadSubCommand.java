@@ -71,9 +71,8 @@ public class ReloadSubCommand extends CommandBase {
         );
 
         try {
-            // Re-init settings + tags
-            Settings.init();     // reload settings.json
-            TagManager.reload(); // reload tags.json (your static helper)
+            // Single entrypoint: settings + tags + schedulers + integrations
+            plugin.reloadAll();
 
             context.sender().sendMessage(
                     colored("&7[&bMysticNameTags&7] &aReload complete!")
