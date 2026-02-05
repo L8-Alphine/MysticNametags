@@ -11,14 +11,15 @@ import com.mystichorizons.mysticnametags.commands.TagsCommand;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
+import com.mystichorizons.mysticnametags.nameplate.LevelNameplateRefreshTask;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
-import com.mystichorizons.mysticnametags.placeholders.PlaceholderHook;
+import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
+import com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
-import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,6 +32,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
     private static MysticNameTagsPlugin instance;
+
     private ScheduledExecutorService levelScheduler;
 
     private IntegrationManager integrations;
@@ -56,6 +58,18 @@ public class MysticNameTagsPlugin extends JavaPlugin {
      */
     public IntegrationManager getIntegrations() {
         return integrations;
+    }
+
+    public UpdateChecker getUpdateChecker() {
+        return updateChecker;
+    }
+
+    /** Shared "resolved version" helper for UI/commands. */
+    public String getResolvedVersion() {
+        if (manifest != null && manifest.getVersion() != null) {
+            return manifest.getVersion().toString();
+        }
+        return "unknown";
     }
 
     @Override
@@ -91,13 +105,17 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     private void registerCommands() {
         try {
             getCommandRegistry().registerCommand(new MysticNameTagsPluginCommand());
-            LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /mnametags command");
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /mntags command");
+
             getCommandRegistry().registerCommand(new TagsCommand());
             LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /tags command");
+
             getCommandRegistry().registerCommand(new TagsAdminCommand());
             LOGGER.at(Level.INFO).log("[MysticNameTags] Registered /tagsadmin command");
         } catch (Exception e) {
-            LOGGER.at(Level.WARNING).withCause(e).log("[MysticNameTags] Failed to register commands");
+            LOGGER.at(Level.WARNING)
+                    .withCause(e)
+                    .log("[MysticNameTags] Failed to register commands");
         }
     }
 
@@ -108,7 +126,9 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             new PlayerListener().register(eventBus);
             LOGGER.at(Level.INFO).log("[MysticNameTags] Registered player event listeners");
         } catch (Exception e) {
-            LOGGER.at(Level.WARNING).withCause(e).log("[MysticNameTags] Failed to register listeners");
+            LOGGER.at(Level.WARNING)
+                    .withCause(e)
+                    .log("[MysticNameTags] Failed to register listeners");
         }
     }
 
@@ -121,24 +141,25 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Started!");
         LOGGER.at(Level.INFO).log("[MysticNameTags] Use /tags help for commands");
 
-        // Register PlaceholderAPI placeholders
+        // at.helpch PlaceholderAPI
         try {
-            new PlaceholderHook().register();
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] PlaceholderAPI hooked successfully.");
+            new HelpchPlaceholderHook().register();
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING)
-                    .log("[MysticNameTags] PlaceholderAPI not present.");
+                    .log("[MysticNameTags] Failed to register at.helpch PlaceholderAPI expansion. "
+                            + "Maybe not installed? Disabled helpch placeholder support.");
         }
 
         // WiFlowPlaceholderAPI
         try {
-            new com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook().register();
+            new WiFlowPlaceholderHook().register();
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING)
-                    .log("[MysticNameTags] Failed to register WiFlowPlaceholderAPI expansion. Maybe not installed? Disabled Placeholder Support.");
+                    .log("[MysticNameTags] Failed to register WiFlowPlaceholderAPI expansion. "
+                            + "Maybe not installed? Disabled Placeholder Support.");
         }
 
+        // Debug: print detected economy backends
         try {
             var manager = net.cfh.vault.VaultUnlockedServicesManager.get();
             LOGGER.at(Level.INFO).log("[MysticNameTags][Debug] Startup Vault econ provider names = "
@@ -166,24 +187,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
                     .log("[MysticNameTags][Debug] EconomySystem API not reachable at startup");
         }
 
-        // ─────────────────────────────────────────
-        // RPGLeveling nameplate refresher
-        // ─────────────────────────────────────────
-        int intervalSec = Settings.get().getRpgLevelingRefreshSeconds();
-
-        levelScheduler = Executors.newSingleThreadScheduledExecutor(
-                r -> {
-                    Thread t = new Thread(r, "MysticNameTags-LevelRefresher");
-                    t.setDaemon(true);
-                    return t;
-                });
-
-        levelScheduler.scheduleAtFixedRate(
-                new com.mystichorizons.mysticnametags.nameplate.LevelNameplateRefreshTask(),
-                intervalSec,
-                intervalSec,
-                TimeUnit.SECONDS
-        );
+        // RPGLeveling nameplate refresher (lazy-guarded by config + API checks)
+        startLevelSchedulerIfNeeded();
     }
 
     @Override
@@ -191,9 +196,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Shutting down...");
 
         try {
-            if (levelScheduler != null) {
-                levelScheduler.shutdownNow();
-            }
+            stopLevelScheduler();
         } catch (Throwable ignored) {}
 
         try {
@@ -208,18 +211,9 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         }
     }
 
-    public UpdateChecker getUpdateChecker() {
-        return updateChecker;
-    }
-
-    /** Shared "resolved version" helper for UI/commands. */
-    public String getResolvedVersion() {
-        if (manifest != null && manifest.getVersion() != null) {
-            return manifest.getVersion().toString();
-        }
-        return "unknown";
-    }
-
+    // ------------------------------------------------------
+    // RPGLeveling availability helper
+    // ------------------------------------------------------
 
     public static boolean isRpgLevelingAvailable() {
         try {
@@ -235,5 +229,86 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         }
     }
 
+    // ------------------------------------------------------
+    // Level scheduler control (startup + reload + shutdown)
+    // ------------------------------------------------------
 
+    private void startLevelSchedulerIfNeeded() {
+        // Only schedule if feature is enabled in config
+        if (!Settings.get().isRpgLevelingNameplatesEnabled()) {
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] RPGLeveling nameplates disabled in settings; not starting scheduler.");
+            return;
+        }
+
+        int intervalSec = Settings.get().getRpgLevelingRefreshSeconds();
+
+        // Avoid double-scheduling if something calls this twice
+        if (levelScheduler != null && !levelScheduler.isShutdown()) {
+            LOGGER.at(Level.FINE)
+                    .log("[MysticNameTags] Level scheduler already running; skipping restart.");
+            return;
+        }
+
+        levelScheduler = Executors.newSingleThreadScheduledExecutor(
+                r -> {
+                    Thread t = new Thread(r, "MysticNameTags-LevelRefresher");
+                    t.setDaemon(true);
+                    return t;
+                });
+
+        levelScheduler.scheduleAtFixedRate(
+                new LevelNameplateRefreshTask(),
+                intervalSec,
+                intervalSec,
+                TimeUnit.SECONDS
+        );
+
+        LOGGER.at(Level.INFO)
+                .log("[MysticNameTags] Started RPGLeveling nameplate scheduler (interval=" + intervalSec + "s).");
+    }
+
+    private void stopLevelScheduler() {
+        if (levelScheduler != null) {
+            try {
+                levelScheduler.shutdownNow();
+            } catch (Throwable ignored) {
+            } finally {
+                levelScheduler = null;
+            }
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Stopped RPGLeveling nameplate scheduler.");
+        }
+    }
+
+    // ------------------------------------------------------
+    // Reload entrypoint used by /tags reload
+    // ------------------------------------------------------
+
+    /**
+     * Reloads settings, integrations, tags, and restarts the
+     * RPGLeveling scheduler using the latest configuration.
+     *
+     * This is intended to be called from /tags reload.
+     */
+    /**
+     * Reloads settings, tags, and restarts the RPGLeveling scheduler
+     * using the latest configuration.
+     *
+     * Intended to be called from /tags reload.
+     */
+    public void reloadAll() {
+        LOGGER.at(Level.INFO).log("[MysticNameTags] Reloading settings + tags...");
+
+        // 1) Reload settings.json
+        Settings.init();
+
+        // 2) Reload tags.json and refresh all online nameplates
+        TagManager.reload();
+
+        // 3) Restart RPGLeveling scheduler based on *current* settings
+        stopLevelScheduler();
+        startLevelSchedulerIfNeeded();
+
+        LOGGER.at(Level.INFO).log("[MysticNameTags] Reload complete.");
+    }
 }
