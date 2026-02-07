@@ -297,15 +297,26 @@ public class MysticNameTagsPlugin extends JavaPlugin {
      * Intended to be called from /tags reload.
      */
     public void reloadAll() {
-        LOGGER.at(Level.INFO).log("[MysticNameTags] Reloading settings + tags...");
+        LOGGER.at(Level.INFO).log("[MysticNameTags] Reloading settings, integrations, and tags...");
 
         // 1) Reload settings.json
         Settings.init();
 
-        // 2) Reload tags.json and refresh all online nameplates
+        // 2) Re-run integration detection (permissions, prefixes, economy)
+        //    This allows the plugin to hook into newly-installed plugins
+        //    like LuckPerms / EcoTale / PrefixesPlus without a full restart.
+        try {
+            this.integrations.init();
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Integrations re-initialized after reload.");
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to re-initialize integrations during reload.");
+        }
+
+        // 3) Reload tags.json and refresh all online nameplates
         TagManager.reload();
 
-        // 3) Restart RPGLeveling scheduler based on *current* settings
+        // 4) Restart RPGLeveling scheduler based on *current* settings
         stopLevelScheduler();
         startLevelSchedulerIfNeeded();
 
