@@ -351,6 +351,19 @@ Group {
               Style: (FontSize: 12, TextColor: #96a9be);
             }
 
+            Label {
+              Text: "Placeholders";
+              Anchor: (Height: 20);
+              Style: (FontSize: 12, TextColor: #ffffff, RenderBold: true);
+            }
+
+            // This one is updated dynamically from Java
+            Label #PlaceholderBackendsLabel {
+              Text: "Placeholders: detecting...";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
             Group { Anchor: (Height: 8); }
 
             Label {

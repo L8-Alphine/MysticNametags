@@ -18,6 +18,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.MysticLog;
@@ -357,6 +358,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     boolean econEcoTale = integrations.isEcoTaleAvailable();
                     boolean econVault   = integrations.isVaultAvailable();
                     boolean econElite   = integrations.isEliteEconomyAvailable();
+                    // Placeholder integrations
+                    Settings settings = Settings.get();
+                    boolean wiFlowPlaceholders   = settings.isWiFlowPlaceholdersEnabled();
+                    boolean helpchPlaceholders   = settings.isHelpchPlaceholderApiEnabled();
 
                     MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
                     String version = plugin.getResolvedVersion();
@@ -444,6 +449,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         boolean econEcoTale = integrations.isEcoTaleAvailable();
         boolean econVault   = integrations.isVaultAvailable();
         boolean econElite   = integrations.isEliteEconomyAvailable();
+        // Placeholder integrations
+        Settings settings = Settings.get();
+        boolean wiFlowPlaceholders   = settings.isWiFlowPlaceholdersEnabled();
+        boolean helpchPlaceholders   = settings.isHelpchPlaceholderApiEnabled();
 
         StringBuilder integrationsText = new StringBuilder("Integrations: ");
 
@@ -503,6 +512,25 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
         int tagCount = tagManager.getTagCount();
         commands.set("#TagCountLabel.Text", "Loaded Tags: " + tagCount);
+
+        // Placeholder integrations label in the Integrations tab
+        StringBuilder placeholderText = new StringBuilder("Placeholders: ");
+
+        if (wiFlowPlaceholders || helpchPlaceholders) {
+            boolean first = true;
+            if (wiFlowPlaceholders) {
+                placeholderText.append("WiFlowPlaceholderAPI");
+                first = false;
+            }
+            if (helpchPlaceholders) {
+                if (!first) placeholderText.append(" + ");
+                placeholderText.append("at.helpch PlaceholderAPI");
+            }
+        } else {
+            placeholderText.append("none detected");
+        }
+
+        commands.set("#PlaceholderBackendsLabel.Text", placeholderText.toString());
 
         populateResourceStats(commands);
     }
