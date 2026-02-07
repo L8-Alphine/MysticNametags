@@ -285,7 +285,7 @@ public class IntegrationManager {
     }
 
     public boolean hasAnyEconomy() {
-        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable() || isEliteEconomyAvailable();
+        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable() || isEcoTaleAvailable();
     }
 
     private void logEconomyStatusIfNeeded() {
