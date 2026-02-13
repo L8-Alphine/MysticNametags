@@ -589,15 +589,12 @@ public class TagManager {
         if (uuid != null) {
             // Use the unified prefix backend (PrefixesPlus -> LuckPerms -> none)
             rank = integrations.getPrimaryPrefix(uuid);
-            TagDefinition active = getEquipped(uuid);
+            TagDefinition active = resolveActiveOrDefaultTag(uuid);
             if (active != null) {
                 tag = active.getDisplay(); // e.g. "&#8A2BE2&l[Mystic]"
             }
         }
 
-//        // Full colored string for chat / UI preview, NOT for the Nameplate component
-//        String formatted = Settings.get().formatNameplate(rank, baseName, tag);
-//        return ColorFormatter.colorize(formatted);
         return NameplateTextResolver.build(playerRef, rank, baseName, tag);
     }
 
@@ -647,35 +644,18 @@ public class TagManager {
     public String buildPlainNameplate(@Nonnull PlayerRef playerRef,
                                       @Nonnull String baseName,
                                       @Nullable UUID uuid) {
-        String rankPlain = null;
-        String tagPlain  = null;
+
+        String rank = null;
+        String tag  = null;
 
         if (uuid != null) {
-            // Unified prefix backend
-            String rank = integrations.getPrimaryPrefix(uuid);
-            if (rank != null && !rank.isEmpty()) {
-                rankPlain = ColorFormatter.stripFormatting(rank).trim();
-            }
-
-            TagDefinition active = getEquipped(uuid);
-            if (active != null) {
-                tagPlain = ColorFormatter.stripFormatting(active.getDisplay()).trim();
-            }
+            rank = integrations.getPrimaryPrefix(uuid);
+            TagDefinition active = resolveActiveOrDefaultTag(uuid);
+            if (active != null) tag = active.getDisplay();
         }
 
-        StringBuilder sb = new StringBuilder();
-
-        if (rankPlain != null && !rankPlain.isEmpty()) {
-            sb.append(rankPlain).append(" ");
-        }
-
-        sb.append(baseName);
-
-        if (tagPlain != null && !tagPlain.isEmpty()) {
-            sb.append(" ").append(tagPlain);
-        }
-
-        return sb.toString();
+        String built = NameplateTextResolver.build(playerRef, rank, baseName, tag);
+        return ColorFormatter.stripFormatting(built).trim();
     }
 
     /**
@@ -692,6 +672,22 @@ public class TagManager {
         String rank = null;
         String tag  = null;
 
+        if (!Settings.get().isNameplatesEnabled()) {
+            // nameplates disabled: restore vanilla text and stop
+            world.execute(() -> {
+                try {
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    Ref<EntityStore> ref = playerRef.getReference();
+                    if (ref == null || !ref.isValid()) return;
+
+                    NameplateManager.get().restore(uuid, store, ref, baseName);
+                } catch (Throwable ignored) {}
+            });
+
+            lastNameplateText.remove(uuid);
+            return;
+        }
+
         if (uuid != null) {
             // Unified prefix backend (PrefixesPlus -> LuckPerms -> none)
             rank = integrations.getPrimaryPrefix(uuid);
@@ -703,9 +699,12 @@ public class TagManager {
             }
         }
 
-        String finalText = NameplateTextResolver.build(playerRef, rank, baseName, tag);
+        String built = NameplateTextResolver.build(playerRef, rank, baseName, tag);
 
-        // If nothing changed, don't spam the world thread.
+        // Nameplate component: NO colors supported yet
+        String finalText = ColorFormatter.stripFormatting(built).trim();
+
+        // Cache / compare the PLAIN text (not colored)
         String previous = lastNameplateText.put(uuid, finalText);
         if (previous != null && previous.equals(finalText)) {
             return;
@@ -827,16 +826,8 @@ public class TagManager {
         return onlineWorlds.get(uuid);
     }
 
-//    public String getColoredActiveTag(@Nonnull UUID uuid) {
-//        TagDefinition def = getEquipped(uuid);
-//        if (def == null) {
-//            return "";
-//        }
-//        // def.getDisplay() is like "&#8A2BE2&l[Mystic]"
-//        return ColorFormatter.colorize(def.getDisplay());
-//    }
     public String getColoredActiveTag(@Nonnull UUID uuid) {
-        TagDefinition def = getEquipped(uuid);
+        TagDefinition def = resolveActiveOrDefaultTag(uuid);
         if (def == null) {
             return "";
         }
@@ -1005,12 +996,14 @@ public class TagManager {
             return false; // nothing to reset
         }
 
+        // Clear MysticNameTags local data
         data.getOwned().clear();
         data.setEquipped(null);
 
         savePlayerData(uuid);
         clearCanUseCache(uuid);
 
+        // Refresh nameplate if they're online
         PlayerRef ref = onlinePlayers.get(uuid);
         World world   = onlineWorlds.get(uuid);
         if (ref != null && world != null) {
@@ -1018,5 +1011,52 @@ public class TagManager {
         }
 
         return true;
+    }
+
+    /**
+     * Admin-only: wipe all owned/equipped tags for a player AND revoke any
+     * tag permissions that MysticNameTags might have granted via the
+     * active permission backend.
+     *
+     * NOTE: This only affects permissions that the backend *resolves* for
+     * these nodes; it does not try to distinguish between "plugin-granted"
+     * and "rank-granted" permissions.
+     */
+    public boolean adminResetTagsAndPermissions(@Nonnull UUID uuid) {
+        // First do the normal data reset (owned + equipped + caches + nameplate)
+        boolean changed = adminResetTags(uuid);
+        if (!changed) {
+            return false;
+        }
+
+        // Then try to revoke all tag permission nodes for this player.
+        for (TagDefinition def : tags.values()) {
+            String perm = def.getPermission();
+            if (perm == null || perm.isEmpty()) {
+                continue;
+            }
+            try {
+                integrations.revokePermission(uuid, perm);
+            } catch (Throwable ignored) {
+                // We don't want a revoke failure to break the whole reset
+            }
+        }
+
+        // No need to refresh nameplate again; adminResetTags already did it.
+        return true;
+    }
+
+    @Nullable
+    private TagDefinition resolveActiveOrDefaultTag(@Nonnull UUID uuid) {
+        TagDefinition equipped = getEquipped(uuid);
+        if (equipped != null) return equipped;
+
+        Settings s = Settings.get();
+        if (!s.isDefaultTagEnabled()) return null;
+
+        String id = s.getDefaultTagId();
+        if (id == null || id.trim().isEmpty()) return null;
+
+        return getTag(id.trim());
     }
 }
