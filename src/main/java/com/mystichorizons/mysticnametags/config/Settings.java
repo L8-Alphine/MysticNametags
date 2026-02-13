@@ -26,6 +26,19 @@ public class Settings {
     private String nameplateFormat = "{rank} {name} {tag}";
     private boolean stripExtraSpaces = true;
 
+    // --- Nameplate toggles ------------------------------------------------------
+
+    /** Master toggle for MysticNameTags nameplates (default ON). */
+    private boolean nameplatesEnabled = true;
+
+    /** If true, use a default tag when player has no equipped tag. */
+    private boolean defaultTagEnabled = false;
+
+    /** Tag id from tags.json to use as default (e.g. "mystic"). */
+    private String defaultTagId = "mystic";
+
+    /** EndlessLeveling integration (default ON). */
+    private boolean endlessLevelingNameplatesEnabled = true;
     // --- Placeholder toggles -------------------------------------------------
 
     /**
@@ -109,6 +122,12 @@ public class Settings {
             if (loaded != null) {
                 this.nameplateFormat       = loaded.nameplateFormat;
                 this.stripExtraSpaces      = loaded.stripExtraSpaces;
+
+                this.nameplatesEnabled      = loaded.nameplatesEnabled;
+                this.defaultTagEnabled   = loaded.defaultTagEnabled;
+                this.defaultTagId         = loaded.defaultTagId;
+
+                this.endlessLevelingNameplatesEnabled = loaded.endlessLevelingNameplatesEnabled;
 
                 // Start with whatever was in the file
                 this.wiFlowPlaceholdersEnabled   = loaded.wiFlowPlaceholdersEnabled;
@@ -257,5 +276,21 @@ public class Settings {
 
     public boolean isHelpchPlaceholderApiEnabled() {
         return helpchPlaceholderApiEnabled;
+    }
+
+    public boolean isNameplatesEnabled() {
+        return nameplatesEnabled;
+    }
+
+    public boolean isDefaultTagEnabled() {
+        return defaultTagEnabled;
+    }
+
+    public String getDefaultTagId() {
+        return defaultTagId;
+    }
+
+    public boolean isEndlessLevelingNameplatesEnabled() {
+        return endlessLevelingNameplatesEnabled;
     }
 }
