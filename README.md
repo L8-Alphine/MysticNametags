@@ -1,165 +1,311 @@
 # MysticNameTags
 
-**MysticNameTags** is a Hytale server plugin that adds a fully permission-driven **player tag system** with an in-game UI, LuckPerms integration, optional PlaceholderAPI support, and future-proof extensibility.
+**MysticNameTags** is a modern, permission-driven, and performance-focused
+**tag and nameplate system for Hytale servers**.
 
-Designed for performance, modularity, and large servers.
+From **1.0.0 → 1.1.2**, MysticNameTags has evolved into a **stable, integration-aware system** designed for servers that want:
+
+* Clean, scalable UI
+* Strict permission control
+* Optional economy support
+* Optional integration systems
+* Zero unnecessary background overhead
+
+Built for large servers. No constant polling. No unsafe component writes.
 
 ---
 
 ## ✨ Features
 
-- 🏷️ Custom player tags with UI selection
-- 🔐 Permission-based access using **LuckPerms**
-- 🧩 Optional **PlaceholderAPI** integration
-- 🎨 UI color support using `&` and hex colors
-- ⚙️ Optimized nameplate rebuilding (no ticking tasks)
-- 🧱 Modular, developer-friendly architecture
-
 ---
 
-## 📦 Requirements
+## 🏷 Custom Player Tags
 
-### **Required**
-- **LuckPerms**  
-  https://www.curseforge.com/hytale/mods/luckperms
+* Unlimited tags via `tags.json`
+* Each tag supports:
 
-> These are **mandatory**. MysticNameTags will not function correctly without them.
+  * Custom display text
+  * `&` and hex (`&#RRGGBB`) color formatting
+  * Optional economy pricing
+  * Per-tag permission nodes
+  * Category grouping
+* Tags may be:
 
-### **Optional**
-- **PlaceholderAPI (CreeperFace)**  
-  https://www.curseforge.com/hytale/mods/placeholderapi
-- **VaultUnlocked**  
-  https://www.curseforge.com/hytale/mods/vaultunlocked
-- **EliteEssentials** https://www.curseforge.com/hytale/mods/eliteessentials
-- **WiFlow's PlaceholderAPI** (Must enter their discord to download it since CurseForge decided to remove it due it how it works.)
-- **TheEconomy** https://www.curseforge.com/hytale/mods/theeconomy (Most powerful and most used)
----
-
-## 🖥️ Commands
-
-| Command | Description |
-|-------|------------|
-| `/tags` | Opens the tag selection UI |
-| `/tags tags` | Opens the tag list directly |
-| `/tags reload` | Reloads and rebuilds all online user nameplates. Permission: `mysticnametags.reload` |
+  * Free
+  * Purchasable
+  * Rank-locked
+  * Admin-only
 
 ---
 
 ## 🎨 Coloring Support
 
-### UI
-- Supports:
-  - `&` color codes
-  - Hex colors (e.g. `&#8A2BE2`)
-- Colors are shown correctly in the tag UI preview
+Supported formats:
 
-### Nameplates
-- ❌ **Coloring is NOT supported** by the current Hytale Nameplate API
-- Nameplates are displayed as **plain text**
-- LuckPerms prefixes are applied automatically when no tag is equipped
+* Legacy `&` color codes
+* Hex colors (`&#RRGGBB`)
+
+⚠ **Nameplate coloring is NOT currently possible** due to Hytale API limitations.
+Colors apply to:
+
+* Chat
+* UI previews
+* Placeholders
+
+Nameplates are automatically stripped to plain text.
 
 ---
 
-## 🔐 Permissions
+## 🖥 Clean & Scalable UI
 
-- **All tags require permissions**
-- This includes **free tags**
-- Permissions are defined per-tag inside `tags.json`
+Open the tag UI with:
 
-Example:
+```
+/tags
+```
+
+UI features:
+
+* Paginated tag lists
+* Category filtering
+* Clear cost & permission visibility
+* Optimized layout for large tag sets
+* Cached permission checks for performance
+
+Includes an **Admin Dashboard** for:
+
+* Viewing tag definitions
+* Debugging permission visibility
+* Monitoring update notifications
+* Integration status overview
+
+---
+
+## 🔐 Permission-First Design
+
+* Tags respect permission nodes defined in `tags.json`
+* Supports:
+
+  * Hytale native permissions
+  * LuckPerms
+  * PermissionsPlus
+* Permission checks are cached per-player for UI performance
+* No hardcoded permission nodes
+
+Example tag:
+
 ```json
 {
   "id": "mystic",
   "display": "&#8A2BE2&l[Mystic]",
   "permission": "mysticnametags.tag.mystic",
   "price": 0,
-  "purchasable": false
+  "purchasable": false,
+  "category": "Special"
 }
-````
-
-Permissions are enforced using **LuckPerms only**.
+```
 
 ---
 
-## 🧩 PlaceholderAPI Support (Optional)
+## ⚙ Config Toggles (1.1.2+)
 
-If PlaceholderAPI is installed, MysticNameTags registers the following placeholders:
+MysticNameTags now includes full config control via `settings.json`.
+
+### Master Nameplate Toggle
+
+```
+nameplatesEnabled = true
+```
+
+* When `false`, MysticNameTags restores vanilla nameplates.
+* Safe to toggle and reload.
+
+---
+
+### Default Tag System
+
+```
+defaultTagEnabled = false
+defaultTagId = "mystic"
+```
+
+When enabled:
+
+* If a player has no equipped tag,
+* MysticNameTags will display the configured default tag automatically.
+
+---
+
+### Endless Leveling Integration Toggle
+
+```
+endlessLevelingNameplatesEnabled = true
+```
+
+* Allows MysticNameTags to override Endless Leveling’s player nameplate system.
+* Prevents double-writing or flickering.
+* Safe fallback if Endless Leveling is not installed.
+
+---
+
+## 🔄 Multi-Permission Backend Support (1.0.6+)
+
+Permissions are handled by a unified **IntegrationManager**, automatically selecting the best available backend:
+
+* LuckPerms
+* PermissionsPlus
+* Native Hytale permissions
+
+Switching permission systems requires no configuration changes.
+
+---
+
+## 💰 Optional Economy Support
+
+Supported systems:
+
+* TheEconomy (recommended)
+* EcoTale
+* VaultUnlocked
+* EliteEssentials
+
+Economy priority:
+
+```
+EconomySystem → EcoTale → VaultUnlocked → EliteEssentials
+```
+
+Economy checks occur only when:
+
+* Opening the tag UI
+* Purchasing a tag
+
+No background loops. No polling.
+
+---
+
+## 🧩 Placeholder Support
+
+### HelpChat PlaceholderAPI
 
 | Placeholder              | Description                             |
 | ------------------------ | --------------------------------------- |
 | `%mystictags_tag%`       | Colored active tag                      |
-| `%mystictags_tag_plain%` | Plain tag (no colors)                   |
+| `%mystictags_tag_plain%` | Plain active tag                        |
 | `%mystictags_full%`      | Full formatted name (rank + name + tag) |
 
-> Using WiFlow's PlaceholderAPI you can use the following for placeholders
+---
 
-| Placeholder                | Description                              |
-| ------------------------ |------------------------------------------|
-| `{mystictags_tag}`       | Colored active tag                       |
-| `{mystictags_tag_plain}` | Plain tag (no colors)                    |
-| `{mystictags_full}`      | Full formatted name (rank + name + tag)  |
-| `{mystictags_full_plain}` | Plain formatted name (rank + name + tag) |
+### WiFlow PlaceholderAPI
 
-
-> Placeholder availability depends on PlaceholderAPI scope support.
+| Placeholder               | Description          |
+| ------------------------- | -------------------- |
+| `{mystictags_tag}`        | Colored active tag   |
+| `{mystictags_tag_plain}`  | Plain active tag     |
+| `{mystictags_full}`       | Full formatted name  |
+| `{mystictags_full_plain}` | Plain formatted name |
 
 ---
 
-## ⚙️ Performance & Safety
+## 🎮 RPG Leveling Integration (Soft Dependency)
 
-* 🚫 No repeating tasks
-* 🚫 No polling loops
-* ✅ Nameplates rebuild **only when needed**:
-    * Player joins
-    * Tag changes
-    * LuckPerms data recalculates
-    * Reload
+To use MysticNameTags with RPG Leveling:
+
+In RPG Leveling config:
+
+```
+EnablePlayerLevelNameplate = false
+```
+
+In MysticNameTags settings:
+
+```
+rpgLevelingNameplatesEnabled = true
+```
+
+MysticNameTags will handle the level display in a safe, controlled way.
+
+---
+
+## 🎮 Endless Leveling Integration (1.1.2)
+
+MysticNameTags can now safely override Endless Leveling’s `PlayerNameplateSystem`.
+
+* No double-ticking
+* No conflicts
+* No flicker
+* Fully config-controlled
+
+If enabled:
+
+* MysticNameTags becomes the sole nameplate writer
+* Endless Leveling level data is preserved in the display
+
+---
+
+## ⚡ Performance-Focused by Design
+
+* ❌ No constant ticking systems
+* ❌ No permission polling
+* ❌ No unsafe cross-thread writes
 * ✅ World-thread safe updates
-* ✅ Does **not** interfere with teleport plugins
-  (Tested with **EliteEssentials**)
+* ✅ Only updates when necessary:
+
+  * Player join
+  * Tag change
+  * Permission changes
+  * Reload
+  * Explicit integration refresh
+
+Designed for large servers.
 
 ---
 
-## 🧪 Compatibility
+## ⚠ MiniMessage (Not Supported)
 
-Tested with:
+MysticNameTags does NOT support MiniMessage.
 
-* LuckPerms
-* VaultUnlocked
-* PlaceholderAPI
-* EliteEssentials
+Supported:
 
-Safe to run alongside other chat, scoreboard, and utility plugins.
+* `&` colors
+* `&#RRGGBB` hex
+
+Unsupported:
+
+* `<gradient>`
+* `<rainbow>`
+* `<color>`
+* `<bold>`
+* Any MiniMessage syntax
+
+MiniMessage is intentionally excluded to ensure:
+
+* Predictable formatting
+* Zero parsing overhead
+* Hytale UI compatibility
 
 ---
 
-## 🚧 In Development / Planned
+## 🔑 Core Permission Nodes
 
-* BetterScoreboard integration
-* Player list (tab) tag support
-* Expanded PlaceholderAPI usage
+| Permission                    | Description                   |
+| ----------------------------- | ----------------------------- |
+| `mysticnametags.ui.open`      | Opens admin UI                |
+| `mysticnametags.reload`       | Reloads config & integrations |
+| `mysticnametags.admin.update` | Update notifications          |
+
+Tag permissions are defined per-tag in `tags.json`.
+
+---
+
+## 🚧 Actively Developed
+
+Upcoming:
+
 * Public Developer API
-* More UI customization options
-
----
-
-## 📄 License
-
-This project is licensed under the **GNU General Public License v3 (GPL-3.0)**.
-
-* You may use, modify, and redistribute this plugin
-* Any redistributed versions **must remain open-source**
-* Proper credit is required
-
-See the `LICENSE` file for full details.
-
----
-
-## 💬 Support & Contributions
-
-* Issues & suggestions: **GitHub Issues**
-* Contributions are welcome via pull requests
-* Please keep changes consistent with the existing architecture
+* Extended integration hooks
+* Player list / tab integration (pending Hytale API support)
+* Expanded UI customization
 
 ---
 
