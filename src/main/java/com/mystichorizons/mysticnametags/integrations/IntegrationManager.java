@@ -192,15 +192,20 @@ public class IntegrationManager {
 
         UUID uuid = getUuidFromPlayerRef(playerRef);
 
+        // If we have a backend, trust it
         if (uuid != null && permissionsBackend != null) {
-            if (permissionsBackend.hasPermission(uuid, permissionNode)) {
-                return true;
+            try {
+                return permissionsBackend.hasPermission(uuid, permissionNode);
+            } catch (Throwable t) {
+                LOGGER.at(Level.WARNING).withCause(t)
+                        .log("[MysticNameTags] Permission backend threw while checking '%s' for %s",
+                                permissionNode, uuid);
+                return false;
             }
         }
 
-        // If LP is missing entirely fail-open for tag usage
-        // (other systems may unlock tags without perms)
-        if (!isLuckPermsAvailable()) {
+        // Only fail-open if we truly have no backend at all
+        if (permissionsBackend == null) {
             return true;
         }
 
@@ -243,6 +248,20 @@ public class IntegrationManager {
             return false;
         }
         return permissionsBackend.grantPermission(uuid, node);
+    }
+
+    public boolean revokePermission(@Nonnull UUID uuid, @Nonnull String node) {
+        if (permissionsBackend == null) {
+            return false;
+        }
+        try {
+            return permissionsBackend.revokePermission(uuid, node);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to revoke permission '%s' for %s via %s",
+                            node, uuid, permissionsBackend.getBackendName());
+            return false;
+        }
     }
 
     // ----------------------------------------------------------------
