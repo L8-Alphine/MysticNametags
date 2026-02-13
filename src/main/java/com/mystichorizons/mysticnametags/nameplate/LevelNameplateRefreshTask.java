@@ -10,6 +10,7 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.tags.TagManager;
+import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
@@ -91,7 +92,7 @@ public class LevelNameplateRefreshTask implements Runnable {
             }
 
             String finalText = plainNameplate + " [Lvl. " + level + "]";
-
+            finalText = ColorFormatter.stripFormatting(finalText);
             NameplateManager.get().apply(uuid, store, entityRef, finalText);
         }
     }
