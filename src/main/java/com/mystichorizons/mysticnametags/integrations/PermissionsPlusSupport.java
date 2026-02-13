@@ -34,19 +34,63 @@ public final class PermissionsPlusSupport implements PermissionSupport {
         return detected;
     }
 
+    /**
+     * Returns true if the permission set contains:
+     *  - the exact node
+     *  - a global wildcard "*"
+     *  - a hierarchical wildcard like "mysticnametags.*" or "mysticnametags.tag.*"
+     */
+    private boolean hasMatchingNode(Set<String> perms, String target) {
+        if (perms == null || perms.isEmpty() || target == null || target.isEmpty()) {
+            return false;
+        }
+
+        for (String raw : perms) {
+            if (raw == null || raw.isEmpty()) continue;
+
+            String perm = raw.toLowerCase();
+
+            // Exact match
+            if (perm.equals(target)) {
+                return true;
+            }
+
+            // Global wildcard
+            if (perm.equals("*")) {
+                return true;
+            }
+
+            // Hierarchical wildcard: "mysticnametags.*", "mysticnametags.tag.*", etc.
+            if (perm.endsWith(".*")) {
+                String prefix = perm.substring(0, perm.length() - 2);
+                if (!prefix.isEmpty() && target.startsWith(prefix)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     @Override
     public boolean hasPermission(UUID uuid, String node) {
         if (uuid == null || node == null || node.isEmpty()) return false;
 
+        final String target = node.toLowerCase();
+
         try {
             PermissionsModule pm = PermissionsModule.get();
+
             for (PermissionProvider provider : pm.getProviders()) {
+
                 Set<String> userPerms = provider.getUserPermissions(uuid);
-                if (userPerms.contains(node)) {
+                if (hasMatchingNode(userPerms, target)) {
                     return true;
                 }
+
                 for (String group : provider.getGroupsForUser(uuid)) {
-                    if (provider.getGroupPermissions(group).contains(node)) {
+                    Set<String> groupPerms = provider.getGroupPermissions(group);
+                    if (hasMatchingNode(groupPerms, target)) {
                         return true;
                     }
                 }
@@ -63,6 +107,19 @@ public final class PermissionsPlusSupport implements PermissionSupport {
         try {
             PermissionsModule pm = PermissionsModule.get();
             pm.addUserPermission(uuid, Collections.singleton(node));
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    @Override
+    public boolean revokePermission(UUID uuid, String node) {
+        if (uuid == null || node == null || node.isEmpty()) return false;
+
+        try {
+            PermissionsModule pm = PermissionsModule.get();
+            pm.removeUserPermission(uuid, Collections.singleton(node));
             return true;
         } catch (Throwable ignored) {
             return false;
