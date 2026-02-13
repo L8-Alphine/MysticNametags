@@ -2,6 +2,7 @@ package com.mystichorizons.mysticnametags.commands.admin;
 
 import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.command.system.arguments.system.RequiredArg;
+import com.hypixel.hytale.server.core.command.system.arguments.system.OptionalArg;
 import com.hypixel.hytale.server.core.command.system.arguments.types.ArgTypes;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.mystichorizons.mysticnametags.commands.AbstractTagsAdminSubCommand;
@@ -12,7 +13,7 @@ import java.util.UUID;
 
 public class TagsAdminResetSubCommand extends AbstractTagsAdminSubCommand {
 
-    // /tagsadmin reset <player>
+    // /tagsadmin reset <player> [resetPerms]
 
     @Nonnull
     private final RequiredArg<PlayerRef> targetArg =
@@ -20,6 +21,14 @@ public class TagsAdminResetSubCommand extends AbstractTagsAdminSubCommand {
                     "player",
                     "Player whose tags should be reset",
                     ArgTypes.PLAYER_REF
+            );
+
+    @Nonnull
+    private final OptionalArg<Boolean> resetPermsArg =
+            this.withOptionalArg(
+                    "resetPerms",
+                    "Whether to also revoke tag permissions (true/false)",
+                    ArgTypes.BOOLEAN
             );
 
     public TagsAdminResetSubCommand() {
@@ -45,7 +54,17 @@ public class TagsAdminResetSubCommand extends AbstractTagsAdminSubCommand {
         }
 
         UUID targetUuid = targetRef.getUuid();
-        boolean changed = TagManager.get().adminResetTags(targetUuid);
+
+        // Default: data-only reset.
+        boolean resetPerms = false;
+        Boolean flag = resetPermsArg.get(context);
+        if (flag != null) {
+            resetPerms = flag;
+        }
+
+        boolean changed = resetPerms
+                ? TagManager.get().adminResetTagsAndPermissions(targetUuid)
+                : TagManager.get().adminResetTags(targetUuid);
 
         if (!changed) {
             context.sender().sendMessage(
@@ -55,8 +74,15 @@ public class TagsAdminResetSubCommand extends AbstractTagsAdminSubCommand {
             return;
         }
 
-        context.sender().sendMessage(
-                colored("&aReset all tags for &b" + targetRef.getUsername() + "&a.")
-        );
+        if (resetPerms) {
+            context.sender().sendMessage(
+                    colored("&aReset all tags & revoked tag permissions for &b"
+                            + targetRef.getUsername() + "&a.")
+            );
+        } else {
+            context.sender().sendMessage(
+                    colored("&aReset all tags for &b" + targetRef.getUsername() + "&a.")
+            );
+        }
     }
 }

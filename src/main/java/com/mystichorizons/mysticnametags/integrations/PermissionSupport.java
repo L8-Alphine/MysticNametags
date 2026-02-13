@@ -15,5 +15,9 @@ public interface PermissionSupport {
      */
     boolean grantPermission(UUID uuid, String permissionNode);
 
+    default boolean revokePermission(UUID uuid, String node) {
+        return false;
+    }
+
     String getBackendName();
 }

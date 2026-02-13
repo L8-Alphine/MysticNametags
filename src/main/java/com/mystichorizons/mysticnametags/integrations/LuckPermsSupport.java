@@ -69,6 +69,27 @@ public final class LuckPermsSupport implements PermissionSupport, PrefixSupport 
     }
 
     @Override
+    public boolean revokePermission(UUID uuid, String node) {
+        if (api == null || uuid == null || node == null || node.isEmpty()) {
+            return false;
+        }
+
+        try {
+            User user = api.getUserManager().getUser(uuid);
+            if (user == null) {
+                user = api.getUserManager().loadUser(uuid).join();
+            }
+            if (user == null) return false;
+
+            user.data().remove(Node.builder(node).build());
+            api.getUserManager().saveUser(user);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    @Override
     public String getBackendName() {
         return "LuckPerms";
     }
