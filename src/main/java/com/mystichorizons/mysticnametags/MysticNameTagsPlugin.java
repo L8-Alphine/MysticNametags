@@ -136,6 +136,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     protected void start() {
         this.integrations.init();
 
+        tryRegisterEndlessLevelingNameplates();
+
         MysticLog.init(this);
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Started!");
@@ -321,5 +323,45 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         startLevelSchedulerIfNeeded();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Reload complete.");
+    }
+
+    private void tryRegisterEndlessLevelingNameplates() {
+        if (!Settings.get().isEndlessLevelingNameplatesEnabled()) {
+            LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling nameplates disabled in settings.");
+            return;
+        }
+
+        try {
+            // Ensure class exists
+            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
+
+            com.airijko.endlessleveling.EndlessLeveling el = com.airijko.endlessleveling.EndlessLeveling.getInstance();
+            if (el == null) {
+                LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling detected but instance is null; skipping integration.");
+                return;
+            }
+
+            var pdm = el.getPlayerDataManager();
+            if (pdm == null) {
+                LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling detected but PlayerDataManager is null; skipping integration.");
+                return;
+            }
+
+            // Register OUR system so it runs (likely) after theirs and overwrites their label
+            this.getEntityStoreRegistry().registerSystem(
+                    new com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem(
+                            pdm,
+                            TagManager.get()
+                    )
+            );
+
+            LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling integration enabled: overriding player nameplates.");
+
+        } catch (ClassNotFoundException ignored) {
+            // Not installed
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to register EndlessLeveling integration.");
+        }
     }
 }
