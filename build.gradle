@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.1.1'
+version = '1.1.2'
 
 repositories {
     mavenCentral()
@@ -48,6 +48,9 @@ dependencies {
 
     //RPGLeveling Support
     compileOnly files('libs/RPGLeveling-0.2.2.jar')
+
+    // Endless Leveling
+    compileOnly files('libs/EndlessLeveling.jar')
 //
 //    // TEMP
 //    compileOnly files('libs/HydroHologram-1.10.1.jar')
