@@ -37,8 +37,11 @@ public class Settings {
     /** Tag id from tags.json to use as default (e.g. "mystic"). */
     private String defaultTagId = "mystic";
 
-    /** EndlessLeveling integration (default ON). */
-    private boolean endlessLevelingNameplatesEnabled = true;
+    /** EndlessLeveling integration (default off). */
+    private boolean endlessLevelingNameplatesEnabled = false;
+
+    /** EndlessLeveling Integration for RACE DISPLAY */
+    private boolean endlessRaceDisplay = false;
     // --- Placeholder toggles -------------------------------------------------
 
     /**
@@ -128,6 +131,7 @@ public class Settings {
                 this.defaultTagId         = loaded.defaultTagId;
 
                 this.endlessLevelingNameplatesEnabled = loaded.endlessLevelingNameplatesEnabled;
+                this.endlessRaceDisplay = loaded.endlessRaceDisplay;
 
                 // Start with whatever was in the file
                 this.wiFlowPlaceholdersEnabled   = loaded.wiFlowPlaceholdersEnabled;
@@ -292,5 +296,9 @@ public class Settings {
 
     public boolean isEndlessLevelingNameplatesEnabled() {
         return endlessLevelingNameplatesEnabled;
+    }
+
+    public boolean isEndlessRaceDisplayEnabled() {
+        return endlessRaceDisplay;
     }
 }
