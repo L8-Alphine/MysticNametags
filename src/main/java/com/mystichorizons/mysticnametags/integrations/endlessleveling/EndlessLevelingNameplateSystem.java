@@ -23,6 +23,8 @@ public final class EndlessLevelingNameplateSystem extends TickingSystem<EntitySt
 
     private final PlayerDataManager playerDataManager;
     private final TagManager tagManager;
+
+    // Cache last applied FULL label
     private final Map<UUID, String> lastLabels = new ConcurrentHashMap<>();
 
     public EndlessLevelingNameplateSystem(@Nonnull PlayerDataManager playerDataManager,
@@ -35,9 +37,11 @@ public final class EndlessLevelingNameplateSystem extends TickingSystem<EntitySt
     public void tick(float deltaSeconds, int tickCount, Store<EntityStore> store) {
         if (store == null || store.isShutdown()) return;
 
-        // Master toggle
-        if (!Settings.get().isNameplatesEnabled()) return;
-        if (!Settings.get().isEndlessLevelingNameplatesEnabled()) return;
+        Settings s = Settings.get();
+        if (!s.isNameplatesEnabled()) return;
+        if (!s.isEndlessLevelingNameplatesEnabled()) return;
+
+        final boolean showRace = s.isEndlessRaceDisplayEnabled();
 
         store.forEachChunk(PLAYER_QUERY, (chunk, commandBuffer) -> {
             for (int i = 0; i < chunk.size(); i++) {
@@ -55,15 +59,26 @@ public final class EndlessLevelingNameplateSystem extends TickingSystem<EntitySt
                 PlayerData data = playerDataManager.get(uuid);
                 if (data == null) {
                     data = playerDataManager.loadOrCreate(uuid, baseName);
+                    if (data == null) continue;
                 }
-                if (data == null) continue;
 
                 int level = Math.max(1, data.getLevel());
 
-                // Mystic format (PLAIN — nameplates do not use colors)
+                // Mystic base (plain; rank/name/tag, stripped)
                 String plain = tagManager.buildPlainNameplate(playerRef, baseName, uuid);
 
-                String label = plain + " [Lvl. " + level + "]";
+                // Build single-line label:
+                // RaceId • Plain - Lvl.X
+                // or Plain - Lvl.X
+                String label;
+                if (showRace) {
+                    String raceId = data.getRaceId();
+                    if (raceId == null || raceId.isBlank()) raceId = PlayerData.DEFAULT_RACE_ID;
+
+                    label = raceId + " \u2022 " + plain + " - Lvl." + level;
+                } else {
+                    label = plain + " - Lvl." + level;
+                }
 
                 String prev = lastLabels.get(uuid);
                 if (label.equals(prev)) continue;
@@ -75,6 +90,11 @@ public final class EndlessLevelingNameplateSystem extends TickingSystem<EntitySt
                 lastLabels.put(uuid, label);
             }
         });
+    }
+
+    /** Force a re-apply next tick (used when other systems overwrite the nameplate). */
+    public void invalidate(@Nonnull UUID uuid) {
+        lastLabels.remove(uuid);
     }
 
     public void forget(@Nonnull UUID uuid) {
