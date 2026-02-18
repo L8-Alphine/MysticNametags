@@ -721,6 +721,13 @@ public class TagManager {
                 }
 
                 NameplateManager.get().apply(uuid, store, ref, finalText);
+
+                // IMPORTANT: if EndlessLeveling nameplates are enabled,
+                // force its cache to refresh so [Lvl] doesn't "disappear" after /tags.
+                if (Settings.get().isEndlessLevelingNameplatesEnabled()) {
+                    integrations.invalidateEndlessLevelingNameplate(uuid);
+                }
+
             } catch (Exception e) {
                 LOGGER.at(Level.WARNING).withCause(e)
                         .log("[MysticNameTags] Failed to refresh nameplate for %s", baseName);
