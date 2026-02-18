@@ -6,6 +6,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 
 import javax.annotation.Nonnull;
@@ -18,6 +19,8 @@ public class IntegrationManager {
 
     private static final String ECON_PLUGIN_NAME = "MysticNameTags";
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
+
+    @Nullable private EndlessLevelingNameplateSystem endlessNameplateSystem;
 
     // Permission backends
     private LuckPermsSupport luckPermsSupport;
@@ -303,8 +306,16 @@ public class IntegrationManager {
         }
     }
 
+    public boolean isHyEssentialsXAvailable() {
+        try {
+            return HyEssentialsXSupport.isAvailable();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
+    }
+
     public boolean hasAnyEconomy() {
-        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable() || isEcoTaleAvailable();
+        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable() || isEcoTaleAvailable() || isHyEssentialsXAvailable();
     }
 
     private void logEconomyStatusIfNeeded() {
@@ -313,15 +324,17 @@ public class IntegrationManager {
         }
 
         boolean primary = isPrimaryEconomyAvailable();
+        boolean hyex    = isHyEssentialsXAvailable();
         boolean ecoTale = isEcoTaleAvailable();
         boolean vault   = isVaultAvailable();
         boolean elite   = isEliteEconomyAvailable();
 
         if (primary) {
-            if (ecoTale || vault || elite) {
+            if (hyex || ecoTale || vault || elite) {
                 LOGGER.at(Level.INFO).log(
                         "[MysticNameTags] EconomySystem (com.economy) detected as primary economy. " +
-                                "EcoTale: " + ecoTale +
+                                "HyEssentialsX: " + hyex +
+                                ", EcoTale: " + ecoTale +
                                 ", VaultUnlocked: " + vault +
                                 ", EliteEssentials: " + elite + " (fallbacks)."
                 );
@@ -330,7 +343,26 @@ public class IntegrationManager {
                         .log("[MysticNameTags] EconomySystem (com.economy) detected – tag purchasing enabled.");
             }
             loggedEconomyStatus = true;
-        } else if (ecoTale) {
+            return;
+        }
+
+        if (hyex) {
+            if (ecoTale || vault || elite) {
+                LOGGER.at(Level.INFO).log(
+                        "[MysticNameTags] HyEssentialsX detected as primary economy backend. " +
+                                "EcoTale: " + ecoTale +
+                                ", VaultUnlocked: " + vault +
+                                ", EliteEssentials: " + elite + " (fallbacks)."
+                );
+            } else {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] HyEssentialsX detected – tag purchasing enabled.");
+            }
+            loggedEconomyStatus = true;
+            return;
+        }
+
+        if (ecoTale) {
             if (vault || elite) {
                 LOGGER.at(Level.INFO).log(
                         "[MysticNameTags] EcoTale detected as primary economy backend. " +
@@ -342,7 +374,10 @@ public class IntegrationManager {
                         .log("[MysticNameTags] EcoTale detected – tag purchasing enabled.");
             }
             loggedEconomyStatus = true;
-        } else if (vault) {
+            return;
+        }
+
+        if (vault) {
             if (elite) {
                 LOGGER.at(Level.INFO)
                         .log("[MysticNameTags] VaultUnlocked + EliteEssentials detected – using VaultUnlocked as primary economy backend.");
@@ -351,12 +386,16 @@ public class IntegrationManager {
                         .log("[MysticNameTags] VaultUnlocked detected – tag purchasing enabled.");
             }
             loggedEconomyStatus = true;
-        } else if (elite) {
+            return;
+        }
+
+        if (elite) {
             LOGGER.at(Level.INFO)
                     .log("[MysticNameTags] EliteEssentials EconomyAPI detected – tag purchasing enabled.");
             loggedEconomyStatus = true;
         }
     }
+
 
     public boolean withdraw(@Nonnull UUID uuid, double amount) {
         if (amount <= 0.0D) {
@@ -384,6 +423,11 @@ public class IntegrationManager {
         // EcoTale
         if (isEcoTaleAvailable()) {
             return EcoTaleSupport.withdraw(uuid, amount);
+        }
+
+        // HyEssentialsX
+        if (isHyEssentialsXAvailable()) {
+            return HyEssentialsXSupport.withdraw(uuid, amount);
         }
 
         if (isVaultAvailable()) {
@@ -425,6 +469,11 @@ public class IntegrationManager {
             return EcoTaleSupport.getBalance(uuid) >= amount;
         }
 
+        // HyEssentialsX
+        if (isHyEssentialsXAvailable()) {
+            return HyEssentialsXSupport.has(uuid, amount);
+        }
+
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid) >= amount;
         }
@@ -456,6 +505,11 @@ public class IntegrationManager {
             return EcoTaleSupport.getBalance(uuid);
         }
 
+        // HyEssentialsX
+        if (isHyEssentialsXAvailable()) {
+            return HyEssentialsXSupport.getBalance(uuid);
+        }
+
         if (isVaultAvailable()) {
             return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid);
         }
@@ -470,5 +524,14 @@ public class IntegrationManager {
     @Nonnull
     private UUID getUuidFromPlayerRef(@Nonnull PlayerRef ref) {
         return ref.getUuid();
+    }
+
+    public void setEndlessNameplateSystem(@Nullable EndlessLevelingNameplateSystem sys) {
+        this.endlessNameplateSystem = sys;
+    }
+
+    public void invalidateEndlessLevelingNameplate(@Nonnull UUID uuid) {
+        EndlessLevelingNameplateSystem sys = this.endlessNameplateSystem;
+        if (sys != null) sys.invalidate(uuid);
     }
 }
