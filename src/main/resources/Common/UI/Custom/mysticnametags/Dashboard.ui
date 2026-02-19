@@ -188,7 +188,7 @@ Group {
     // Quick info (version + integrations + tags)
     Group {
       LayoutMode: Top;
-      Anchor: (Height: 86);
+      Anchor: (Height: 110);
       Background: #1c2432;
       Padding: (Full: 10);
 
@@ -209,6 +209,12 @@ Group {
         Anchor: (Height: 22);
         Style: (FontSize: 13, TextColor: #b6c9de);
       }
+
+      Label #StorageLabel {
+              Text: "Storage: File (playerdata/*.json)";
+              Anchor: (Height: 22);
+              Style: (FontSize: 13, TextColor: #b6c9de);
+            }
     }
 
     Group { Anchor: (Height: 8); }
@@ -216,18 +222,24 @@ Group {
     // Resource stats row
     Group {
       LayoutMode: Top;
-      Anchor: (Height: 56);
+      Anchor: (Height: 76);
       Background: #1c2432;
       Padding: (Full: 10);
 
       Label #CpuLabel {
-        Text: "CPU (JVM): N/A";
+        Text: "CPU (process): N/A";
         Anchor: (Height: 20);
         Style: (FontSize: 12, TextColor: #6e7da1);
       }
 
       Label #RamLabel {
         Text: "RAM (JVM): N/A";
+        Anchor: (Height: 20);
+        Style: (FontSize: 12, TextColor: #6e7da1);
+      }
+
+      Label #UptimeLabel {
+        Text: "Uptime: N/A";
         Anchor: (Height: 20);
         Style: (FontSize: 12, TextColor: #6e7da1);
       }
@@ -386,50 +398,62 @@ Group {
           }
 
           // --- Debug ---
-          Group #TabDebugPanel {
-            LayoutMode: Top;
-            Anchor: (Full: 1);
-            Visible: false;
+            Group #TabDebugPanel {
+              LayoutMode: Top;
+              Anchor: (Full: 1);
+              Visible: false;
 
-            Label {
-              Text: "Debug & Support";
-              Anchor: (Height: 22);
-              Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
-            }
+              Label {
+                Text: "Debug & Support";
+                Anchor: (Height: 22);
+                Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
+              }
 
-            Label {
-              Text: "- 'Debug Snapshot' prints full plugin state to console/logs.";
-              Anchor: (Height: 18);
-              Style: (FontSize: 12, TextColor: #96a9be);
-            }
+              Label {
+                Text: "- 'Debug Snapshot' prints full plugin state to console/logs.";
+                Anchor: (Height: 18);
+                Style: (FontSize: 12, TextColor: #96a9be);
+              }
 
-            Label {
-              Text: "- Snapshot includes active tag, integrations, and version info.";
-              Anchor: (Height: 18);
-              Style: (FontSize: 12, TextColor: #96a9be);
-            }
+              Label {
+                Text: "- Snapshot includes active tag, integrations, storage and version info.";
+                Anchor: (Height: 18);
+                Style: (FontSize: 12, TextColor: #96a9be);
+              }
 
-            Label {
-              Text: "- Attach that output when opening a bug report.";
-              Anchor: (Height: 18);
-              Style: (FontSize: 12, TextColor: #96a9be);
-            }
+              Label {
+                Text: "- Attach that output when opening a bug report.";
+                Anchor: (Height: 18);
+                Style: (FontSize: 12, TextColor: #96a9be);
+              }
 
-            Label {
-              Text: "- 'Refresh Nameplate' re-sends the current tag to your nameplate.";
-              Anchor: (Height: 18);
-              Style: (FontSize: 12, TextColor: #96a9be);
-            }
+              Label {
+                Text: "- Use /tagsadmin storage to see which backend is active.";
+                Anchor: (Height: 18);
+                Style: (FontSize: 12, TextColor: #96a9be);
+              }
 
-            Label {
-              Text: "- 'Clear Cache' forgets local tag + nameplate cache for you.";
-              Anchor: (Height: 18);
-              Style: (FontSize: 12, TextColor: #96a9be);
+              Label {
+                Text: "- Use /tagsadmin debugstorage for more detailed storage checks.";
+                Anchor: (Height: 18);
+                Style: (FontSize: 12, TextColor: #96a9be);
+              }
+
+              Label {
+                Text: "- 'Refresh Nameplate' re-sends the current tag to your nameplate.";
+                Anchor: (Height: 18);
+                Style: (FontSize: 12, TextColor: #96a9be);
+              }
+
+              Label {
+                Text: "- 'Clear Cache' forgets local tag + nameplate cache for you.";
+                Anchor: (Height: 18);
+                Style: (FontSize: 12, TextColor: #96a9be);
+              }
             }
           }
         }
       }
-    }
 
     Group { Anchor: (Height: 10); }
 
