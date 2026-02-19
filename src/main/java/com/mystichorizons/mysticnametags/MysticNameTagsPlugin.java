@@ -8,6 +8,7 @@ import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.mystichorizons.mysticnametags.commands.MysticNameTagsPluginCommand;
 import com.mystichorizons.mysticnametags.commands.TagsAdminCommand;
 import com.mystichorizons.mysticnametags.commands.TagsCommand;
+import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
@@ -89,8 +90,9 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
         this.integrations = new IntegrationManager();
 
-        // Init core config + tags
+        // Init core config + tags + Lang
         Settings.init();
+        LanguageManager.init();
         TagManager.init(integrations);
 
         // Register commands
@@ -303,6 +305,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
         // 1) Reload settings.json
         Settings.init();
+        LanguageManager.get().reload();
 
         // 2) Re-run integration detection (permissions, prefixes, economy)
         //    This allows the plugin to hook into newly-installed plugins
