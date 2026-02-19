@@ -22,9 +22,33 @@ public class Settings {
 
     private static Settings INSTANCE;
 
-    // Example default: "{rank} {name} {tag}"
+    // Core Settings
     private String nameplateFormat = "{rank} {name} {tag}";
     private boolean stripExtraSpaces = true;
+    private String language = "en_US";
+
+    // ---------------------------------------------------------------------
+    // Storage backend (FILE / SQLITE / MYSQL)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Storage backend for player tag data.
+     *
+     * FILE  = existing playerdata/*.json files (default, backwards compatible)
+     * SQLITE = single local SQLite DB file
+     * MYSQL = external MySQL/MariaDB database
+     */
+    private String storageBackend = "FILE"; // FILE, SQLITE, MYSQL
+
+    // SQLite options (relative to plugin data folder)
+    private String sqliteFile = "playerdata.db";
+
+    // MySQL options
+    private String mysqlHost = "localhost";
+    private int    mysqlPort = 3306;
+    private String mysqlDatabase = "mysticnametags";
+    private String mysqlUser = "root";
+    private String mysqlPassword = "password";
 
     // --- Nameplate toggles ------------------------------------------------------
 
@@ -78,6 +102,12 @@ public class Settings {
     private boolean useCoinSystem = false;
 
     /**
+     * If true, MysticNameTags will use CoinsAndMarkets physical coins (pouch+inventory)
+     * for tag purchasing instead of ledger/bank economies.
+     */
+    private boolean usePhysicalCoinEconomy = false;
+
+    /**
      * When enabled, tag permission nodes act as a full gate.
      */
     private boolean fullPermissionGate = false;
@@ -125,6 +155,16 @@ public class Settings {
             if (loaded != null) {
                 this.nameplateFormat       = loaded.nameplateFormat;
                 this.stripExtraSpaces      = loaded.stripExtraSpaces;
+                this.language           = loaded.language;
+
+                this.storageBackend = loaded.storageBackend != null ? loaded.storageBackend : "FILE";
+                this.sqliteFile     = loaded.sqliteFile != null ? loaded.sqliteFile : "playerdata.db";
+
+                this.mysqlHost      = loaded.mysqlHost != null ? loaded.mysqlHost : "localhost";
+                this.mysqlPort      = loaded.mysqlPort;
+                this.mysqlDatabase  = loaded.mysqlDatabase != null ? loaded.mysqlDatabase : "mysticnametags";
+                this.mysqlUser      = loaded.mysqlUser != null ? loaded.mysqlUser : "root";
+                this.mysqlPassword  = loaded.mysqlPassword != null ? loaded.mysqlPassword : "password";
 
                 this.nameplatesEnabled      = loaded.nameplatesEnabled;
                 this.defaultTagEnabled   = loaded.defaultTagEnabled;
@@ -139,6 +179,7 @@ public class Settings {
 
                 this.economySystemEnabled  = loaded.economySystemEnabled;
                 this.useCoinSystem         = loaded.useCoinSystem;
+                this.usePhysicalCoinEconomy = loaded.usePhysicalCoinEconomy;
                 this.fullPermissionGate    = loaded.fullPermissionGate;
                 this.rpgLevelingNameplatesEnabled = loaded.rpgLevelingNameplatesEnabled;
                 this.rpgLevelingRefreshSeconds    = loaded.rpgLevelingRefreshSeconds;
@@ -250,6 +291,37 @@ public class Settings {
         return ColorFormatter.colorize(raw);
     }
 
+    public String getStorageBackendRaw() {
+        return (storageBackend == null || storageBackend.isBlank())
+                ? "FILE" : storageBackend.trim().toUpperCase();
+    }
+
+    public String getSqliteFile() {
+        return (sqliteFile == null || sqliteFile.isBlank())
+                ? "playerdata.db" : sqliteFile.trim();
+    }
+
+    public String getMysqlHost() {
+        return mysqlHost == null ? "localhost" : mysqlHost.trim();
+    }
+
+    public int getMysqlPort() {
+        return mysqlPort <= 0 ? 3306 : mysqlPort;
+    }
+
+    public String getMysqlDatabase() {
+        return (mysqlDatabase == null || mysqlDatabase.isBlank())
+                ? "mysticnametags" : mysqlDatabase.trim();
+    }
+
+    public String getMysqlUser() {
+        return mysqlUser == null ? "root" : mysqlUser;
+    }
+
+    public String getMysqlPassword() {
+        return mysqlPassword == null ? "" : mysqlPassword;
+    }
+
     // ---------------------------------------------------------------------
     // Getters for flags
     // ---------------------------------------------------------------------
@@ -261,6 +333,8 @@ public class Settings {
     public boolean isUseCoinSystem() {
         return useCoinSystem;
     }
+
+    public boolean isUsePhysicalCoinEconomy() { return  usePhysicalCoinEconomy; }
 
     public boolean isFullPermissionGateEnabled() {
         return fullPermissionGate;
@@ -300,5 +374,9 @@ public class Settings {
 
     public boolean isEndlessRaceDisplayEnabled() {
         return endlessRaceDisplay;
+    }
+
+    public String getLanguage() {
+        return (language == null || language.trim().isEmpty()) ? "en_US" : language.trim();
     }
 }
