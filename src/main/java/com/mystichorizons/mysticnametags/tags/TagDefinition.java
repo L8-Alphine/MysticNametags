@@ -1,6 +1,7 @@
 package com.mystichorizons.mysticnametags.tags;
 
 import javax.annotation.Nullable;
+import java.util.List;
 
 public class TagDefinition {
 
@@ -11,6 +12,8 @@ public class TagDefinition {
     boolean purchasable;
     String permission;   // optional extra perm (e.g. "mysticnametags.tag.dragon")
     String category;     // optional category (e.g. "Legendary", "Seasonal", "Donator")
+    Integer requiredPlaytimeMinutes;      // null = no requirement
+    List<String> requiredOwnedTags;       // null/empty = none
 
     public String getId() {
         return id;
@@ -44,5 +47,17 @@ public class TagDefinition {
 
     public void setCategory(@Nullable String category) {
         this.category = category;
+    }
+
+    List<String> onUnlockCommands;        // null/empty = none
+
+    public Integer getRequiredPlaytimeMinutes() { return requiredPlaytimeMinutes; }
+
+    public List<String> getRequiredOwnedTags() {
+        return requiredOwnedTags == null ? List.of() : requiredOwnedTags;
+    }
+
+    public List<String> getOnUnlockCommands() {
+        return onUnlockCommands == null ? List.of() : onUnlockCommands;
     }
 }

@@ -15,6 +15,7 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.component.Ref;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
+import com.mystichorizons.mysticnametags.util.ConsoleCommandRunner;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +46,7 @@ public class TagManager {
 
     private volatile List<TagDefinition> tagList = Collections.emptyList();
     private final Map<String, TagDefinition> tags = new LinkedHashMap<>();
+    private final PlayerTagStore playerTagStore;
     private final Map<UUID, PlayerTagData> playerData = new HashMap<>();
     // Cache of the last applied nameplate text (colored or plain)
     private final Map<UUID, String> lastNameplateText = new ConcurrentHashMap<>();
@@ -96,6 +98,56 @@ public class TagManager {
         this.playerDataFolder.mkdirs();
 
         this.configFile = new File(dataFolder, "tags.json");
+
+        // -------- Storage backend selection --------
+        Settings settings = Settings.get();
+        StorageBackend backend = StorageBackend.fromString(settings.getStorageBackendRaw());
+
+        PlayerTagStore store;
+
+        switch (backend) {
+            case SQLITE: {
+                // SQLite file is relative to plugin data folder
+                File sqliteFile = new File(dataFolder, settings.getSqliteFile());
+                String jdbcUrl = "jdbc:sqlite:" + sqliteFile.getAbsolutePath();
+
+                store = new SqlPlayerTagStore(
+                        jdbcUrl,
+                        "",            // no user
+                        "",            // no password
+                        GSON
+                );
+
+                // Auto-migrate from legacy playerdata/*.json if present
+                store.migrateFromFolder(playerDataFolder, GSON);
+                break;
+            }
+
+            case MYSQL: {
+                String host = settings.getMysqlHost();
+                int    port = settings.getMysqlPort();
+                String db   = settings.getMysqlDatabase();
+                String user = settings.getMysqlUser();
+                String pass = settings.getMysqlPassword();
+
+                String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + db +
+                        "?useSSL=false&autoReconnect=true&characterEncoding=UTF-8";
+
+                store = new SqlPlayerTagStore(jdbcUrl, user, pass, GSON);
+
+                // Auto-migrate from legacy JSON if present
+                store.migrateFromFolder(playerDataFolder, GSON);
+                break;
+            }
+
+            case FILE:
+            default: {
+                store = new FilePlayerTagStore(playerDataFolder, GSON);
+                break;
+            }
+        }
+
+        this.playerTagStore = store;
     }
 
     // ------------- Config -------------
@@ -308,40 +360,13 @@ public class TagManager {
     }
 
     private PlayerTagData loadPlayerData(UUID uuid) {
-        File file = new File(playerDataFolder, uuid.toString() + ".json");
-        if (!file.exists()) {
-            return new PlayerTagData();
-        }
-
-        try (InputStreamReader reader =
-                     new InputStreamReader(
-                             new FileInputStream(file),
-                             StandardCharsets.UTF_8)) {
-
-            PlayerTagData data = GSON.fromJson(reader, PlayerTagData.class);
-            return data != null ? data : new PlayerTagData();
-        } catch (Exception e) {
-            LOGGER.at(Level.WARNING).withCause(e)
-                    .log("[MysticNameTags] Failed to load tag data for " + uuid);
-            return new PlayerTagData();
-        }
+        return playerTagStore.load(uuid);
     }
 
     private void savePlayerData(UUID uuid) {
         PlayerTagData data = playerData.get(uuid);
         if (data == null) return;
-
-        File file = new File(playerDataFolder, uuid.toString() + ".json");
-        try (OutputStreamWriter writer =
-                     new OutputStreamWriter(
-                             new FileOutputStream(file),
-                             StandardCharsets.UTF_8)) {
-
-            GSON.toJson(data, writer);
-        } catch (Exception e) {
-            LOGGER.at(Level.WARNING).withCause(e)
-                    .log("[MysticNameTags] Failed to save tag data for " + uuid);
-        }
+        playerTagStore.save(uuid, data);
     }
 
     // ------------- Public API -------------
@@ -476,6 +501,34 @@ public class TagManager {
         return false;
     }
 
+    private TagPurchaseResult checkRequirements(@Nonnull UUID uuid,
+                                                @Nonnull PlayerRef playerRef,
+                                                @Nonnull TagDefinition def) {
+
+        // 1) Required owned tags
+        List<String> requiredTags = def.getRequiredOwnedTags();
+        if (!requiredTags.isEmpty()) {
+            PlayerTagData data = getOrLoad(uuid);
+            for (String req : requiredTags) {
+                if (req == null || req.isBlank()) continue;
+                if (!data.owns(req.toLowerCase(Locale.ROOT))) {
+                    return TagPurchaseResult.REQUIREMENTS_NOT_MET;
+                }
+            }
+        }
+
+        // 2) Required playtime
+        Integer reqMinutes = def.getRequiredPlaytimeMinutes();
+        if (reqMinutes != null && reqMinutes > 0) {
+            Integer playtime = integrations.getPlaytimeMinutes(uuid);
+            if (playtime == null || playtime < reqMinutes) {
+                return TagPurchaseResult.REQUIREMENTS_NOT_MET;
+            }
+        }
+
+        return null; // ok
+    }
+
     /**
      * Toggle a tag:
      * - If currently equipped: unequip.
@@ -533,6 +586,12 @@ public class TagManager {
             }
         }
 
+        // Requirement Check if any
+        TagPurchaseResult reqFail = checkRequirements(uuid, playerRef, def);
+        if (reqFail != null) {
+            return reqFail;
+        }
+
         PlayerTagData data = getOrLoad(uuid);
 
         if (data.owns(def.getId())) {
@@ -547,6 +606,8 @@ public class TagManager {
             data.setEquipped(def.getId());
             savePlayerData(uuid);
 
+            runOnFirstUnlockCommands(def, playerRef);
+
             // grant permission if defined (for non-full-gate setups)
             maybeGrantPermission(uuid, perm);
 
@@ -558,17 +619,18 @@ public class TagManager {
             return TagPurchaseResult.NO_ECONOMY;
         }
 
-        if (!integrations.hasBalance(uuid, def.getPrice())) {
+        if (!integrations.hasBalance(playerRef, uuid, def.getPrice())) {
             return TagPurchaseResult.NOT_ENOUGH_MONEY;
         }
 
-        if (!integrations.withdraw(uuid, def.getPrice())) {
+        if (!integrations.withdraw(playerRef, uuid, def.getPrice())) {
             return TagPurchaseResult.TRANSACTION_FAILED;
         }
 
         data.addOwned(def.getId());
         data.setEquipped(def.getId());
         savePlayerData(uuid);
+        runOnFirstUnlockCommands(def, playerRef);
 
         // grant permission if defined (for non-full-gate setups)
         maybeGrantPermission(uuid, perm);
@@ -789,6 +851,7 @@ public class TagManager {
         UNEQUIPPED,
         NO_ECONOMY,
         NOT_ENOUGH_MONEY,
+        REQUIREMENTS_NOT_MET,
         TRANSACTION_FAILED
     }
 
@@ -1003,12 +1066,17 @@ public class TagManager {
             return false; // nothing to reset
         }
 
-        // Clear MysticNameTags local data
         data.getOwned().clear();
         data.setEquipped(null);
 
         savePlayerData(uuid);
         clearCanUseCache(uuid);
+
+        // Optional: also delete from backend entirely
+        try {
+            playerTagStore.delete(uuid);
+        } catch (Throwable ignored) {
+        }
 
         // Refresh nameplate if they're online
         PlayerRef ref = onlinePlayers.get(uuid);
@@ -1049,6 +1117,13 @@ public class TagManager {
             }
         }
 
+
+        // Optional: also delete from backend entirely
+        try {
+            playerTagStore.delete(uuid);
+        } catch (Throwable ignored) {
+        }
+
         // No need to refresh nameplate again; adminResetTags already did it.
         return true;
     }
@@ -1065,5 +1140,30 @@ public class TagManager {
         if (id == null || id.trim().isEmpty()) return null;
 
         return getTag(id.trim());
+    }
+
+    private void runOnFirstUnlockCommands(@Nonnull TagDefinition def, @Nonnull PlayerRef playerRef) {
+        List<String> cmds = def.getOnUnlockCommands();
+        if (cmds.isEmpty()) return;
+
+        UUID uuid = playerRef.getUuid();
+        World world = onlineWorlds.get(uuid);
+
+        Runnable task = () -> {
+            String playerName = playerRef.getUsername();
+
+            for (String raw : cmds) {
+                if (raw == null || raw.isBlank()) continue;
+                String cmd = raw.replace("<player>", playerName);
+                cmd = ColorFormatter.translateAlternateColorCodes('§', cmd);
+                ConsoleCommandRunner.dispatchConsole(cmd);
+            }
+        };
+
+        if (world != null) {
+            world.execute(task);
+        } else {
+            task.run();            // offline/not tracked: best-effort
+        }
     }
 }

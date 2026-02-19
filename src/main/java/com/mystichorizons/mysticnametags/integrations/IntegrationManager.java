@@ -3,11 +3,10 @@ package com.mystichorizons.mysticnametags.integrations;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
-import com.hypixel.hytale.server.core.universe.world.World;
-import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.integrations.economy.*;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
-import com.mystichorizons.mysticnametags.tags.TagManager;
+import com.mystichorizons.mysticnametags.integrations.permissions.*;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -21,6 +20,10 @@ public class IntegrationManager {
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
     @Nullable private EndlessLevelingNameplateSystem endlessNameplateSystem;
+    @Nullable private PlaytimeProvider playtimeProvider;
+    @Nullable private CoinsAndMarketsBackend coinsAndMarketsBackend;
+
+    private java.util.List<EconomyBackend> ledgerBackends = java.util.List.of();
 
     // Permission backends
     private LuckPermsSupport luckPermsSupport;
@@ -35,6 +38,14 @@ public class IntegrationManager {
         NATIVE
     }
 
+    public enum EconomyMode {
+        NONE,
+        LEDGER,   // your current UUID-based chain
+        PHYSICAL  // CoinsAndMarkets pouch+inventory
+    }
+
+    private EconomyMode economyMode = EconomyMode.NONE;
+
     private PermissionBackendType activePermissionBackend = PermissionBackendType.NATIVE;
 
     // Economy flags
@@ -43,7 +54,7 @@ public class IntegrationManager {
     public void init() {
         setupPermissionBackends();
         setupPrefixBackends();
-        // economy is unchanged
+        setupEconomyBackends();
     }
 
     // ----------------------------------------------------------------
@@ -129,6 +140,67 @@ public class IntegrationManager {
             LOGGER.at(Level.INFO)
                     .log("[MysticNameTags] No prefix provider detected – nameplates will only show tags + player names.");
         }
+    }
+
+    private void setupEconomyBackends() {
+        this.coinsAndMarketsBackend = null;
+        this.economyMode = EconomyMode.NONE;
+        this.ledgerBackends = java.util.List.of();
+
+        if (!Settings.get().isEconomySystemEnabled()) return;
+
+        // 1) Physical Coins (CoinsAndMarkets)
+        if (Settings.get().isUsePhysicalCoinEconomy()) {
+            try {
+                Object apiObj = tryGetCoinsApiSingleton();
+                if (apiObj instanceof com.coinsandmarkets.api.CoinsAndMarketsApi api) {
+                    this.coinsAndMarketsBackend = new CoinsAndMarketsBackend(api);
+                    this.economyMode = EconomyMode.PHYSICAL;
+                    LOGGER.at(Level.INFO).log("[MysticNameTags] Using CoinsAndMarkets (physical coins) for tag purchases.");
+                    return;
+                }
+
+                LOGGER.at(Level.WARNING).log("[MysticNameTags] CoinsAndMarkets enabled in settings, but API not available. Falling back to ledger.");
+            } catch (Throwable t) {
+                LOGGER.at(Level.WARNING).withCause(t)
+                        .log("[MysticNameTags] Failed to init CoinsAndMarkets. Falling back to ledger.");
+            }
+        }
+
+        // 2) Ledger chain
+        boolean useCoins = Settings.get().isUseCoinSystem();
+
+        java.util.List<EconomyBackend> chain = new java.util.ArrayList<>();
+        chain.add(LedgerBackends.economySystemLedger(useCoins));
+        chain.add(LedgerBackends.hyEssentialsX());
+        chain.add(LedgerBackends.ecoTale());
+        chain.add(LedgerBackends.vaultUnlocked(ECON_PLUGIN_NAME));
+        chain.add(LedgerBackends.eliteEssentials());
+
+        // Keep only those that are actually present
+        chain.removeIf(b -> !b.isAvailable());
+
+        this.ledgerBackends = java.util.Collections.unmodifiableList(chain);
+        if (!ledgerBackends.isEmpty()) {
+            this.economyMode = EconomyMode.LEDGER;
+        }
+    }
+
+    private Object tryGetCoinsApiSingleton() {
+        try {
+            Class<?> pluginClass = Class.forName("com.coinsandmarkets.platform.CoinsAndMarketsPlugin");
+            Object plugin = pluginClass.getMethod("getInstance").invoke(null);
+            if (plugin == null) return null;
+
+            // api(): CoinsAndMarketsApi
+            return pluginClass.getMethod("api").invoke(plugin);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private boolean hasAnyLedgerEconomy() {
+        return ledgerBackends != null && !ledgerBackends.isEmpty();
     }
 
     // ----------------------------------------------------------------
@@ -314,8 +386,19 @@ public class IntegrationManager {
         }
     }
 
+    public EconomyMode getEconomyMode() {
+        return economyMode;
+    }
+
+    public boolean isUsingPhysicalCoins() {
+        return economyMode == EconomyMode.PHYSICAL
+                && coinsAndMarketsBackend != null
+                && coinsAndMarketsBackend.isAvailable();
+    }
+
     public boolean hasAnyEconomy() {
-        return isPrimaryEconomyAvailable() || isVaultAvailable() || isEliteEconomyAvailable() || isEcoTaleAvailable() || isHyEssentialsXAvailable();
+        if (!Settings.get().isEconomySystemEnabled()) return false;
+        return isUsingPhysicalCoins() || hasAnyLedgerEconomy();
     }
 
     private void logEconomyStatusIfNeeded() {
@@ -397,89 +480,71 @@ public class IntegrationManager {
     }
 
 
-    public boolean withdraw(@Nonnull UUID uuid, double amount) {
-        if (amount <= 0.0D) {
-            return true;
-        }
+    public boolean withdraw(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid, double amount) {
+        if (amount <= 0.0D) return true;
 
         logEconomyStatusIfNeeded();
 
-        boolean useCoins = Settings.get().isEconomySystemEnabled()
-                && Settings.get().isUseCoinSystem();
+        if (isUsingPhysicalCoins() && coinsAndMarketsBackend != null) {
+            long copper = Math.round(amount);
+            return coinsAndMarketsBackend.withdrawCopper(playerRef, copper).success();
+        }
 
-        if (isPrimaryEconomyAvailable()) {
-            if (useCoins) {
-                int coinAmount = (int) Math.round(amount);
-                if (EconomySystemSupport.withdrawCoins(uuid, coinAmount)) {
-                    return true;
-                }
-            } else {
-                if (EconomySystemSupport.withdraw(uuid, amount)) {
+        return withdraw(uuid, amount);
+    }
+
+    public boolean hasBalance(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid, double amount) {
+        if (amount <= 0.0D) return true;
+
+        logEconomyStatusIfNeeded();
+
+        if (isUsingPhysicalCoins() && coinsAndMarketsBackend != null) {
+            long copper = Math.round(amount);
+            return coinsAndMarketsBackend.hasCopper(playerRef, copper);
+        }
+
+        return hasBalance(uuid, amount);
+    }
+
+    public double getBalance(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid) {
+        logEconomyStatusIfNeeded();
+
+        if (isUsingPhysicalCoins() && coinsAndMarketsBackend != null) {
+            return (double) coinsAndMarketsBackend.getPhysicalWealthCopper(playerRef);
+        }
+
+        return getBalance(uuid);
+    }
+
+    public boolean withdraw(@Nonnull UUID uuid, double amount) {
+        if (amount <= 0.0D) return true;
+        logEconomyStatusIfNeeded();
+
+        // Ledger chain only (physical is handled in the PlayerRef overload)
+        if (ledgerBackends != null) {
+            for (EconomyBackend backend : ledgerBackends) {
+                if (!backend.isAvailable()) continue;
+                if (backend.has(uuid, amount) && backend.withdraw(uuid, amount)) {
                     return true;
                 }
             }
-        }
-
-        // EcoTale
-        if (isEcoTaleAvailable()) {
-            return EcoTaleSupport.withdraw(uuid, amount);
-        }
-
-        // HyEssentialsX
-        if (isHyEssentialsXAvailable()) {
-            return HyEssentialsXSupport.withdraw(uuid, amount);
-        }
-
-        if (isVaultAvailable()) {
-            return VaultUnlockedSupport.withdraw(ECON_PLUGIN_NAME, uuid, amount);
-        }
-
-        if (isEliteEconomyAvailable()) {
-            return EliteEconomySupport.withdraw(uuid, amount);
         }
 
         return false;
     }
 
     public boolean hasBalance(@Nonnull UUID uuid, double amount) {
-        if (amount <= 0.0D) {
-            return true;
-        }
-
+        if (amount <= 0.0D) return true;
         logEconomyStatusIfNeeded();
 
-        boolean useCoins = Settings.get().isEconomySystemEnabled()
-                && Settings.get().isUseCoinSystem();
-
-        if (isPrimaryEconomyAvailable()) {
-            if (useCoins) {
-                int coinAmount = (int) Math.round(amount);
-                if (EconomySystemSupport.hasCoins(uuid, coinAmount)) {
-                    return true;
-                }
-            } else {
-                if (EconomySystemSupport.has(uuid, amount)) {
+        // Ledger chain only (physical is handled in the PlayerRef overload)
+        if (ledgerBackends != null) {
+            for (EconomyBackend backend : ledgerBackends) {
+                if (!backend.isAvailable()) continue;
+                if (backend.has(uuid, amount)) {
                     return true;
                 }
             }
-        }
-
-        // EcoTale
-        if (isEcoTaleAvailable()) {
-            return EcoTaleSupport.getBalance(uuid) >= amount;
-        }
-
-        // HyEssentialsX
-        if (isHyEssentialsXAvailable()) {
-            return HyEssentialsXSupport.has(uuid, amount);
-        }
-
-        if (isVaultAvailable()) {
-            return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid) >= amount;
-        }
-
-        if (isEliteEconomyAvailable()) {
-            return EliteEconomySupport.has(uuid, amount);
         }
 
         return false;
@@ -488,34 +553,15 @@ public class IntegrationManager {
     public double getBalance(@Nonnull UUID uuid) {
         logEconomyStatusIfNeeded();
 
-        boolean useCoins = Settings.get().isEconomySystemEnabled()
-                && Settings.get().isUseCoinSystem();
-
-        if (isPrimaryEconomyAvailable()) {
-            if (useCoins) {
-                int coins = EconomySystemSupport.getCoins(uuid);
-                return coins;
-            } else {
-                return EconomySystemSupport.getBalance(uuid);
+        // Ledger chain only (physical is handled in the PlayerRef overload)
+        if (ledgerBackends != null) {
+            for (EconomyBackend backend : ledgerBackends) {
+                if (!backend.isAvailable()) continue;
+                double bal = backend.getBalance(uuid);
+                if (bal > 0.0D) {
+                    return bal;
+                }
             }
-        }
-
-        // EcoTale
-        if (isEcoTaleAvailable()) {
-            return EcoTaleSupport.getBalance(uuid);
-        }
-
-        // HyEssentialsX
-        if (isHyEssentialsXAvailable()) {
-            return HyEssentialsXSupport.getBalance(uuid);
-        }
-
-        if (isVaultAvailable()) {
-            return VaultUnlockedSupport.getBalance(ECON_PLUGIN_NAME, uuid);
-        }
-
-        if (isEliteEconomyAvailable()) {
-            return EliteEconomySupport.getBalance(uuid);
         }
 
         return 0.0D;
@@ -533,5 +579,15 @@ public class IntegrationManager {
     public void invalidateEndlessLevelingNameplate(@Nonnull UUID uuid) {
         EndlessLevelingNameplateSystem sys = this.endlessNameplateSystem;
         if (sys != null) sys.invalidate(uuid);
+    }
+
+    public @Nullable Integer getPlaytimeMinutes(UUID uuid) {
+        if (playtimeProvider == null) return null;
+        try { return playtimeProvider.getPlaytimeMinutes(uuid); }
+        catch (Throwable t) { return null; }
+    }
+
+    public void setPlaytimeProvider(@Nullable PlaytimeProvider provider) {
+        this.playtimeProvider = provider;
     }
 }
