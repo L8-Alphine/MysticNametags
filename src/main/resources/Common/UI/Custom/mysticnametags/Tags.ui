@@ -163,6 +163,9 @@ $C.@PageOverlay {
               Style: (FontSize: 12, TextColor: #64748b);
             }
 
+            // Spacer for the info icon column
+            Group { Anchor: (Width: 34); }
+
             Group { FlexWeight: 1; }
 
             Label {
@@ -225,6 +228,13 @@ $C.@PageOverlay {
                 Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow0Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
+              }
+
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow0Button {
@@ -276,6 +286,13 @@ $C.@PageOverlay {
                 Text: "Price";
                 Anchor: (Width: 130, Height: 20);
                 Style: (FontSize: 13, TextColor: #b6c9de);
+              }
+
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow1Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
               }
 
               Group { FlexWeight: 1; }
@@ -331,6 +348,13 @@ $C.@PageOverlay {
                 Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow2Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
+              }
+
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow2Button {
@@ -382,6 +406,13 @@ $C.@PageOverlay {
                 Text: "Price";
                 Anchor: (Width: 130, Height: 20);
                 Style: (FontSize: 13, TextColor: #b6c9de);
+              }
+
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow3Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
               }
 
               Group { FlexWeight: 1; }
@@ -437,6 +468,13 @@ $C.@PageOverlay {
                 Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow4Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
+              }
+
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow4Button {
@@ -488,6 +526,13 @@ $C.@PageOverlay {
                 Text: "Price";
                 Anchor: (Width: 130, Height: 20);
                 Style: (FontSize: 13, TextColor: #b6c9de);
+              }
+
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow5Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
               }
 
               Group { FlexWeight: 1; }
@@ -543,6 +588,13 @@ $C.@PageOverlay {
                 Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow6Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
+              }
+
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow6Button {
@@ -594,6 +646,13 @@ $C.@PageOverlay {
                 Text: "Price";
                 Anchor: (Width: 130, Height: 20);
                 Style: (FontSize: 13, TextColor: #b6c9de);
+              }
+
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow7Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
               }
 
               Group { FlexWeight: 1; }
@@ -649,6 +708,13 @@ $C.@PageOverlay {
                 Style: (FontSize: 13, TextColor: #b6c9de);
               }
 
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow8Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
+              }
+
               Group { FlexWeight: 1; }
 
               $C.@SmallSecondaryTextButton #TagRow8Button {
@@ -700,6 +766,13 @@ $C.@PageOverlay {
                 Text: "Price";
                 Anchor: (Width: 130, Height: 20);
                 Style: (FontSize: 13, TextColor: #b6c9de);
+              }
+
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #TagRow9Info {
+                @Anchor = (Width: 26, Height: 22);
+                Text: "i";
               }
 
               Group { FlexWeight: 1; }
@@ -780,6 +853,36 @@ $C.@PageOverlay {
               TextColor: #ffffff,
               RenderBold: true
             );
+          }
+
+          Group { Anchor: (Height: 10); }
+
+          Group #RequirementsPanel {
+            LayoutMode: TopScrolling;
+            Visible: false;
+            Anchor: (Width: 340, Height: 160);
+            Background: #0b1220(0.92);
+            Padding: (Full: 10);
+
+            Label {
+              Text: "Requirements";
+              Anchor: (Height: 18);
+              Style: (FontSize: 13, TextColor: #ffffff, RenderBold: true);
+            }
+
+            Label #ReqTitleLabel {
+              Text: "Hover a tag to view requirements";
+              Anchor: (Height: 18);
+              Style: (FontSize: 12, TextColor: #96a9be);
+            }
+
+            Group { Anchor: (Height: 6); }
+
+            Label #ReqBodyLabel {
+              Text: "";
+              Anchor: (Height: 80);
+              Style: (FontSize: 12, TextColor: #cbd5f5);
+            }
           }
 
           Label {
