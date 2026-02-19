@@ -1,6 +1,5 @@
 package com.mystichorizons.mysticnametags.util;
 
-import com.google.gson.JsonObject;
 import com.hypixel.hytale.logger.HytaleLogger;
 
 import javax.annotation.Nonnull;
