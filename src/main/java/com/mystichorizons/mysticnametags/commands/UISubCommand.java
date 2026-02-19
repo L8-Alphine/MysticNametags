@@ -11,6 +11,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.ui.MysticNameTagsDashboardUI;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
@@ -39,11 +40,9 @@ public class UISubCommand extends AbstractPlayerCommand {
         return false;
     }
 
-    private boolean hasReloadPermission(@Nonnull CommandContext context) {
+    private boolean hasUiPermission(@Nonnull CommandContext context) {
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
-        if (plugin == null) {
-            return false;
-        }
+        if (plugin == null) return false;
 
         IntegrationManager integrations = plugin.getIntegrations();
         CommandSender sender = context.sender();
@@ -68,9 +67,11 @@ public class UISubCommand extends AbstractPlayerCommand {
             @Nonnull PlayerRef playerRef,
             @Nonnull World world
     ) {
-        if (!hasReloadPermission(context)) {
+        LanguageManager lang = LanguageManager.get();
+
+        if (!hasUiPermission(context)) {
             context.sender().sendMessage(
-                    colored("&cYou do not have permission to use this command.")
+                    colored(lang.tr("cmd.ui.no_permission"))
             );
             return;
         }
@@ -78,13 +79,13 @@ public class UISubCommand extends AbstractPlayerCommand {
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
         if (plugin == null) {
             context.sender().sendMessage(
-                    colored("&cMysticNameTags is not loaded.")
+                    colored(lang.tr("cmd.ui.not_loaded"))
             );
             return;
         }
 
         context.sender().sendMessage(
-                colored("&7[&bMysticNameTags&7] &fOpening &bDashboard&f...")
+                colored(lang.tr("cmd.ui.opening"))
         );
 
         try {
@@ -92,18 +93,24 @@ public class UISubCommand extends AbstractPlayerCommand {
             Player player = store.getComponent(ref, Player.getComponentType());
             if (player == null) {
                 context.sender().sendMessage(
-                        colored("&cError: Could not get &7Player component."));
+                        colored(lang.tr("cmd.ui.no_player_component"))
+                );
                 return;
             }
 
             // Create and open the custom page
             MysticNameTagsDashboardUI dashboardPage = new MysticNameTagsDashboardUI(playerRef);
             player.getPageManager().openCustomPage(ref, store, dashboardPage);
+
             context.sender().sendMessage(
-                    colored("&aDashboard opened. &fPress &7ESC&f to close."));
+                    colored(lang.tr("cmd.ui.opened"))
+            );
         } catch (Exception e) {
             context.sender().sendMessage(
-                    colored("&cError opening dashboard: &7" + e.getMessage()));
+                    colored(lang.tr("cmd.ui.open_error", java.util.Map.of(
+                            "error", e.getMessage() == null ? "Unknown" : e.getMessage()
+                    )))
+            );
         }
     }
 }
