@@ -3,12 +3,14 @@ package com.mystichorizons.mysticnametags.commands;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.command.system.basecommands.CommandBase;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.tags.TagManager;
-import com.mystichorizons.mysticnametags.util.UpdateChecker;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
+import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
+import java.util.Map;
 
 public class InfoSubCommand extends CommandBase {
 
@@ -28,10 +30,11 @@ public class InfoSubCommand extends CommandBase {
 
     @Override
     protected void executeSync(@Nonnull CommandContext context) {
+        LanguageManager lang = LanguageManager.get();
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
 
         if (plugin == null) {
-            sendColored(context, "&cMysticNameTags plugin instance not available.");
+            sendColored(context, lang.tr("cmd.info.not_loaded"));
             return;
         }
 
@@ -45,7 +48,6 @@ public class InfoSubCommand extends CommandBase {
             author = manifest.getAuthors().get(0).getName();
         }
 
-        // Integrations
         TagManager tagManager = TagManager.get();
         IntegrationManager integrations = tagManager.getIntegrations();
 
@@ -55,63 +57,64 @@ public class InfoSubCommand extends CommandBase {
         boolean econVault   = integrations.isVaultAvailable();
         boolean econElite   = integrations.isEliteEconomyAvailable();
 
-        StringBuilder integrationLine = new StringBuilder("&7Integrations: ");
+        StringBuilder integrationLine = new StringBuilder(lang.tr("cmd.info.integrations_prefix"));
 
-        // Permissions stack
-        if (lp) {
-            integrationLine.append("&aLuckPerms");
-        } else {
-            integrationLine.append("&cLuckPerms (none)");
-        }
+        if (lp) integrationLine.append(lang.tr("cmd.info.luckperms_yes"));
+        else    integrationLine.append(lang.tr("cmd.info.luckperms_no"));
 
-        if (permsPlus) {
-            integrationLine.append("&7 + &bPermissionsPlus");
-        }
+        if (permsPlus) integrationLine.append(lang.tr("cmd.info.permissionsplus_yes"));
 
-        integrationLine.append("&7 | Economy: ");
+        integrationLine.append(lang.tr("cmd.info.economy_prefix"));
 
-        // Economy backends
         if (econPrimary) {
-            integrationLine.append("&aEconomySystem");
+            integrationLine.append(lang.tr("cmd.info.economy_primary"));
             if (econVault || econElite) {
-                integrationLine.append("&7 (fallback: ");
-                if (econVault) integrationLine.append("&bVaultUnlocked&7 ");
-                if (econElite) integrationLine.append("&dEliteEssentials&7 ");
-                integrationLine.append("&7)");
+                integrationLine.append(lang.tr("cmd.info.economy_fallback_prefix"));
+                boolean first = true;
+                if (econVault) { integrationLine.append(lang.tr("cmd.info.economy_vault")); first = false; }
+                if (econElite) {
+                    if (!first) integrationLine.append(lang.tr("cmd.info.economy_fallback_sep"));
+                    integrationLine.append(lang.tr("cmd.info.economy_elite"));
+                }
+                integrationLine.append(lang.tr("cmd.info.economy_fallback_suffix"));
             }
         } else if (econVault || econElite) {
-            if (econVault) integrationLine.append("&bVaultUnlocked ");
-            if (econElite) integrationLine.append("&dEliteEssentials ");
+            boolean first = true;
+            if (econVault) { integrationLine.append(lang.tr("cmd.info.economy_vault")); first = false; }
+            if (econElite) {
+                if (!first) integrationLine.append(lang.tr("cmd.info.economy_plus_sep"));
+                integrationLine.append(lang.tr("cmd.info.economy_elite"));
+            }
         } else {
-            integrationLine.append("&cnone");
+            integrationLine.append(lang.tr("cmd.info.economy_none"));
         }
 
-        // Update status
         UpdateChecker checker = plugin.getUpdateChecker();
-        String updateLine = "&7Update status: &8Unknown";
+        String updateLine = lang.tr("cmd.info.update_unknown");
 
         if (checker != null && checker.hasVersionInfo()) {
             String latest = checker.getLatestVersion();
             if (checker.isCurrentAheadOfLatest()) {
-                updateLine = "&7Update status: &aRunning " + version +
-                        " &7(ahead of CurseForge: &b" + latest + "&7)";
+                updateLine = lang.tr("cmd.info.update_ahead", Map.of(
+                        "current", version,
+                        "latest", latest
+                ));
             } else if (checker.isUpdateAvailable()) {
-                updateLine = "&7Update status: &eUpdate available &7→ &b" + latest;
+                updateLine = lang.tr("cmd.info.update_available", Map.of("latest", latest));
             } else {
-                updateLine = "&7Update status: &aUp to date (&b" + version + "&a)";
+                updateLine = lang.tr("cmd.info.update_ok", Map.of("current", version));
             }
         }
 
-        // Pretty output
-        sendColored(context, ""); // blank line
-        sendColored(context, "&7&m------------------------------");
-        sendColored(context, "&b" + name + " &7Plugin Info");
-        sendColored(context, "&7Name: &f" + name);
-        sendColored(context, "&7Version: &f" + version);
-        sendColored(context, "&7Author: &f" + author);
-        sendColored(context, "&7Status: &aRunning");
+        sendColored(context, "");
+        sendColored(context, lang.tr("cmd.info.separator"));
+        sendColored(context, lang.tr("cmd.info.title", Map.of("name", name)));
+        sendColored(context, lang.tr("cmd.info.name", Map.of("name", name)));
+        sendColored(context, lang.tr("cmd.info.version", Map.of("version", version)));
+        sendColored(context, lang.tr("cmd.info.author", Map.of("author", author)));
+        sendColored(context, lang.tr("cmd.info.status_running"));
         sendColored(context, integrationLine.toString());
         sendColored(context, updateLine);
-        sendColored(context, "&7&m------------------------------");
+        sendColored(context, lang.tr("cmd.info.separator"));
     }
 }

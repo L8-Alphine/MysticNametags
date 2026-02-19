@@ -1,10 +1,7 @@
 package com.mystichorizons.mysticnametags.commands;
 
 import com.hypixel.hytale.server.core.command.system.basecommands.AbstractCommandCollection;
-import com.mystichorizons.mysticnametags.commands.admin.TagsAdminGiveTagSubCommand;
-import com.mystichorizons.mysticnametags.commands.admin.TagsAdminOpenSubCommand;
-import com.mystichorizons.mysticnametags.commands.admin.TagsAdminRemoveTagSubCommand;
-import com.mystichorizons.mysticnametags.commands.admin.TagsAdminResetSubCommand;
+import com.mystichorizons.mysticnametags.commands.admin.*;
 
 /**
  * Admin command root for MysticNameTags.
@@ -25,6 +22,8 @@ public class TagsAdminCommand extends AbstractCommandCollection {
         this.addSubCommand(new TagsAdminGiveTagSubCommand());
         this.addSubCommand(new TagsAdminRemoveTagSubCommand());
         this.addSubCommand(new TagsAdminResetSubCommand());
+        this.addSubCommand(new TagsAdminDebugStorageSubCommand());
+        this.addSubCommand(new TagsAdminStorageSubCommand());
     }
 
     @Override

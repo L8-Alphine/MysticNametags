@@ -5,9 +5,8 @@ import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.command.system.basecommands.CommandBase;
 import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
-import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
-import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
@@ -21,67 +20,51 @@ public class ReloadSubCommand extends CommandBase {
 
     public ReloadSubCommand() {
         super("reload", "Reload MysticNameTags configuration and tags");
-        // We handle permission manually via IntegrationManager
         this.setPermissionGroup(null);
     }
 
     @Override
     protected boolean canGeneratePermission() {
-        // No auto-generated permission; we explicitly check PERMISSION
         return false;
     }
 
     private boolean hasReloadPermission(@Nonnull CommandContext context) {
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
-        if (plugin == null) {
-            return false;
-        }
+        if (plugin == null) return false;
 
         IntegrationManager integrations = plugin.getIntegrations();
         CommandSender sender = context.sender();
 
-        // Use IntegrationManager, which prefers LuckPerms but falls back to Hytale perms
         return integrations.hasPermission(sender, PERMISSION);
     }
 
     private Message colored(String text) {
-        // Let ColorFormatter interpret & and hex codes into a styled Message.
         return ColorFormatter.toMessage(text);
     }
 
     @Override
     protected void executeSync(@Nonnull CommandContext context) {
+        LanguageManager lang = LanguageManager.get();
+
         if (!hasReloadPermission(context)) {
-            context.sender().sendMessage(
-                    colored("&cYou do not have permission to use this command.")
-            );
+            context.sender().sendMessage(colored(lang.tr("cmd.reload.no_permission")));
             return;
         }
 
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
         if (plugin == null) {
-            context.sender().sendMessage(
-                    colored("&cMysticNameTags is not loaded.")
-            );
+            context.sender().sendMessage(colored(lang.tr("cmd.reload.not_loaded")));
             return;
         }
 
-        context.sender().sendMessage(
-                colored("&7[&bMysticNameTags&7] &fReloading configuration and tags...")
-        );
+        context.sender().sendMessage(colored(lang.tr("cmd.reload.start")));
 
         try {
-            // Single entrypoint: settings + tags + schedulers + integrations
             plugin.reloadAll();
-
-            context.sender().sendMessage(
-                    colored("&7[&bMysticNameTags&7] &aReload complete!")
-            );
+            context.sender().sendMessage(colored(lang.tr("cmd.reload.success")));
         } catch (Throwable t) {
             t.printStackTrace();
-            context.sender().sendMessage(
-                    colored("&7[&bMysticNameTags&7] &cReload failed. Check console.")
-            );
+            context.sender().sendMessage(colored(lang.tr("cmd.reload.failed")));
         }
     }
 }

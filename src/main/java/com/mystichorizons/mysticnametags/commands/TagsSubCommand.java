@@ -9,7 +9,9 @@ import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.ui.MysticNameTagsTagsUI;
+import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
 import java.util.UUID;
@@ -30,6 +32,10 @@ public class TagsSubCommand extends AbstractPlayerCommand {
         return false;
     }
 
+    private Message colored(String text) {
+        return ColorFormatter.toMessage(text);
+    }
+
     @Override
     protected void execute(
             @Nonnull CommandContext context,
@@ -38,26 +44,29 @@ public class TagsSubCommand extends AbstractPlayerCommand {
             @Nonnull PlayerRef playerRef,
             @Nonnull World world
     ) {
-        // Get player entity (we're already on the world thread)
+        LanguageManager lang = LanguageManager.get();
+
         Player player = store.getComponent(ref, Player.getComponentType());
         if (player == null) {
-            context.sendMessage(Message.raw("Error: Could not get Player component."));
+            context.sendMessage(colored(lang.tr("cmd.tags.no_player_component")));
             return;
         }
 
         UUID uuid = playerRef.getUuid();
         if (uuid == null) {
-            context.sendMessage(Message.raw("Error: Could not determine your account id."));
+            context.sendMessage(colored(lang.tr("cmd.tags.no_account_id")));
             return;
         }
 
-        context.sendMessage(Message.raw("Opening MysticNameTags Tag Selector..."));
+        context.sendMessage(colored(lang.tr("cmd.tags.opening")));
 
         try {
             MysticNameTagsTagsUI page = new MysticNameTagsTagsUI(playerRef, uuid);
             player.getPageManager().openCustomPage(ref, store, page);
         } catch (Exception e) {
-            context.sendMessage(Message.raw("Error opening tag selector: " + e.getMessage()));
+            context.sendMessage(colored(lang.tr("cmd.tags.open_error",
+                    java.util.Map.of("error", e.getMessage() == null ? "Unknown" : e.getMessage())
+            )));
         }
     }
 }
