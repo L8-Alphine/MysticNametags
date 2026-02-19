@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.economy;
 
 import com.eliteessentials.api.EconomyAPI;
 
@@ -51,17 +51,6 @@ public final class EliteEconomySupport {
         }
         try {
             return EconomyAPI.withdraw(uuid, amount);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    public static boolean deposit(UUID uuid, double amount) {
-        if (!isAvailable() || amount <= 0.0D) {
-            return false;
-        }
-        try {
-            return EconomyAPI.deposit(uuid, amount);
         } catch (Throwable ignored) {
             return false;
         }

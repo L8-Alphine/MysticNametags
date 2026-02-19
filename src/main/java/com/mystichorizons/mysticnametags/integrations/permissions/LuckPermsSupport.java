@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.permissions;
 
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;

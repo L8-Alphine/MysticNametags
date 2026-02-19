@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.permissions;
 
 import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.server.core.permissions.provider.PermissionProvider;

@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.economy;
 
 import com.economy.api.EconomyAPI;
 import com.economy.economy.EconomyManager;
@@ -89,24 +89,6 @@ public final class EconomySystemSupport {
         }
     }
 
-    public static boolean deposit(UUID uuid, double amount) {
-        if (amount <= 0.0D || uuid == null) {
-            return false;
-        }
-
-        EconomyAPI api = getApi();
-        if (api == null) {
-            return false;
-        }
-
-        try {
-            api.addBalance(uuid, amount);
-            return true;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
     // ---------------------------------------------------------------------
     // Coin / cash API – backed by EconomyManager
     // ---------------------------------------------------------------------
@@ -163,22 +145,6 @@ public final class EconomySystemSupport {
         }
         try {
             return mgr.subtractCash(uuid, amount);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    public static boolean depositCoins(UUID uuid, int amount) {
-        if (amount <= 0 || uuid == null) {
-            return false;
-        }
-        EconomyManager mgr = getManager();
-        if (mgr == null) {
-            return false;
-        }
-        try {
-            mgr.addCash(uuid, amount);
-            return true;
         } catch (Throwable ignored) {
             return false;
         }

@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.economy;
 
 import net.cfh.vault.VaultUnlockedServicesManager;
 import net.milkbowl.vault2.economy.Economy;
@@ -121,57 +121,6 @@ public final class VaultUnlockedSupport {
                 }
             } catch (Throwable ignored2) {
                 // No compatible withdraw method
-            }
-        }
-
-        return false;
-    }
-
-    public static boolean deposit(String pluginName, UUID uuid, double amount) {
-        if (amount <= 0.0D || uuid == null) return false;
-
-        Economy eco = resolveEconomy();
-        if (eco == null) {
-            return false;
-        }
-
-        BigDecimal value = BigDecimal.valueOf(amount);
-
-        // 1) Try modern API
-        try {
-            EconomyResponse response = eco.deposit(pluginName, uuid, value);
-            return response.type == ResponseType.SUCCESS;
-        } catch (Throwable ignored) {
-            // 2) Fallback: deposit(UUID, BigDecimal)
-            try {
-                Method m = eco.getClass().getMethod("deposit", UUID.class, BigDecimal.class);
-                Object resp = m.invoke(eco, uuid, value);
-
-                if (resp != null && resp.getClass().getName().contains("EconomyResponse")) {
-                    try {
-                        Method typeMethod = resp.getClass().getMethod("getType");
-                        Object type = typeMethod.invoke(resp);
-                        if ("SUCCESS".equalsIgnoreCase(String.valueOf(type))) {
-                            return true;
-                        }
-                    } catch (Throwable ignored2) {
-                        try {
-                            Method typeMethod = resp.getClass().getMethod("type");
-                            Object type = typeMethod.invoke(resp);
-                            if ("SUCCESS".equalsIgnoreCase(String.valueOf(type))) {
-                                return true;
-                            }
-                        } catch (Throwable ignored3) {
-                            // ignore
-                        }
-                    }
-                }
-
-                if (resp instanceof Boolean b) {
-                    return b;
-                }
-            } catch (Throwable ignored2) {
-                // No compatible deposit method
             }
         }
 

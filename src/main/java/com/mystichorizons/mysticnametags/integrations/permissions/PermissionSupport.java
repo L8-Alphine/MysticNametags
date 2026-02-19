@@ -1,6 +1,5 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.permissions;
 
-import javax.annotation.Nullable;
 import java.util.UUID;
 
 public interface PermissionSupport {

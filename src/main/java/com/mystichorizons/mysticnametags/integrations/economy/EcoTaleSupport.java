@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.economy;
 
 import com.ecotale.api.EcotaleAPI;
 

@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.permissions;
 
 import games.player.chat.PrefixesPlusPlugin;
 

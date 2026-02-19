@@ -1,4 +1,4 @@
-package com.mystichorizons.mysticnametags.integrations;
+package com.mystichorizons.mysticnametags.integrations.economy;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
@@ -71,27 +71,6 @@ public final class HyEssentialsXSupport {
         } catch (NoSuchMethodException nsme) {
             // Some economies use (uuid, amount) and return void or long; try a couple fallbacks.
             return tryWithdrawFallbacks(eco, uuid, a);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    public static boolean deposit(UUID uuid, double amount) {
-        if (uuid == null) return false;
-        if (amount <= 0.0D) return true;
-
-        Object eco = getEconomyApi();
-        if (eco == null) return false;
-
-        long a = toLongAmount(amount);
-
-        try {
-            // long deposit(UUID, long)  OR  void deposit(UUID, long)
-            Method m = eco.getClass().getMethod("deposit", UUID.class, long.class);
-            m.invoke(eco, uuid, a);
-            return true;
-        } catch (NoSuchMethodException nsme) {
-            return tryDepositFallbacks(eco, uuid, a);
         } catch (Throwable ignored) {
             return false;
         }
@@ -236,28 +215,6 @@ public final class HyEssentialsXSupport {
 
             Method set = eco.getClass().getMethod("setBalance", UUID.class, long.class);
             set.invoke(eco, uuid, (bal - amount));
-            return true;
-        } catch (Throwable ignored) {}
-
-        return false;
-    }
-
-    private static boolean tryDepositFallbacks(Object eco, UUID uuid, long amount) {
-        // Fallback 1: deposit(UUID, long) exists but returns long/void (already tried invoke)
-        try {
-            Method m = eco.getClass().getMethod("deposit", UUID.class, long.class);
-            m.invoke(eco, uuid, amount);
-            return true;
-        } catch (Throwable ignored) {}
-
-        // Fallback 2: setBalance(uuid, old+amount)
-        try {
-            Method get = eco.getClass().getMethod("getBalance", UUID.class);
-            Object balObj = get.invoke(eco, uuid);
-            long bal = (balObj instanceof Long l) ? l : 0L;
-
-            Method set = eco.getClass().getMethod("setBalance", UUID.class, long.class);
-            set.invoke(eco, uuid, (bal + amount));
             return true;
         } catch (Throwable ignored) {}
 
