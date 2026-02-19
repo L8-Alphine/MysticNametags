@@ -66,6 +66,10 @@ public final class ColorFormatter {
             return input;
         }
 
+        // 0) MiniMessage -> legacy (&#RRGGBB, &l, &o, &r)
+        // This also expands <gradient:...>text</gradient> into per-char &#RRGGBB.
+        input = MiniMessageSupport.miniToLegacy(input);
+
         // 1) Expand hex codes like "&#8A2BE2" to &x&8&A&2&B&E&2
         Matcher matcher = HEX_PATTERN.matcher(input);
         StringBuffer buffer = new StringBuffer();
@@ -85,10 +89,56 @@ public final class ColorFormatter {
         // 2) Normalize '§' color codes -> '&' color codes
         processed = translateAlternateColorCodes('§', processed);
 
-        // 3) Normalize '&' color codes (idempotent, but keeps logic in one place)
+        // 3) Normalize '&' color codes
         processed = translateAlternateColorCodes('&', processed);
 
         return processed;
+    }
+
+    // ------------------------------------------------------------
+    // MINIMESSAGE (very small subset) + GRADIENT SUPPORT
+    // ------------------------------------------------------------
+
+    /**
+     * MiniMessage-aware Message builder.
+     * Supports:
+     *  - <#RRGGBB> ... </#RRGGBB>
+     *  - <red>, <green>, <yellow>, <white>, <black>, <gray>, etc.
+     *  - <bold>, <italic>, <reset>
+     *  - <gradient:#RRGGBB:#RRGGBB[:#RRGGBB...]> ... </gradient>
+     *
+     * Unknown tags are treated as literal text.
+     */
+    public static Message toMessageMini(String text) {
+        return toMessageMini(text, DEFAULT_COLOR);
+    }
+
+    public static Message toMessageMini(String text, Color baseColor) {
+        if (text == null || text.isEmpty()) return Message.raw("");
+
+        // If it doesn't look like minimessage, fall back to legacy parser.
+        if (text.indexOf('<') < 0 || text.indexOf('>') < 0) {
+            return toMessage(text, baseColor);
+        }
+
+        return MiniMessageParser.parse(text, baseColor != null ? baseColor : DEFAULT_COLOR);
+    }
+
+    /**
+     * Convert MiniMessage tags into legacy-friendly markup:
+     * - <#RRGGBB> -> &#RRGGBB
+     * - <bold> -> &l
+     * - <italic> -> &o
+     * - <reset> -> &r
+     * - <gradient:...>text</gradient> -> per-character &#RRGGBB + char
+     *
+     * Useful for nameplates/chat strings that don't accept MiniMessage directly.
+     */
+    public static String miniToLegacy(String input) {
+        if (input == null || input.isEmpty()) return input;
+        if (input.indexOf('<') < 0 || input.indexOf('>') < 0) return input;
+
+        return MiniMessageParser.toLegacy(input);
     }
 
     /**
@@ -103,6 +153,10 @@ public final class ColorFormatter {
      */
     public static String extractUiTextColor(String input) {
         if (input == null || input.isEmpty()) return null;
+
+        // MiniMessage -> legacy so existing scanner sees &#RRGGBB etc.
+        input = MiniMessageSupport.miniToLegacy(input);
+
 
         String currentHex = null;
         int len = input.length();
@@ -183,6 +237,9 @@ public final class ColorFormatter {
             return input;
         }
 
+        // 0) MiniMessage -> legacy first
+        input = MiniMessageSupport.miniToLegacy(input);
+
         // Expand hex &#RRGGBB -> §x§R§R§G§G§B§B
         Matcher matcher = HEX_PATTERN.matcher(input);
         StringBuffer buffer = new StringBuffer();
@@ -238,6 +295,11 @@ public final class ColorFormatter {
 
         String out = input;
 
+        // 0) Remove MiniMessage tags but keep content.
+        // First: explicitly unwrap gradients (keep inner text)
+        out = MiniMessageSupport.stripMiniTags(out);
+
+
         // Remove hex codes like &#RRGGBB
         out = out.replaceAll("&#[0-9a-fA-F]{6}", "");
 
@@ -263,6 +325,8 @@ public final class ColorFormatter {
      */
     public static String extractFirstHexColor(String input) {
         if (input == null || input.isEmpty()) return null;
+
+        input = MiniMessageSupport.miniToLegacy(input);
 
         // 0) Plain "#RRGGBB" anywhere in the string
         Matcher hashMatcher = HASH_HEX_PATTERN.matcher(input);
@@ -331,6 +395,9 @@ public final class ColorFormatter {
         if (text == null || text.isEmpty()) {
             return Message.raw("");
         }
+
+        // MiniMessage -> legacy so existing parsing handles everything
+        text = MiniMessageSupport.miniToLegacy(text);
 
         Color currentColor = baseColor != null ? baseColor : DEFAULT_COLOR;
         boolean bold = false;
@@ -449,5 +516,565 @@ public final class ColorFormatter {
             msg = msg.italic(true);
         }
         return msg;
+    }
+
+    // ------------------------------------------------------------
+    // Internal MiniMessage subset parser
+    // ------------------------------------------------------------
+    private static final class MiniMessageParser {
+
+        private static final Map<String, Color> NAMED = new HashMap<>();
+        static {
+            NAMED.put("black", Color.BLACK);
+            NAMED.put("white", Color.WHITE);
+            NAMED.put("gray", new Color(0xAAAAAA));
+            NAMED.put("dark_gray", new Color(0x555555));
+            NAMED.put("red", new Color(0xFF5555));
+            NAMED.put("dark_red", new Color(0xAA0000));
+            NAMED.put("green", new Color(0x55FF55));
+            NAMED.put("dark_green", new Color(0x00AA00));
+            NAMED.put("blue", new Color(0x5555FF));
+            NAMED.put("dark_blue", new Color(0x0000AA));
+            NAMED.put("aqua", new Color(0x55FFFF));
+            NAMED.put("dark_aqua", new Color(0x00AAAA));
+            NAMED.put("yellow", new Color(0xFFFF55));
+            NAMED.put("gold", new Color(0xFFAA00));
+            NAMED.put("light_purple", new Color(0xFF55FF));
+            NAMED.put("dark_purple", new Color(0xAA00AA));
+        }
+
+        private static final Pattern HEX_TAG = Pattern.compile("^#([0-9A-Fa-f]{6})$");
+        private static final Pattern GRADIENT_OPEN = Pattern.compile("^gradient:(.+)$");
+
+        private static final class State {
+            Color color;
+            boolean bold;
+            boolean italic;
+
+            State(Color color, boolean bold, boolean italic) {
+                this.color = color;
+                this.bold = bold;
+                this.italic = italic;
+            }
+
+            State copy() { return new State(color, bold, italic); }
+        }
+
+        static Message parse(String input, Color baseColor) {
+            List<Message> parts = new ArrayList<>();
+            Deque<State> stack = new ArrayDeque<>();
+            State state = new State(baseColor, false, false);
+
+            int i = 0;
+            int textStart = 0;
+
+            while (i < input.length()) {
+                char ch = input.charAt(i);
+
+                if (ch == '<') {
+                    int close = input.indexOf('>', i + 1);
+                    if (close > i) {
+                        // flush text before tag
+                        if (i > textStart) {
+                            String seg = input.substring(textStart, i);
+                            if (!seg.isEmpty()) parts.add(buildSegment(seg, state));
+                        }
+
+                        String tagRaw = input.substring(i + 1, close).trim();
+                        boolean isCloseTag = tagRaw.startsWith("/");
+
+                        String tag = isCloseTag ? tagRaw.substring(1).trim().toLowerCase(Locale.ROOT)
+                                : tagRaw.toLowerCase(Locale.ROOT);
+
+                        // Handle </...>
+                        if (isCloseTag) {
+                            // Pop one state for matching formatting tags we track
+                            if (!stack.isEmpty()) {
+                                state = stack.pop();
+                            }
+                            i = close + 1;
+                            textStart = i;
+                            continue;
+                        }
+
+                        // <reset>
+                        if ("reset".equals(tag)) {
+                            state = new State(baseColor, false, false);
+                            stack.clear();
+                            i = close + 1;
+                            textStart = i;
+                            continue;
+                        }
+
+                        // <bold>, <italic>
+                        if ("bold".equals(tag)) {
+                            stack.push(state.copy());
+                            state.bold = true;
+                            i = close + 1;
+                            textStart = i;
+                            continue;
+                        }
+                        if ("italic".equals(tag)) {
+                            stack.push(state.copy());
+                            state.italic = true;
+                            i = close + 1;
+                            textStart = i;
+                            continue;
+                        }
+
+                        // <#RRGGBB>
+                        Matcher hexM = HEX_TAG.matcher(tag);
+                        if (hexM.matches()) {
+                            Color c = parseHexColor(hexM.group(1));
+                            if (c != null) {
+                                stack.push(state.copy());
+                                state.color = c;
+                                i = close + 1;
+                                textStart = i;
+                                continue;
+                            }
+                        }
+
+                        // <red> <green> etc.
+                        Color named = NAMED.get(tag);
+                        if (named != null) {
+                            stack.push(state.copy());
+                            state.color = named;
+                            i = close + 1;
+                            textStart = i;
+                            continue;
+                        }
+
+                        // <gradient:...>...</gradient>
+                        Matcher gradM = GRADIENT_OPEN.matcher(tag);
+                        if (gradM.matches()) {
+                            List<Color> stops = parseGradientStops(gradM.group(1));
+                            int endTag = findClosingTag(input, close + 1, "gradient");
+                            if (endTag >= 0 && stops.size() >= 2) {
+                                String inner = input.substring(close + 1, endTag);
+                                parts.addAll(applyGradientToText(inner, stops, state));
+                                i = endTag + "</gradient>".length();
+                                textStart = i;
+                                continue;
+                            }
+                        }
+
+                        // Unknown tag -> treat literally
+                        parts.add(buildSegment("<" + tagRaw + ">", state));
+                        i = close + 1;
+                        textStart = i;
+                        continue;
+                    }
+                }
+
+                i++;
+            }
+
+            // flush tail
+            if (textStart < input.length()) {
+                String seg = input.substring(textStart);
+                if (!seg.isEmpty()) parts.add(buildSegment(seg, state));
+            }
+
+            if (parts.isEmpty()) return Message.raw("");
+            return Message.join(parts.toArray(new Message[0]));
+        }
+
+        static String toLegacy(String input) {
+            StringBuilder out = new StringBuilder();
+            Deque<String> tagStack = new ArrayDeque<>();
+
+            int i = 0;
+            while (i < input.length()) {
+                char ch = input.charAt(i);
+
+                if (ch == '<') {
+                    int close = input.indexOf('>', i + 1);
+                    if (close > i) {
+                        String tagRaw = input.substring(i + 1, close).trim();
+                        boolean isClose = tagRaw.startsWith("/");
+                        String tag = isClose ? tagRaw.substring(1).trim().toLowerCase(Locale.ROOT)
+                                : tagRaw.toLowerCase(Locale.ROOT);
+
+                        if (isClose) {
+                            // For simplicity, any close pops and emits &r then reapplies remaining stack
+                            if (!tagStack.isEmpty()) tagStack.pop();
+                            out.append("&r");
+                            // reapply remaining tags
+                            List<String> remaining = new ArrayList<>(tagStack);
+                            Collections.reverse(remaining);
+                            for (String t : remaining) out.append(t);
+                            i = close + 1;
+                            continue;
+                        }
+
+                        if ("reset".equals(tag)) {
+                            tagStack.clear();
+                            out.append("&r");
+                            i = close + 1;
+                            continue;
+                        }
+
+                        if ("bold".equals(tag)) {
+                            tagStack.push("&l");
+                            out.append("&l");
+                            i = close + 1;
+                            continue;
+                        }
+                        if ("italic".equals(tag)) {
+                            tagStack.push("&o");
+                            out.append("&o");
+                            i = close + 1;
+                            continue;
+                        }
+
+                        Matcher hexM = HEX_TAG.matcher(tag);
+                        if (hexM.matches()) {
+                            String hex = hexM.group(1).toUpperCase(Locale.ROOT);
+                            String legacy = "&#" + hex;
+                            tagStack.push(legacy);
+                            out.append(legacy);
+                            i = close + 1;
+                            continue;
+                        }
+
+                        Color named = NAMED.get(tag);
+                        if (named != null) {
+                            String legacy = "&#" + String.format("%06X", named.getRGB() & 0xFFFFFF);
+                            tagStack.push(legacy);
+                            out.append(legacy);
+                            i = close + 1;
+                            continue;
+                        }
+
+                        Matcher gradM = GRADIENT_OPEN.matcher(tag);
+                        if (gradM.matches()) {
+                            List<Color> stops = parseGradientStops(gradM.group(1));
+                            int endTag = findClosingTag(input, close + 1, "gradient");
+                            if (endTag >= 0 && stops.size() >= 2) {
+                                String inner = input.substring(close + 1, endTag);
+                                out.append(applyGradientLegacy(inner, stops));
+                                i = endTag + "</gradient>".length();
+                                continue;
+                            }
+                        }
+
+                        // Unknown tag -> literal
+                        out.append('<').append(tagRaw).append('>');
+                        i = close + 1;
+                        continue;
+                    }
+                }
+
+                out.append(ch);
+                i++;
+            }
+
+            return out.toString();
+        }
+
+        private static Message buildSegment(String text, State state) {
+            Message msg = Message.raw(text);
+            if (state.color != null) msg = msg.color(state.color);
+            if (state.bold) msg = msg.bold(true);
+            if (state.italic) msg = msg.italic(true);
+            return msg;
+        }
+
+        private static Color parseHexColor(String hex6) {
+            try {
+                return new Color(Integer.parseInt(hex6, 16));
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+
+        private static List<Color> parseGradientStops(String stopSpec) {
+            // stopSpec example: "#FF0000:#00FF00:#0000FF"
+            String[] raw = stopSpec.split(":");
+            List<Color> colors = new ArrayList<>();
+            for (String part : raw) {
+                String p = part.trim();
+                if (p.startsWith("#")) p = p.substring(1);
+                if (p.matches("[0-9A-Fa-f]{6}")) {
+                    Color c = parseHexColor(p);
+                    if (c != null) colors.add(c);
+                } else {
+                    // allow named stops too
+                    Color named = NAMED.get(p.toLowerCase(Locale.ROOT));
+                    if (named != null) colors.add(named);
+                }
+            }
+            return colors;
+        }
+
+        private static int findClosingTag(String input, int fromIndex, String tagName) {
+            // minimal: find first </tagName>
+            String needle = "</" + tagName.toLowerCase(Locale.ROOT) + ">";
+            return input.toLowerCase(Locale.ROOT).indexOf(needle, fromIndex);
+        }
+
+        private static List<Message> applyGradientToText(String text, List<Color> stops, State base) {
+            List<Message> out = new ArrayList<>();
+            if (text == null || text.isEmpty()) return out;
+
+            // Only color letters/digits/spaces as characters; keep formatting from base state
+            int n = text.length();
+            if (n == 0) return out;
+
+            // Build one message per char (safe + simple)
+            for (int idx = 0; idx < n; idx++) {
+                char ch = text.charAt(idx);
+                Color c = gradientColorAt(stops, n, idx);
+                State s = base.copy();
+                s.color = c;
+                out.add(buildSegment(String.valueOf(ch), s));
+            }
+            return out;
+        }
+
+        private static String applyGradientLegacy(String text, List<Color> stops) {
+            if (text == null || text.isEmpty()) return "";
+
+            StringBuilder out = new StringBuilder(text.length() * 10);
+            int n = text.length();
+            for (int idx = 0; idx < n; idx++) {
+                Color c = gradientColorAt(stops, n, idx);
+                String hex = String.format("%06X", c.getRGB() & 0xFFFFFF);
+                out.append("&#").append(hex).append(text.charAt(idx));
+            }
+            return out.toString();
+        }
+
+        private static Color gradientColorAt(List<Color> stops, int length, int index) {
+            if (stops == null || stops.size() < 2) return DEFAULT_COLOR;
+            if (length <= 1) return stops.get(0);
+
+            double t = index / (double) (length - 1);
+
+            int segments = stops.size() - 1;
+            double segT = t * segments;
+            int segIndex = Math.min(segments - 1, (int) Math.floor(segT));
+            double localT = segT - segIndex;
+
+            Color a = stops.get(segIndex);
+            Color b = stops.get(segIndex + 1);
+
+            int r = (int) Math.round(a.getRed()   + (b.getRed()   - a.getRed())   * localT);
+            int g = (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * localT);
+            int bl = (int) Math.round(a.getBlue() + (b.getBlue() - a.getBlue())  * localT);
+
+            r = clamp255(r); g = clamp255(g); bl = clamp255(bl);
+            return new Color(r, g, bl);
+        }
+
+        private static int clamp255(int v) {
+            return Math.max(0, Math.min(255, v));
+        }
+    }
+
+    // ------------------------------------------------------------
+    // MiniMessage subset support (converted to legacy formatting)
+    // ------------------------------------------------------------
+    private static final class MiniMessageSupport {
+
+        private static final Map<String, String> NAMED_HEX = new HashMap<>();
+        static {
+            NAMED_HEX.put("black", "000000");
+            NAMED_HEX.put("white", "FFFFFF");
+            NAMED_HEX.put("gray", "AAAAAA");
+            NAMED_HEX.put("dark_gray", "555555");
+            NAMED_HEX.put("red", "FF5555");
+            NAMED_HEX.put("dark_red", "AA0000");
+            NAMED_HEX.put("green", "55FF55");
+            NAMED_HEX.put("dark_green", "00AA00");
+            NAMED_HEX.put("blue", "5555FF");
+            NAMED_HEX.put("dark_blue", "0000AA");
+            NAMED_HEX.put("aqua", "55FFFF");
+            NAMED_HEX.put("dark_aqua", "00AAAA");
+            NAMED_HEX.put("yellow", "FFFF55");
+            NAMED_HEX.put("gold", "FFAA00");
+            NAMED_HEX.put("light_purple", "FF55FF");
+            NAMED_HEX.put("dark_purple", "AA00AA");
+        }
+
+        // <gradient:#FF0000:#00FF00[:...]>text</gradient>
+        private static final Pattern GRADIENT_OPEN = Pattern.compile("(?is)<gradient:([^>]+)>");
+        private static final Pattern GRADIENT_CLOSE = Pattern.compile("(?is)</gradient>");
+        private static final Pattern TAG_ANY = Pattern.compile("(?is)</?[^>]+>");
+
+        private static final Pattern HEX_TAG = Pattern.compile("^#([0-9A-Fa-f]{6})$");
+
+        static String miniToLegacy(String input) {
+            if (input == null || input.isEmpty()) return input;
+            if (input.indexOf('<') < 0 || input.indexOf('>') < 0) return input;
+
+            // 1) Handle gradients first (supports multiple stops)
+            String out = applyGradients(input);
+
+            // 2) Replace simple tags (<#RRGGBB>, <red>, <bold>, <italic>, <reset>) with legacy
+            out = replaceSimpleTags(out);
+
+            return out;
+        }
+
+        static String stripMiniTags(String input) {
+            if (input == null || input.isEmpty()) return input;
+            if (input.indexOf('<') < 0 || input.indexOf('>') < 0) return input;
+
+            // unwrap gradients: keep content
+            String out = input;
+            out = out.replaceAll("(?is)<gradient:[^>]+>", "");
+            out = out.replaceAll("(?is)</gradient>", "");
+
+            // remove all other minimessage tags, keep content
+            out = TAG_ANY.matcher(out).replaceAll("");
+
+            return out;
+        }
+
+        private static String applyGradients(String input) {
+            String out = input;
+
+            // Iterate while there is a gradient tag
+            while (true) {
+                Matcher open = GRADIENT_OPEN.matcher(out);
+                if (!open.find()) break;
+
+                int openStart = open.start();
+                int openEnd = open.end();
+                String stopSpec = open.group(1);
+
+                Matcher close = GRADIENT_CLOSE.matcher(out);
+                close.region(openEnd, out.length());
+                if (!close.find()) break; // no close tag -> leave as-is
+
+                int closeStart = close.start();
+                int closeEnd = close.end();
+
+                String inner = out.substring(openEnd, closeStart);
+
+                List<Color> stops = parseStops(stopSpec);
+                String replaced = (stops.size() >= 2) ? gradientLegacy(inner, stops) : inner;
+
+                out = out.substring(0, openStart) + replaced + out.substring(closeEnd);
+            }
+
+            return out;
+        }
+
+        private static String replaceSimpleTags(String input) {
+            StringBuilder sb = new StringBuilder(input.length() + 16);
+
+            int i = 0;
+            while (i < input.length()) {
+                char ch = input.charAt(i);
+                if (ch == '<') {
+                    int close = input.indexOf('>', i + 1);
+                    if (close > i) {
+                        String raw = input.substring(i + 1, close).trim();
+                        boolean isClose = raw.startsWith("/");
+                        String tag = isClose ? raw.substring(1).trim().toLowerCase(Locale.ROOT)
+                                : raw.toLowerCase(Locale.ROOT);
+
+                        // closing tags: output &r to “end” styles safely
+                        if (isClose) {
+                            sb.append("&r");
+                            i = close + 1;
+                            continue;
+                        }
+
+                        // formatting
+                        if ("bold".equals(tag)) { sb.append("&l"); i = close + 1; continue; }
+                        if ("italic".equals(tag)) { sb.append("&o"); i = close + 1; continue; }
+                        if ("reset".equals(tag)) { sb.append("&r"); i = close + 1; continue; }
+
+                        // <#RRGGBB>
+                        Matcher m = HEX_TAG.matcher(tag);
+                        if (m.matches()) {
+                            sb.append("&#").append(m.group(1).toUpperCase(Locale.ROOT));
+                            i = close + 1;
+                            continue;
+                        }
+
+                        // <red> etc.
+                        String named = NAMED_HEX.get(tag);
+                        if (named != null) {
+                            sb.append("&#").append(named);
+                            i = close + 1;
+                            continue;
+                        }
+
+                        // unknown tag -> drop it (or keep literal if you prefer)
+                        i = close + 1;
+                        continue;
+                    }
+                }
+
+                sb.append(ch);
+                i++;
+            }
+
+            return sb.toString();
+        }
+
+        private static List<Color> parseStops(String stopSpec) {
+            // "#FF0000:#00FF00" or "red:blue" etc.
+            String[] parts = stopSpec.split(":");
+            List<Color> colors = new ArrayList<>();
+            for (String p0 : parts) {
+                String p = p0.trim();
+                if (p.startsWith("#")) p = p.substring(1);
+
+                if (p.matches("[0-9A-Fa-f]{6}")) {
+                    colors.add(new Color(Integer.parseInt(p, 16)));
+                    continue;
+                }
+
+                String named = NAMED_HEX.get(p.toLowerCase(Locale.ROOT));
+                if (named != null) {
+                    colors.add(new Color(Integer.parseInt(named, 16)));
+                }
+            }
+            return colors;
+        }
+
+        private static String gradientLegacy(String text, List<Color> stops) {
+            if (text == null || text.isEmpty()) return "";
+            int n = text.length();
+            if (n <= 1) {
+                Color c = stops.get(0);
+                return "&#" + String.format("%06X", c.getRGB() & 0xFFFFFF) + text;
+            }
+
+            StringBuilder out = new StringBuilder(n * 10);
+            for (int idx = 0; idx < n; idx++) {
+                Color c = gradientColorAt(stops, n, idx);
+                out.append("&#").append(String.format("%06X", c.getRGB() & 0xFFFFFF))
+                        .append(text.charAt(idx));
+            }
+            return out.toString();
+        }
+
+        private static Color gradientColorAt(List<Color> stops, int length, int index) {
+            double t = index / (double) (length - 1);
+
+            int segments = stops.size() - 1;
+            double segT = t * segments;
+            int segIndex = Math.min(segments - 1, (int) Math.floor(segT));
+            double localT = segT - segIndex;
+
+            Color a = stops.get(segIndex);
+            Color b = stops.get(segIndex + 1);
+
+            int r = (int) Math.round(a.getRed()   + (b.getRed()   - a.getRed())   * localT);
+            int g = (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * localT);
+            int bl = (int) Math.round(a.getBlue() + (b.getBlue() - a.getBlue())  * localT);
+
+            r = Math.max(0, Math.min(255, r));
+            g = Math.max(0, Math.min(255, g));
+            bl = Math.max(0, Math.min(255, bl));
+            return new Color(r, g, bl);
+        }
     }
 }
