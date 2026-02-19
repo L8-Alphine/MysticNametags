@@ -18,9 +18,11 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.tags.TagManager;
+import com.mystichorizons.mysticnametags.tags.StorageBackend;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 import com.mystichorizons.mysticnametags.util.UpdateChecker;
@@ -29,8 +31,8 @@ import javax.annotation.Nonnull;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.RuntimeMXBean;
+import java.util.Map;
 import java.util.UUID;
-import java.util.logging.Level;
 
 public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNameTagsDashboardUI.UIEventData> {
 
@@ -38,9 +40,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             "https://www.curseforge.com/hytale/mods/mysticnametags";
     private static final String BUGREPORT_URL =
             "https://github.com/L8-Alphine/MysticNametags/issues";
-    private static final HytaleLogger LOGGER = MysticNameTagsPlugin.getInstance().getLogger();
 
-    // Codec for decoding incoming UI event data
     public static final BuilderCodec<UIEventData> CODEC = BuilderCodec.builder(
                     UIEventData.class,
                     UIEventData::new)
@@ -63,15 +63,16 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                       @Nonnull UIEventBuilder events,
                       @Nonnull Store<EntityStore> store) {
 
+        LanguageManager lang = LanguageManager.get();
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
 
-        // Load the dashboard UI layout
-        commands.append("mysticnametags/Dashboard.ui");
+        // Load the dashboard UI layout (supports localized override)
+        commands.append(lang.resolveUi("mysticnametags/Dashboard.ui"));
 
         // Initial text
-        commands.set("#StatusText.Text", "Welcome to MysticNameTags!");
+        commands.set("#StatusText.Text", lang.tr("dashboard.welcome"));
 
-        // Populate dynamic labels (version, integrations, tags, CPU/RAM)
+        // Populate dynamic labels (version, integrations, storage, resources...)
         populateDynamicFields(commands);
 
         // Update notifier for admins
@@ -86,19 +87,22 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 if (checker.isUpdateAvailable()) {
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
-                            "&bMysticNameTags &7(&fUpdate&7)",
-                            "&eA new version is available: &f" + latest +
-                                    " &7(you are on &f" + current + "&7). " +
-                                    "&7Visit &f" + CURSEFORGE_URL + " &7for downloads.",
+                            "&b" + lang.tr("plugin.title") + " &7(&f" + lang.tr("dashboard.update_title") + "&7)",
+                            lang.tr("dashboard.update_available", Map.of(
+                                    "latest", latest,
+                                    "current", current,
+                                    "url", CURSEFORGE_URL
+                            )),
                             NotificationStyle.Default
                     );
                 } else if (checker.isCurrentAheadOfLatest()) {
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
-                            "&bMysticNameTags &7(&fDev Build&7)",
-                            "&7You are running &f" + current +
-                                    "&7 which is &bahead &7of the latest CurseForge release (&f" +
-                                    latest + "&7).",
+                            "&b" + lang.tr("plugin.title") + " &7(&f" + lang.tr("dashboard.devbuild_title") + "&7)",
+                            lang.tr("dashboard.devbuild_ahead", Map.of(
+                                    "current", current,
+                                    "latest", latest
+                            )),
                             NotificationStyle.Default
                     );
                 }
@@ -109,70 +113,34 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         applyTabSelection(commands, "overview");
 
         // Sidebar/tab buttons
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#OverviewTabButton",
-                EventData.of("Action", "tab_overview")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#IntegrationsTabButton",
-                EventData.of("Action", "tab_integrations")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#DebugTabButton",
-                EventData.of("Action", "tab_debug")
-        );
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#OverviewTabButton",
+                EventData.of("Action", "tab_overview"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#IntegrationsTabButton",
+                EventData.of("Action", "tab_integrations"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#DebugTabButton",
+                EventData.of("Action", "tab_debug"));
 
         // Main footer buttons
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#RefreshButton",
-                EventData.of("Action", "refresh")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#ReloadButton",
-                EventData.of("Action", "reload")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#ModPageButton",
-                EventData.of("Action", "open_mod_page")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#BugReportButton",
-                EventData.of("Action", "report_bug")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#CloseButton",
-                EventData.of("Action", "close")
-        );
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#RefreshButton",
+                EventData.of("Action", "refresh"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#ReloadButton",
+                EventData.of("Action", "reload"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#ModPageButton",
+                EventData.of("Action", "open_mod_page"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#BugReportButton",
+                EventData.of("Action", "report_bug"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#CloseButton",
+                EventData.of("Action", "close"));
 
         // Quick Actions
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#OpenTagsButton",
-                EventData.of("Action", "open_tag_ui")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#ClearCacheButton",
-                EventData.of("Action", "clear_cache")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#RefreshNameplateButton",
-                EventData.of("Action", "refresh_nameplate")
-        );
-        events.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#DebugSnapshotButton",
-                EventData.of("Action", "debug_snapshot")
-        );
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#OpenTagsButton",
+                EventData.of("Action", "open_tag_ui"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#ClearCacheButton",
+                EventData.of("Action", "clear_cache"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#RefreshNameplateButton",
+                EventData.of("Action", "refresh_nameplate"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#DebugSnapshotButton",
+                EventData.of("Action", "debug_snapshot"));
     }
 
     @Override
@@ -180,12 +148,11 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                                 @Nonnull Store<EntityStore> store,
                                 @Nonnull UIEventData data) {
 
-        if (data.action == null) {
-            return;
-        }
+        if (data.action == null) return;
 
+        LanguageManager lang = LanguageManager.get();
         UUID uuid = playerRef.getUuid();
-        String action = data.action; // capture for logging
+        String action = data.action;
 
         try {
             switch (action) {
@@ -193,13 +160,13 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 case "refresh" -> {
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
-                            "&bMysticNameTags",
-                            "&7Dashboard refreshed.",
+                            "&b" + lang.tr("plugin.title"),
+                            lang.tr("dashboard.refreshed_toast"),
                             NotificationStyle.Success
                     );
 
                     UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", "Dashboard refreshed!");
+                    update.set("#StatusText.Text", lang.tr("dashboard.refreshed_status"));
                     populateDynamicFields(update);
                     sendUpdate(update, null, false);
                 }
@@ -209,34 +176,30 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
-                            "&bMysticNameTags",
-                            "&7Configuration reloaded from &ftags.json&7.",
+                            "&b" + lang.tr("plugin.title"),
+                            lang.tr("dashboard.reloaded_toast"),
                             NotificationStyle.Success
                     );
 
                     UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", "Config reloaded from disk.");
+                    update.set("#StatusText.Text", lang.tr("dashboard.reloaded_status"));
                     populateDynamicFields(update);
                     sendUpdate(update, null, false);
                 }
 
-                case "open_mod_page" -> {
-                    MysticNotificationUtil.send(
-                            playerRef.getPacketHandler(),
-                            "&bMysticNameTags Mod Page",
-                            "&7Open: &f" + CURSEFORGE_URL,
-                            NotificationStyle.Default
-                    );
-                }
+                case "open_mod_page" -> MysticNotificationUtil.send(
+                        playerRef.getPacketHandler(),
+                        "&b" + lang.tr("plugin.title") + " " + lang.tr("dashboard.modpage_title_suffix"),
+                        lang.tr("dashboard.modpage_open", Map.of("url", CURSEFORGE_URL)),
+                        NotificationStyle.Default
+                );
 
-                case "report_bug" -> {
-                    MysticNotificationUtil.send(
-                            playerRef.getPacketHandler(),
-                            "&cMysticNameTags Bug Report",
-                            "&7Report issues at: &f" + BUGREPORT_URL,
-                            NotificationStyle.Default
-                    );
-                }
+                case "report_bug" -> MysticNotificationUtil.send(
+                        playerRef.getPacketHandler(),
+                        "&c" + lang.tr("plugin.title") + " " + lang.tr("dashboard.bugreport_title_suffix"),
+                        lang.tr("dashboard.bugreport_open", Map.of("url", BUGREPORT_URL)),
+                        NotificationStyle.Default
+                );
 
                 case "tab_overview" -> {
                     UICommandBuilder update = new UICommandBuilder();
@@ -259,58 +222,44 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 // --- Quick Actions ---
 
                 case "open_tag_ui" -> {
-                    try {
-                        Player player = store.getComponent(ref, Player.getComponentType());
-                        if (player == null) {
-                            MysticNotificationUtil.send(
-                                    playerRef.getPacketHandler(),
-                                    "&cMysticNameTags",
-                                    "&7Could not open Tag UI (no Player component).",
-                                    NotificationStyle.Warning
-                            );
-                            // log only because this is unexpected
-                            MysticLog.warn("Dashboard open_tag_ui failed for "
-                                    + playerRef.getUsername() + " – no Player component.");
-                            return;
-                        }
-
-                        MysticNameTagsTagsUI tagsPage = new MysticNameTagsTagsUI(playerRef, uuid);
-                        player.getPageManager().openCustomPage(ref, store, tagsPage);
-
+                    Player player = store.getComponent(ref, Player.getComponentType());
+                    if (player == null) {
                         MysticNotificationUtil.send(
                                 playerRef.getPacketHandler(),
-                                "&bMysticNameTags",
-                                "&7Opened Tag Selector UI.",
-                                NotificationStyle.Success
-                        );
-                    } catch (Exception e) {
-                        MysticNotificationUtil.send(
-                                playerRef.getPacketHandler(),
-                                "&cMysticNameTags",
-                                "&7Failed to open Tag UI: &f" + e.getMessage(),
+                                "&c" + lang.tr("plugin.title"),
+                                lang.tr("dashboard.open_tags_failed"),
                                 NotificationStyle.Warning
                         );
-                        // this is an actual “crash” of this action → log it
-                        MysticLog.error("Dashboard open_tag_ui threw exception for "
-                                + playerRef.getUsername(), e);
+                        MysticLog.warn("Dashboard open_tag_ui failed for "
+                                + playerRef.getUsername() + " – no Player component.");
+                        return;
                     }
+
+                    MysticNameTagsTagsUI tagsPage = new MysticNameTagsTagsUI(playerRef, uuid);
+                    player.getPageManager().openCustomPage(ref, store, tagsPage);
+
+                    MysticNotificationUtil.send(
+                            playerRef.getPacketHandler(),
+                            "&b" + lang.tr("plugin.title"),
+                            lang.tr("dashboard.opened_tags_toast"),
+                            NotificationStyle.Success
+                    );
                 }
 
                 case "clear_cache" -> {
                     TagManager manager = TagManager.get();
-
                     manager.clearCanUseCache(uuid);
                     manager.forgetNameplate(uuid);
 
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
-                            "&bMysticNameTags",
-                            "&7Cleared your tag + nameplate cache.",
+                            "&b" + lang.tr("plugin.title"),
+                            lang.tr("dashboard.cleared_cache_toast"),
                             NotificationStyle.Success
                     );
 
                     UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", "Local caches cleared.");
+                    update.set("#StatusText.Text", lang.tr("dashboard.cleared_cache_status"));
                     populateDynamicFields(update);
                     sendUpdate(update, null, false);
                 }
@@ -322,11 +271,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     if (world == null) {
                         MysticNotificationUtil.send(
                                 playerRef.getPacketHandler(),
-                                "&cMysticNameTags",
-                                "&7Cannot refresh nameplate (world not tracked).",
+                                "&c" + lang.tr("plugin.title"),
+                                lang.tr("dashboard.refresh_nameplate_world_missing"),
                                 NotificationStyle.Warning
                         );
-                        // optional: this is more of a state issue than a crash, so we can skip logging
                         return;
                     }
 
@@ -334,13 +282,13 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
-                            "&bMysticNameTags",
-                            "&7Nameplate refreshed.",
+                            "&b" + lang.tr("plugin.title"),
+                            lang.tr("dashboard.refresh_nameplate_toast"),
                             NotificationStyle.Success
                     );
 
                     UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", "Nameplate refreshed.");
+                    update.set("#StatusText.Text", lang.tr("dashboard.refresh_nameplate_status"));
                     populateDynamicFields(update);
                     sendUpdate(update, null, false);
                 }
@@ -358,13 +306,19 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     boolean econEcoTale = integrations.isEcoTaleAvailable();
                     boolean econVault   = integrations.isVaultAvailable();
                     boolean econElite   = integrations.isEliteEconomyAvailable();
-                    // Placeholder integrations
+
                     Settings settings = Settings.get();
-                    boolean wiFlowPlaceholders   = settings.isWiFlowPlaceholdersEnabled();
-                    boolean helpchPlaceholders   = settings.isHelpchPlaceholderApiEnabled();
+                    boolean wiFlowPlaceholders = settings.isWiFlowPlaceholdersEnabled();
+                    boolean helpchPlaceholders = settings.isHelpchPlaceholderApiEnabled();
+
+                    // Storage info
+                    StorageBackend backend = StorageBackend.fromString(settings.getStorageBackendRaw());
+                    String storageDetails = buildStorageDetailsForDebug(settings, backend);
 
                     MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
                     String version = plugin.getResolvedVersion();
+
+                    ResourceSnapshot rs = captureResourceSnapshot();
 
                     StringBuilder sb = new StringBuilder();
                     sb.append("[MysticNameTags DEBUG] Player=")
@@ -379,21 +333,24 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                             .append("  Economy: primary=").append(econPrimary)
                             .append(", ecoTale=").append(econEcoTale)
                             .append(", vault=").append(econVault)
-                            .append(", elite=").append(econElite)
-                            .append('\n');
+                            .append(", elite=").append(econElite).append('\n')
+                            .append("  Placeholders: WiFlow=").append(wiFlowPlaceholders)
+                            .append(", helpch=").append(helpchPlaceholders).append('\n')
+                            .append("  Storage: ").append(storageDetails).append('\n')
+                            .append("  Uptime: ").append(formatUptime(rs.uptimeMillis)).append('\n');
 
-                    // THIS is where we log when the admin hits Debug
                     MysticLog.debug(sb.toString());
 
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
-                            "&bMysticNameTags",
-                            "&7Debug snapshot written to console/logs.",
+                            "&b" + lang.tr("plugin.title"),
+                            lang.tr("dashboard.debug_snapshot_toast"),
                             NotificationStyle.Default
                     );
 
                     UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", "Debug snapshot logged.");
+                    update.set("#StatusText.Text", lang.tr("dashboard.debug_snapshot_status"));
+                    populateDynamicFields(update);
                     sendUpdate(update, null, false);
                 }
 
@@ -403,43 +360,44 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             }
 
         } catch (Throwable t) {
-            // Failsafe: ANY unhandled exception in this handler gets logged once
             MysticLog.error("Unhandled exception in MysticNameTagsDashboardUI.handleDataEvent for "
                     + playerRef.getUsername() + " action=" + action, t);
 
             MysticNotificationUtil.send(
                     playerRef.getPacketHandler(),
-                    "&cMysticNameTags",
-                    "&7An internal error occurred while handling this action. " +
-                            "Admins can check the MysticNameTags logs for details.",
+                    "&c" + lang.tr("plugin.title"),
+                    lang.tr("dashboard.internal_error_toast"),
                     NotificationStyle.Warning
             );
         }
     }
 
-    /**
-     * Populate all dynamic dashboard fields (version, integrations, tags, CPU/RAM).
-     * Used on initial build and on refresh/reload.
-     */
     private void populateDynamicFields(@Nonnull UICommandBuilder commands) {
+        LanguageManager lang = LanguageManager.get();
+
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
         UpdateChecker checker = plugin.getUpdateChecker();
 
         String version = plugin.getResolvedVersion();
-        String versionLabel = "Version: " + version;
+
+        String versionLabel = lang.tr("dashboard.version_label", Map.of("version", version));
 
         if (checker != null && checker.hasVersionInfo()) {
             String latest = checker.getLatestVersion();
             if (checker.isUpdateAvailable()) {
-                versionLabel = "Version: " + version + "  (update available: " + latest + ")";
+                versionLabel = lang.tr("dashboard.version_label_update", Map.of(
+                        "version", version,
+                        "latest", latest
+                ));
             } else if (checker.isCurrentAheadOfLatest()) {
-                versionLabel = "Version: " + version + "  (ahead of CurseForge: " + latest + ")";
+                versionLabel = lang.tr("dashboard.version_label_ahead", Map.of(
+                        "version", version,
+                        "latest", latest
+                ));
             }
         }
-
         commands.set("#VersionLabel.Text", versionLabel);
 
-        // Integrations summary
         TagManager tagManager = TagManager.get();
         IntegrationManager integrations = tagManager.getIntegrations();
 
@@ -449,72 +407,60 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         boolean econEcoTale = integrations.isEcoTaleAvailable();
         boolean econVault   = integrations.isVaultAvailable();
         boolean econElite   = integrations.isEliteEconomyAvailable();
-        // Placeholder integrations
+
         Settings settings = Settings.get();
-        boolean wiFlowPlaceholders   = settings.isWiFlowPlaceholdersEnabled();
-        boolean helpchPlaceholders   = settings.isHelpchPlaceholderApiEnabled();
+        boolean wiFlowPlaceholders = settings.isWiFlowPlaceholdersEnabled();
+        boolean helpchPlaceholders = settings.isHelpchPlaceholderApiEnabled();
 
-        StringBuilder integrationsText = new StringBuilder("Integrations: ");
+        // --- Integrations summary ---
+        String luckPermsText = lp
+                ? lang.tr("dashboard.integration_luckperms")
+                : lang.tr("dashboard.integration_luckperms_none");
 
-        // Permissions stack
-        if (lp) {
-            integrationsText.append("LuckPerms");
-        } else {
-            integrationsText.append("LuckPerms (none)");
-        }
+        StringBuilder integrationsText = new StringBuilder();
+        integrationsText.append(lang.tr("dashboard.integrations_prefix")).append(" ");
+        integrationsText.append(luckPermsText);
 
         if (permsPlus) {
-            integrationsText.append(" + PermissionsPlus");
+            integrationsText.append(" ").append(lang.tr("dashboard.integrations_plus_permissionsplus"));
         }
 
-        integrationsText.append(" | Economy: ");
+        integrationsText.append(" | ").append(lang.tr("dashboard.integrations_economy_prefix")).append(" ");
 
         if (econPrimary) {
-            integrationsText.append("EconomySystem");
+            integrationsText.append(lang.tr("dashboard.economy_primary"));
             if (econEcoTale || econVault || econElite) {
-                integrationsText.append(" (fallback: ");
+                integrationsText.append(" ").append(lang.tr("dashboard.economy_fallback_prefix")).append(" ");
                 boolean first = true;
-                if (econEcoTale) {
-                    integrationsText.append("EcoTale");
-                    first = false;
-                }
-                if (econVault) {
-                    if (!first) integrationsText.append(", ");
-                    integrationsText.append("VaultUnlocked");
-                    first = false;
-                }
-                if (econElite) {
-                    if (!first) integrationsText.append(", ");
-                    integrationsText.append("EliteEssentials");
-                }
+                if (econEcoTale) { integrationsText.append("EcoTale"); first = false; }
+                if (econVault)   { if (!first) integrationsText.append(", "); integrationsText.append("VaultUnlocked"); first = false; }
+                if (econElite)   { if (!first) integrationsText.append(", "); integrationsText.append("EliteEssentials"); }
                 integrationsText.append(")");
             }
         } else if (econEcoTale || econVault || econElite) {
             boolean first = true;
-            if (econEcoTale) {
-                integrationsText.append("EcoTale");
-                first = false;
-            }
-            if (econVault) {
-                if (!first) integrationsText.append(" + ");
-                integrationsText.append("VaultUnlocked");
-                first = false;
-            }
-            if (econElite) {
-                if (!first) integrationsText.append(" + ");
-                integrationsText.append("EliteEssentials");
-            }
+            if (econEcoTale) { integrationsText.append("EcoTale"); first = false; }
+            if (econVault)   { if (!first) integrationsText.append(" + "); integrationsText.append("VaultUnlocked"); first = false; }
+            if (econElite)   { if (!first) integrationsText.append(" + "); integrationsText.append("EliteEssentials"); }
         } else {
-            integrationsText.append("none");
+            integrationsText.append(lang.tr("dashboard.economy_none"));
         }
 
         commands.set("#IntegrationsLabel.Text", integrationsText.toString().trim());
 
-        int tagCount = tagManager.getTagCount();
-        commands.set("#TagCountLabel.Text", "Loaded Tags: " + tagCount);
+        // Tags loaded
+        commands.set("#TagCountLabel.Text", lang.tr("dashboard.loaded_tags_label", Map.of(
+                "count", String.valueOf(tagManager.getTagCount())
+        )));
 
-        // Placeholder integrations label in the Integrations tab
-        StringBuilder placeholderText = new StringBuilder("Placeholders: ");
+        // --- Storage summary ---
+        StorageBackend backend = StorageBackend.fromString(settings.getStorageBackendRaw());
+        String storageLabel = buildStorageLabel(lang, settings, backend);
+        commands.set("#StorageLabel.Text", storageLabel);
+
+        // --- Placeholders ---
+        StringBuilder placeholderText = new StringBuilder();
+        placeholderText.append(lang.tr("dashboard.placeholders_prefix")).append(" ");
 
         if (wiFlowPlaceholders || helpchPlaceholders) {
             boolean first = true;
@@ -527,7 +473,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 placeholderText.append("at.helpch PlaceholderAPI");
             }
         } else {
-            placeholderText.append("none detected");
+            placeholderText.append(lang.tr("dashboard.placeholders_none"));
         }
 
         commands.set("#PlaceholderBackendsLabel.Text", placeholderText.toString());
@@ -535,42 +481,71 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         populateResourceStats(commands);
     }
 
-    /**
-     * Populates the CPU/RAM labels in the dashboard.
-     * Note: these are *process/JVM-wide* stats (the server including MysticNameTags),
-     * not per-plugin metrics – the JVM doesn't expose accurate per-plugin usage.
-     */
-    private void populateResourceStats(@Nonnull UICommandBuilder commands) {
-        ResourceSnapshot rs = captureResourceSnapshot();
-
-        String ramText = "RAM (JVM, includes MysticNameTags): "
-                + rs.usedMb + " / " + rs.maxMb + " MB";
-        commands.set("#RamLabel.Text", ramText);
-
-        String cpuText = (rs.cpuPercent >= 0.0)
-                ? String.format("CPU (process): %.1f%% of %d cores",
-                rs.cpuPercent, rs.availableProcessors)
-                : "CPU (process): N/A";
-
-        commands.set("#CpuLabel.Text", cpuText);
+    private String buildStorageLabel(LanguageManager lang, Settings settings, StorageBackend backend) {
+        return switch (backend) {
+            case FILE -> lang.tr("dashboard.storage_file", Map.of());
+            case SQLITE -> {
+                String file = settings.getSqliteFile();
+                yield lang.tr("dashboard.storage_sqlite", Map.of("file", file));
+            }
+            case MYSQL -> {
+                String host = settings.getMysqlHost();
+                int port    = settings.getMysqlPort();
+                String db   = settings.getMysqlDatabase();
+                yield lang.tr("dashboard.storage_mysql", Map.of(
+                        "host", host,
+                        "port", String.valueOf(port),
+                        "database", db
+                ));
+            }
+        };
     }
 
-    /**
-     * Toggle which tab panel is visible and which sidebar tab is "selected".
-     * tabKey: "overview", "integrations", "debug"
-     */
+    private String buildStorageDetailsForDebug(Settings settings, StorageBackend backend) {
+        return switch (backend) {
+            case FILE -> "FILE (playerdata/*.json)";
+            case SQLITE -> "SQLITE file=" + settings.getSqliteFile();
+            case MYSQL -> "MYSQL " + settings.getMysqlHost() + ":" + settings.getMysqlPort()
+                    + "/" + settings.getMysqlDatabase();
+        };
+    }
+
+    private void populateResourceStats(@Nonnull UICommandBuilder commands) {
+        LanguageManager lang = LanguageManager.get();
+
+        ResourceSnapshot rs = captureResourceSnapshot();
+
+        commands.set("#RamLabel.Text",
+                lang.tr("dashboard.ram_label", Map.of(
+                        "used", String.valueOf(rs.usedMb),
+                        "max", String.valueOf(rs.maxMb)
+                )));
+
+        String cpuText = (rs.cpuPercent >= 0.0)
+                ? lang.tr("dashboard.cpu_label", Map.of(
+                "percent", String.format(java.util.Locale.ROOT, "%.1f", rs.cpuPercent),
+                "cores", String.valueOf(rs.availableProcessors)
+        ))
+                : lang.tr("dashboard.cpu_na");
+
+        commands.set("#CpuLabel.Text", cpuText);
+
+        commands.set("#UptimeLabel.Text", lang.tr("dashboard.uptime_label", Map.of(
+                "uptime", formatUptime(rs.uptimeMillis)
+        )));
+    }
+
     private void applyTabSelection(@Nonnull UICommandBuilder commands,
                                    @Nonnull String tabKey) {
+
         boolean overview     = "overview".equalsIgnoreCase(tabKey);
         boolean integrations = "integrations".equalsIgnoreCase(tabKey);
         boolean debug        = "debug".equalsIgnoreCase(tabKey);
 
-        // Tab content panels
         commands.set("#TabOverviewPanel.Visible", overview);
         commands.set("#TabIntegrationsPanel.Visible", integrations);
         commands.set("#TabDebugPanel.Visible", debug);
 
-        // Sidebar buttons: show selected vs normal
         commands.set("#OverviewTabButtonSelected.Visible", overview);
         commands.set("#OverviewTabButton.Visible", !overview);
 
@@ -581,30 +556,22 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#DebugTabButton.Visible", !debug);
     }
 
-    // -------- Resource snapshot helpers --------
-
     private static ResourceSnapshot captureResourceSnapshot() {
         ResourceSnapshot rs = new ResourceSnapshot();
 
-        // Heap
         Runtime rt = Runtime.getRuntime();
         rs.usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024L * 1024L);
         rs.maxMb = rt.maxMemory() / (1024L * 1024L);
 
-        // CPU (process) – best-effort, may not be available on all JVMs
         double cpu = -1.0;
         try {
             OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
             try {
                 var method = osBean.getClass().getMethod("getProcessCpuLoad");
                 Object value = method.invoke(osBean);
-                if (value instanceof Double d && d >= 0.0) {
-                    cpu = d * 100.0;
-                }
-            } catch (Throwable ignored) {
-            }
-        } catch (Throwable ignored) {
-        }
+                if (value instanceof Double d && d >= 0.0) cpu = d * 100.0;
+            } catch (Throwable ignored) { }
+        } catch (Throwable ignored) { }
         rs.cpuPercent = cpu;
 
         rs.availableProcessors = rt.availableProcessors();
@@ -641,13 +608,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         long uptimeMillis;
     }
 
-    // -------- Event data --------
-
     public static class UIEventData {
         private String action;
 
-        public UIEventData() {
-        }
+        public UIEventData() { }
 
         public String getAction() {
             return action;

@@ -16,6 +16,7 @@ import com.hypixel.hytale.server.core.ui.builder.UICommandBuilder;
 import com.hypixel.hytale.server.core.ui.builder.UIEventBuilder;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
+import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport;
@@ -41,23 +42,20 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
-    // 10 rows per page
     private static final int MAX_ROWS  = 10;
     private static final int PAGE_SIZE = 10;
 
     private final PlayerRef playerRef;
     private final UUID uuid;
 
-    // zero-based page index (mutable so we can flip pages without recreating the page)
     private int currentPage;
-
-    // Optional filter applied server-side (case-insensitive, mutable)
     private String filterQuery;
 
-    // Category: 0 = All, 1..N = actual categories from TagManager
+    // 0 = All, 1..N = categories
     private int categoryIndex = 0;
 
-    // Per-page instance cache: tagId -> canUse
+    private long lastFilterApplyMs = 0L;
+
     private final Map<String, Boolean> canUseCache = new HashMap<>();
 
     public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid) {
@@ -87,32 +85,23 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                       @Nonnull UIEventBuilder evt,
                       @Nonnull Store<EntityStore> store) {
 
-        // Load layout once
-        cmd.append(LAYOUT);
+        // Load layout once (supports localized override)
+        cmd.append(LanguageManager.get().resolveUi(LAYOUT));
 
         // Static button bindings
-        evt.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#BottomCloseButton",
-                EventData.of("Action", "close")
-        );
-        evt.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#PrevPageButton",
-                EventData.of("Action", "prev_page")
-        );
-        evt.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#NextPageButton",
-                EventData.of("Action", "next_page")
-        );
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#BottomCloseButton", EventData.of("Action", "close"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevPageButton",   EventData.of("Action", "prev_page"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextPageButton",   EventData.of("Action", "next_page"));
 
-        // "Apply" / "Clear" buttons just send "set_filter" with optional Filter text.
+        // Filter controls
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ApplyFilterButton",
-                EventData.of("Action", "set_filter")
+                new EventData()
+                        .append("Action", "set_filter")
+                        .append("Filter", "#TagSearchBox.Text")
         );
+
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ClearFilterButton",
@@ -121,26 +110,13 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                         .append("Filter", "")
         );
 
-        evt.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#PrevCategoryButton",
-                EventData.of("Action", "prev_category")
-        );
-        evt.addEventBinding(
-                CustomUIEventBindingType.Activating,
-                "#NextCategoryButton",
-                EventData.of("Action", "next_category")
-        );
+        // Category controls
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevCategoryButton", EventData.of("Action", "prev_category"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextCategoryButton", EventData.of("Action", "next_category"));
 
-        // Fill the dynamic content (rows, balance, preview)
         rebuildPage(ref, store, cmd, evt, true);
     }
 
-    /**
-     * Logical snapshot of tags to use for this UI instance:
-     * - filtered by filterQuery (if not null)
-     * - stable order: underlying TagManager uses LinkedHashMap
-     */
     private List<TagDefinition> createFilteredSnapshot() {
         TagManager tagManager = TagManager.get();
         Collection<TagDefinition> all = tagManager.getAllTags();
@@ -148,42 +124,34 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         boolean fullGate        = Settings.get().isFullPermissionGateEnabled();
         boolean debugShowHidden = tagManager.isShowHiddenTagsForDebug();
 
-        // Selected category (0 = All, 1..N = actual category list)
         List<String> categories = tagManager.getCategories();
         boolean hasCategories   = !categories.isEmpty();
         String selectedCategory = null;
+
         if (hasCategories && categoryIndex > 0 && categoryIndex <= categories.size()) {
             selectedCategory = categories.get(categoryIndex - 1);
         }
 
-        // Fast path: no filter, no full gate, no category filter → dump everything
         if (!fullGate && filterQuery == null && selectedCategory == null) {
             return new ArrayList<>(all);
         }
 
-        String needle = (filterQuery != null)
-                ? filterQuery.toLowerCase(Locale.ROOT)
-                : null;
-
+        String needle = (filterQuery != null) ? filterQuery.toLowerCase(Locale.ROOT) : null;
         List<TagDefinition> filtered = new ArrayList<>();
 
         for (TagDefinition def : all) {
             if (def == null) continue;
 
-            // 1) Full permission gate: hide tags the player can't use
-            //    unless debug mode says "show hidden".
+            // 1) Full permission gate
             if (fullGate) {
                 String perm = def.getPermission();
                 if (perm != null && !perm.isEmpty()) {
                     boolean canUse = uuid != null && tagManager.canUseTag(playerRef, uuid, def);
-
-                    if (!canUse && !debugShowHidden) {
-                        continue;
-                    }
+                    if (!canUse && !debugShowHidden) continue;
                 }
             }
 
-            // 2) Optional text filter (search)
+            // 2) Text filter
             if (needle != null) {
                 String id       = def.getId() != null ? def.getId() : "";
                 String display  = def.getDisplay() != null ? def.getDisplay() : "";
@@ -195,17 +163,13 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 String haystack = (id + " " + plainDisplay + " " + descr + " " + category)
                         .toLowerCase(Locale.ROOT);
 
-                if (!haystack.contains(needle)) {
-                    continue; // doesn't match filter
-                }
+                if (!haystack.contains(needle)) continue;
             }
 
-            // 3) Category filter (if something other than "All" selected)
+            // 3) Category filter
             if (selectedCategory != null) {
                 String defCat = def.getCategory();
-                if (defCat == null || !defCat.equalsIgnoreCase(selectedCategory)) {
-                    continue;
-                }
+                if (defCat == null || !defCat.equalsIgnoreCase(selectedCategory)) continue;
             }
 
             filtered.add(def);
@@ -214,68 +178,62 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         return filtered;
     }
 
-    /**
-     * Rebuilds all dynamic parts of the page:
-     * - rows (tag name, price, button text, visibility)
-     * - page label, arrows
-     * - balance label
-     * - current nameplate preview
-     *
-     * @param registerRowEvents if true, also attaches event bindings to row buttons.
-     */
     private void rebuildPage(@Nonnull Ref<EntityStore> ref,
                              @Nonnull Store<EntityStore> store,
                              @Nonnull UICommandBuilder cmd,
                              @Nonnull UIEventBuilder evt,
                              boolean registerRowEvents) {
 
+        LanguageManager lang = LanguageManager.get();
+
         TagManager tagManager = TagManager.get();
         IntegrationManager integrations = tagManager.getIntegrations();
         boolean fullGate        = Settings.get().isFullPermissionGateEnabled();
         boolean debugShowHidden = tagManager.isShowHiddenTagsForDebug();
 
-        // Snapshot of tags for this filter
         List<TagDefinition> tags = createFilteredSnapshot();
 
         int totalTags  = tags.size();
         int totalPages = Math.max(1, (int) Math.ceil(totalTags / (double) PAGE_SIZE));
 
-        // Clamp the current page in case tags changed
-        if (currentPage > totalPages - 1) {
-            currentPage = totalPages - 1;
-        }
+        if (currentPage > totalPages - 1) currentPage = totalPages - 1;
+
+        cmd.set("#RequirementsPanel.Visible", false);
 
         int startIndex = currentPage * PAGE_SIZE;
         int endIndex   = Math.min(startIndex + PAGE_SIZE, totalTags);
 
-        // Make sure search box reflects our current filter
+        // Search box placeholder
         if (filterQuery != null) {
-            cmd.set("#TagSearchBox.PlaceholderText", "Filter: " + filterQuery);
+            cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.tags.search_filter_prefix", Map.of("filter", filterQuery)));
         } else {
-            cmd.set("#TagSearchBox.PlaceholderText", "Search tags...");
+            cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.tags.search_placeholder"));
         }
 
-        // Equipped tag (by id) for this player
+        // Equipped tag id
         String equippedId = null;
         if (uuid != null) {
             TagDefinition equipped = tagManager.getEquipped(uuid);
-            if (equipped != null) {
-                equippedId = equipped.getId();
-            }
+            if (equipped != null) equippedId = equipped.getId();
         }
 
-        // ---- Economy status + balance (once per rebuild) ----
+        // ---- Balance ----
         double balance = 0.0;
         boolean econEnabled = false;
-        boolean usingCoins = false;
+        boolean usingCash = false;
+        boolean usingPhysical = false;
 
         try {
             if (uuid != null) {
                 econEnabled = integrations.hasAnyEconomy();
-                if (econEnabled) {
-                    balance = integrations.getBalance(uuid);
+                usingPhysical = integrations.isUsingPhysicalCoins();
 
-                    usingCoins = Settings.get().isEconomySystemEnabled()
+                if (econEnabled) {
+                    balance = integrations.getBalance(playerRef, uuid);
+
+                    // "Cash" only applies to your primary ledger economy
+                    usingCash = !usingPhysical
+                            && Settings.get().isEconomySystemEnabled()
                             && Settings.get().isUseCoinSystem()
                             && integrations.isPrimaryEconomyAvailable();
                 }
@@ -283,71 +241,59 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         } catch (Throwable ignored) { }
 
         if (!econEnabled) {
-            cmd.set("#BalanceLabel.Text", "Balance: N/A (no economy found)");
-        } else if (usingCoins) {
-            cmd.set("#BalanceLabel.Text", "Cash: " + (long) balance);
+            cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_na"));
+        } else if (usingPhysical) {
+            cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_coins", Map.of("amount", String.valueOf((long) balance))));
+        } else if (usingCash) {
+            cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_cash", Map.of("amount", String.valueOf((long) balance))));
         } else {
-            cmd.set("#BalanceLabel.Text", "Balance: " + balance);
+            cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_coins", Map.of("amount", String.valueOf(balance))));
         }
 
-        // ---- Fill rows for this page ----
+        // ---- Rows ----
         int row = 0;
         for (int i = startIndex; i < endIndex && row < MAX_ROWS; i++, row++) {
             TagDefinition def = tags.get(i);
 
-            String nameSelector           = "#TagRow" + row + "Name";
-            String descSelector           = "#TagRow" + row + "Description";
-            String priceSelector          = "#TagRow" + row + "Price";
-            String buttonSelector         = "#TagRow" + row + "Button";
-            String categoryPillSelector   = "#TagRow" + row + "CategoryPill";
-            String categorySelector       = "#TagRow" + row + "Category";
+            String nameSelector         = "#TagRow" + row + "Name";
+            String descSelector         = "#TagRow" + row + "Description";
+            String priceSelector        = "#TagRow" + row + "Price";
+            String buttonSelector       = "#TagRow" + row + "Button";
+            String categoryPillSelector = "#TagRow" + row + "CategoryPill";
+            String categorySelector     = "#TagRow" + row + "Category";
+            String infoSelector         = "#TagRow" + row + "Info";
 
-            String rawDisplay      = def.getDisplay();
-            String rawDescription  = def.getDescription();
+            String rawDisplay     = def.getDisplay();
+            String rawDescription = def.getDescription();
 
-            // ---- Name (with color extracted from codes) ----
             String nameText = ColorFormatter.stripFormatting(rawDisplay);
             String nameHex  = ColorFormatter.extractUiTextColor(rawDisplay);
 
-            // ---- Description: strip color codes ----
-            String descText = rawDescription != null
-                    ? ColorFormatter.stripFormatting(rawDescription)
-                    : "";
+            String descText = rawDescription != null ? ColorFormatter.stripFormatting(rawDescription) : "";
+            if (descText.length() > 90) descText = descText.substring(0, 87) + "...";
 
-            // Soft length cap so long lore doesn’t blow the row
-            if (descText.length() > 90) {
-                descText = descText.substring(0, 87) + "...";
-            }
+            String descHex = (rawDescription != null) ? ColorFormatter.extractFirstHexColor(rawDescription) : null;
 
-            String descHex = (rawDescription != null)
-                    ? ColorFormatter.extractFirstHexColor(rawDescription)
-                    : null;
-
-            // ---- Price text ----
+            // Price text
             String priceText;
             if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
-                priceText = "Free";
+                priceText = lang.tr("ui.tags.price_free");
             } else if (!econEnabled) {
-                priceText = def.getPrice() + " (economy disabled)";
-            } else if (usingCoins) {
-                priceText = def.getPrice() + " Cash";
+                priceText = lang.tr("ui.tags.price_economy_disabled", Map.of("price", String.valueOf(def.getPrice())));
+            } else if (usingCash) {
+                priceText = lang.tr("ui.tags.price_cash", Map.of("price", String.valueOf(def.getPrice())));
             } else {
-                priceText = def.getPrice() + " Coins";
+                priceText = lang.tr("ui.tags.price_coins", Map.of("price", String.valueOf(def.getPrice())));
             }
 
             cmd.set(nameSelector + ".Text", nameText);
             cmd.set(descSelector + ".Text", descText);
             cmd.set(priceSelector + ".Text", priceText);
 
-            // Override UI label colors if hex codes were present
-            if (nameHex != null) {
-                cmd.set(nameSelector + ".Style.TextColor", "#" + nameHex);
-            }
-            if (descHex != null) {
-                cmd.set(descSelector + ".Style.TextColor", "#" + descHex);
-            }
+            if (nameHex != null) cmd.set(nameSelector + ".Style.TextColor", "#" + nameHex);
+            if (descHex != null) cmd.set(descSelector + ".Style.TextColor", "#" + descHex);
 
-            // ---- Determine button label based on usage/equipped state ----
+            // canUse (cached)
             boolean canUse;
             Boolean cached = canUseCache.get(def.getId());
             if (cached != null) {
@@ -357,53 +303,40 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 canUseCache.put(def.getId(), canUse);
             }
 
-            boolean isEquipped = equippedId != null
-                    && equippedId.equalsIgnoreCase(def.getId());
+            boolean isEquipped = equippedId != null && equippedId.equalsIgnoreCase(def.getId());
+            boolean owns       = uuid != null && tagManager.ownsTag(uuid, def.getId());
+            boolean isFree     = !def.isPurchasable() || def.getPrice() <= 0.0D;
+            boolean hasCost    = def.isPurchasable() && def.getPrice() > 0.0D;
 
-            boolean owns    = uuid != null && tagManager.ownsTag(uuid, def.getId());
-            boolean isFree  = !def.isPurchasable() || def.getPrice() <= 0.0D;
-            boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
+            String perm = def.getPermission();
+            boolean isLockedByPerm = fullGate && perm != null && !perm.isEmpty() && !canUse;
 
             String buttonText;
-            boolean isLockedByPerm = false;
-            String perm = def.getPermission();
-
-            // In Full Gate mode, permission is required to use the tag at all.
-            if (fullGate && perm != null && !perm.isEmpty() && !canUse) {
-                isLockedByPerm = true;
-            }
-
             if (isLockedByPerm && debugShowHidden) {
-                // Visible only for admin debugging.
-                buttonText = "No access";
+                buttonText = lang.tr("ui.tags.button_no_access");
 
-                // Grey the row + category so it's obvious this is just a debug ghost row.
                 cmd.set(nameSelector + ".Style.TextColor", "#6b7280");
                 cmd.set(descSelector + ".Style.TextColor", "#6b7280");
                 cmd.set(categorySelector + ".Style.TextColor", "#9ca3af");
             } else {
                 if (isEquipped) {
-                    buttonText = "Unequip";
+                    buttonText = lang.tr("ui.tags.button_unequip");
                 } else if (isFree) {
-                    if (!owns) {
-                        buttonText = "Unlock";
-                    } else {
-                        buttonText = "Equip";
-                    }
+                    buttonText = (!owns) ? lang.tr("ui.tags.button_unlock") : lang.tr("ui.tags.button_equip");
                 } else if (hasCost) {
-                    if (!owns) {
-                        buttonText = "Buy";
-                    } else {
-                        buttonText = "Equip";
-                    }
+                    buttonText = (!owns) ? lang.tr("ui.tags.button_buy") : lang.tr("ui.tags.button_equip");
                 } else {
-                    buttonText = "Equip";
+                    buttonText = lang.tr("ui.tags.button_equip");
                 }
             }
 
             cmd.set(buttonSelector + ".Text", buttonText);
 
-            // ---- Category pill text + visibility ----
+            boolean locked = isLocked(def, canUse, owns);
+            cmd.set(infoSelector + ".Visible", locked);
+            cmd.set(infoSelector + ".Text", lang.tr("ui.tags.info_icon"));
+
+            // Category pill
             String category = def.getCategory();
             if (category == null || category.trim().isEmpty()) {
                 cmd.set(categoryPillSelector + ".Visible", false);
@@ -412,40 +345,40 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 cmd.set(categoryPillSelector + ".Visible", true);
                 cmd.set(categorySelector + ".Visible", true);
                 cmd.set(categorySelector + ".Text", category);
-                // reset to normal color in case previous state was "locked/grey"
                 cmd.set(categorySelector + ".Style.TextColor", "#cbd5f5");
             }
 
-            // Make sure the main fields for this row are visible when reused
             cmd.set(nameSelector + ".Visible", true);
             cmd.set(descSelector + ".Visible", true);
             cmd.set(priceSelector + ".Visible", true);
             cmd.set(buttonSelector + ".Visible", true);
 
-            // Row button binding
             if (registerRowEvents) {
                 EventData rowEvent = new EventData()
                         .append("Action", "tag_click")
                         .append("TagId", def.getId() != null ? def.getId() : "")
                         .append("RowIndex", String.valueOf(row));
 
-                evt.addEventBinding(
-                        CustomUIEventBindingType.Activating,
-                        buttonSelector,
-                        rowEvent,
-                        false
-                );
+                EventData showReq = new EventData()
+                        .append("Action", "hover_tag")
+                        .append("TagId", def.getId() != null ? def.getId() : "");
+
+                evt.addEventBinding(CustomUIEventBindingType.Activating, infoSelector, showReq, false);
+                evt.addEventBinding(CustomUIEventBindingType.Activating, buttonSelector, rowEvent, false);
             }
         }
 
         // Hide unused rows
         for (; row < MAX_ROWS; row++) {
-            String nameSelector           = "#TagRow" + row + "Name";
-            String descSelector           = "#TagRow" + row + "Description";
-            String priceSelector          = "#TagRow" + row + "Price";
-            String buttonSelector         = "#TagRow" + row + "Button";
-            String categoryPillSelector   = "#TagRow" + row + "CategoryPill";
-            String categorySelector       = "#TagRow" + row + "Category";
+            String nameSelector         = "#TagRow" + row + "Name";
+            String descSelector         = "#TagRow" + row + "Description";
+            String priceSelector        = "#TagRow" + row + "Price";
+            String buttonSelector       = "#TagRow" + row + "Button";
+            String categoryPillSelector = "#TagRow" + row + "CategoryPill";
+            String categorySelector     = "#TagRow" + row + "Category";
+            String infoSelector         = "#TagRow" + row + "Info";
+
+            cmd.set(infoSelector + ".Visible", false);
 
             cmd.set(nameSelector + ".Visible", false);
             cmd.set(descSelector + ".Visible", false);
@@ -455,16 +388,19 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             cmd.set(categorySelector + ".Visible", false);
         }
 
-        // Page label + enable/disable arrows
+        // Page label + nav
         String label;
         if (totalTags == 0) {
             label = (filterQuery != null)
-                    ? "No tags found for filter \"" + filterQuery + "\""
-                    : "No tags defined.";
+                    ? lang.tr("ui.tags.page_none_for_filter", Map.of("filter", filterQuery))
+                    : lang.tr("ui.tags.page_none_defined");
         } else {
-            label = "Page " + (currentPage + 1) + "/" + totalPages;
+            label = lang.tr("ui.tags.page_label", Map.of(
+                    "page", String.valueOf(currentPage + 1),
+                    "pages", String.valueOf(totalPages)
+            ));
             if (filterQuery != null) {
-                label += "  (filter: \"" + filterQuery + "\")";
+                label += "  " + lang.tr("ui.tags.page_filter_suffix", Map.of("filter", filterQuery));
             }
         }
 
@@ -472,11 +408,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#PrevPageButton.Visible", totalTags > 0 && currentPage > 0);
         cmd.set("#NextPageButton.Visible", totalTags > 0 && currentPage < totalPages - 1);
 
-        // ---- Category label + visibility ----
+        // Category label + visibility
         List<String> categories = tagManager.getCategories();
         boolean hasCategories = !categories.isEmpty();
 
-        String categoryLabel = "All";
+        String categoryLabel = lang.tr("ui.tags.category_all");
         if (hasCategories && categoryIndex > 0 && categoryIndex <= categories.size()) {
             categoryLabel = categories.get(categoryIndex - 1);
         }
@@ -486,42 +422,30 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#PrevCategoryButton.Visible", hasCategories);
         cmd.set("#NextCategoryButton.Visible", hasCategories);
 
-        // ----- Current nameplate preview (colored) -----
+        // Current nameplate preview
         String previewText;
         String previewHex = null;
 
         try {
             String baseName = playerRef.getUsername();
-
-            // This is the *actual* nameplate (with &/hex codes) used for chat/UI
             String coloredNameplate = tagManager.buildNameplate(playerRef, baseName, uuid);
-
-            // Strip color codes so they don't render raw in the UI
             previewText = ColorFormatter.stripFormatting(coloredNameplate);
 
-            // Try to derive a nice color from the player's rank or active tag
             if (uuid != null) {
-                // Rank prefix from integrations (may contain &#RRGGBB or &x codes)
                 String rankPrefix = TagManager.get().getIntegrations().getPrimaryPrefix(uuid);
                 previewHex = ColorFormatter.extractFirstHexColor(rankPrefix);
 
                 if (previewHex == null) {
                     TagDefinition active = tagManager.getEquipped(uuid);
-                    if (active != null) {
-                        previewHex = ColorFormatter.extractFirstHexColor(active.getDisplay());
-                    }
+                    if (active != null) previewHex = ColorFormatter.extractFirstHexColor(active.getDisplay());
                 }
             }
         } catch (Throwable ignored) {
-            // Fallback: just show the raw username if something goes wrong
             previewText = playerRef.getUsername();
         }
 
-        // Apply preview text + color
         cmd.set("#CurrentNameplateLabel.Text", previewText);
-        if (previewHex != null) {
-            cmd.set("#CurrentNameplateLabel.Style.TextColor", "#" + previewHex);
-        }
+        if (previewHex != null) cmd.set("#CurrentNameplateLabel.Style.TextColor", "#" + previewHex);
     }
 
     @Override
@@ -546,7 +470,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             }
 
             case "next_page" -> {
-                // Need snapshot to know max page index
                 List<TagDefinition> tags = createFilteredSnapshot();
                 int totalPages = Math.max(1, (int) Math.ceil(tags.size() / (double) PAGE_SIZE));
                 if (currentPage >= totalPages - 1) return;
@@ -559,12 +482,18 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 sendUpdate(cmd, evt, false);
             }
 
-            case "set_filter" -> {
-                String newFilter = normalizeFilter(data.filter);
+            case "filter_changed" -> filterQuery = normalizeFilter(data.filter);
 
-                // If filter changed, clear canUse cache + reset to page 0
-                if (!Objects.equals(filterQuery, newFilter)) {
-                    filterQuery = newFilter;
+            case "set_filter" -> {
+                long now = System.currentTimeMillis();
+                if (now - lastFilterApplyMs < 200) return;
+                lastFilterApplyMs = now;
+
+                String requested = data.filter; // now always passed from Apply/Clear
+                String newFilter = normalizeFilter(requested);
+
+                if (!Objects.equals(this.filterQuery, newFilter)) {
+                    this.filterQuery = newFilter;
                     currentPage = 0;
                     canUseCache.clear();
                 }
@@ -578,16 +507,13 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             case "prev_category" -> {
                 TagManager tagManager = TagManager.get();
                 List<String> cats = tagManager.getCategories();
-                int maxIndex = cats.isEmpty() ? 0 : cats.size(); // 0 = All, 1..maxIndex = categories
+                int maxIndex = cats.isEmpty() ? 0 : cats.size();
 
                 if (maxIndex == 0) {
-                    categoryIndex = 0; // no categories
+                    categoryIndex = 0;
                 } else {
-                    // rotate backwards in range [0, maxIndex]
                     categoryIndex--;
-                    if (categoryIndex < 0) {
-                        categoryIndex = maxIndex; // wrap from All → last category
-                    }
+                    if (categoryIndex < 0) categoryIndex = maxIndex;
                 }
 
                 currentPage = 0;
@@ -602,16 +528,13 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             case "next_category" -> {
                 TagManager tagManager = TagManager.get();
                 List<String> cats = tagManager.getCategories();
-                int maxIndex = cats.isEmpty() ? 0 : cats.size(); // 0 = All, 1..maxIndex = categories
+                int maxIndex = cats.isEmpty() ? 0 : cats.size();
 
                 if (maxIndex == 0) {
                     categoryIndex = 0;
                 } else {
-                    // rotate forward in range [0, maxIndex]
                     categoryIndex++;
-                    if (categoryIndex > maxIndex) {
-                        categoryIndex = 0; // wrap back to All
-                    }
+                    if (categoryIndex > maxIndex) categoryIndex = 0;
                 }
 
                 currentPage = 0;
@@ -623,59 +546,84 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 sendUpdate(cmd, evt, false);
             }
 
+            case "hover_tag" -> {
+                if (uuid == null) return;
+
+                TagManager manager = TagManager.get();
+                TagDefinition def = (data.tagId != null && !data.tagId.isEmpty()) ? manager.getTag(data.tagId) : null;
+                if (def == null) return;
+
+                boolean canUse = manager.canUseTag(playerRef, uuid, def);
+                boolean owns = manager.ownsTag(uuid, def.getId());
+
+                boolean econEnabled = manager.getIntegrations().hasAnyEconomy();
+                boolean usingCash = Settings.get().isEconomySystemEnabled()
+                        && Settings.get().isUseCoinSystem()
+                        && manager.getIntegrations().isPrimaryEconomyAvailable();
+
+                if (!isLocked(def, canUse, owns)) {
+                    UICommandBuilder cmd = new UICommandBuilder();
+                    cmd.set("#RequirementsPanel.Visible", false);
+                    sendUpdate(cmd, new UIEventBuilder(), false);
+                    return;
+                }
+
+                String title = ColorFormatter.stripFormatting(def.getDisplay() != null ? def.getDisplay() : def.getId());
+                String body = buildRequirementsBody(def, canUse, owns, econEnabled, usingCash);
+
+                UICommandBuilder cmd = new UICommandBuilder();
+                cmd.set("#RequirementsPanel.Visible", true);
+                cmd.set("#ReqTitleLabel.Text", title);
+                cmd.set("#ReqBodyLabel.Text", body);
+
+                sendUpdate(cmd, new UIEventBuilder(), false);
+            }
+
+            case "hover_clear" -> {
+                UICommandBuilder cmd = new UICommandBuilder();
+                cmd.set("#RequirementsPanel.Visible", false);
+                sendUpdate(cmd, new UIEventBuilder(), false);
+            }
+
             case "tag_click" -> {
                 if (uuid == null) return;
 
                 TagManager manager = TagManager.get();
 
-                // Try to resolve by TagId first (most robust)
                 TagDefinition def = null;
                 String resolvedId = null;
 
                 if (data.tagId != null && !data.tagId.isEmpty()) {
                     def = manager.getTag(data.tagId);
-                    if (def != null) {
-                        resolvedId = def.getId();
-                    }
+                    if (def != null) resolvedId = def.getId();
                 }
 
-                // Fallback to page+row index if TagId isn't present / couldn't be resolved
                 if (def == null) {
                     int rowIndex = data.rowIndex;
-                    if (rowIndex < 0 || rowIndex >= MAX_ROWS) {
-                        return; // invalid / missing row
-                    }
+                    if (rowIndex < 0 || rowIndex >= MAX_ROWS) return;
 
                     List<TagDefinition> tags = createFilteredSnapshot();
                     int startIndex = currentPage * PAGE_SIZE;
                     int absIndex = startIndex + rowIndex;
 
-                    if (absIndex < 0 || absIndex >= tags.size()) {
-                        return; // clicked on an empty row
-                    }
+                    if (absIndex < 0 || absIndex >= tags.size()) return;
 
                     def = tags.get(absIndex);
-                    if (def == null || def.getId() == null || def.getId().isEmpty()) {
-                        return;
-                    }
+                    if (def == null || def.getId() == null || def.getId().isEmpty()) return;
+
                     resolvedId = def.getId();
                 }
 
-                if (resolvedId == null || resolvedId.isEmpty()) {
-                    return;
-                }
+                if (resolvedId == null || resolvedId.isEmpty()) return;
 
                 TagPurchaseResult result = TagPurchaseResult.NOT_FOUND;
 
                 try {
-                    // 1) Toggle ownership/equip state
                     result = manager.toggleTag(playerRef, uuid, resolvedId);
 
-                    // 2) Update nameplate on the world thread (we have store + ref here)
                     Player player = store.getComponent(ref, Player.getComponentType());
                     if (player != null) {
-                        String baseName = playerRef.getUsername(); // raw username as base
-
+                        String baseName = playerRef.getUsername();
                         try {
                             switch (result) {
                                 case UNLOCKED_FREE:
@@ -692,67 +640,167 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                                     break;
                                 }
                                 default:
-                                    // NO_PERMISSION, NOT_ENOUGH_MONEY, etc – leave nameplate alone
                                     break;
                             }
-                        } catch (Throwable ignored) {
-                            // Never let a nameplate failure kill the UI
-                        }
+                        } catch (Throwable ignored) { }
                     }
 
-                    // 3) Notify the player (with proper colors)
                     handlePurchaseResult(result, def);
 
                 } catch (Throwable t) {
-                    LOGGER.at(Level.WARNING)
-                            .withCause(t)
+                    LOGGER.at(Level.WARNING).withCause(t)
                             .log("[MysticNameTags] Failed to handle tag_click for " + resolvedId);
                 }
 
-                // 4) Rebuild the page dynamically so the UI refreshes
                 UICommandBuilder updateCmd = new UICommandBuilder();
                 UIEventBuilder updateEvt = new UIEventBuilder();
-
                 rebuildPage(ref, store, updateCmd, updateEvt, true);
                 sendUpdate(updateCmd, updateEvt, false);
             }
         }
     }
 
-    private void handlePurchaseResult(TagPurchaseResult result, TagDefinition def) {
-        String title = "&bMysticNameTags";
+    private static boolean hasAnyRequirements(TagDefinition def) {
+        if (def == null) return false;
 
-        String tagDisplay = def != null ? def.getDisplay() : "";
-        String msg;
+        String perm = def.getPermission();
+        boolean hasPerm = perm != null && !perm.isEmpty();
 
-        switch (result) {
-            case NOT_FOUND ->
-                    msg = "&cThat tag no longer exists.";
-            case NO_PERMISSION ->
-                    msg = "&cYou don't have access to that tag.";
-            case UNLOCKED_FREE ->
-                    msg = "&aUnlocked &r" + tagDisplay + " &aand equipped!";
-            case UNLOCKED_PAID ->
-                    msg = "&aPurchased &r" + tagDisplay + " &aand equipped!";
-            case EQUIPPED_ALREADY_OWNED ->
-                    msg = "&aEquipped &r" + tagDisplay + "&a.";
-            case UNEQUIPPED ->
-                    msg = "&7Unequipped &r" + tagDisplay + "&7.";
-            case NO_ECONOMY ->
-                    msg = "&cEconomy plugin is not configured. &7This tag can only be unlocked with an economy plugin installed.";
-            case NOT_ENOUGH_MONEY ->
-                    msg = "&cYou cannot afford that tag.";
-            case TRANSACTION_FAILED ->
-                    msg = "&cTransaction failed. Please try again.";
-            default ->
-                    msg = "&cUnknown purchase result: " + result;
+        boolean hasPlaytime = def.getRequiredPlaytimeMinutes() != null;
+
+        List<String> required = def.getRequiredOwnedTags();
+        boolean hasOwnedTags = required != null && !required.isEmpty();
+
+        return hasPerm || hasPlaytime || hasOwnedTags;
+    }
+
+    private boolean isLocked(TagDefinition def, boolean canUse, boolean owns) {
+        if (def == null) return false;
+
+        boolean lockedByReq = hasAnyRequirements(def) && !canUse;
+
+        boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
+        boolean lockedByPay = hasCost && !owns;
+
+        return lockedByReq || lockedByPay;
+    }
+
+    private String buildRequirementsBody(TagDefinition def,
+                                         boolean canUse,
+                                         boolean owns,
+                                         boolean econEnabled,
+                                         boolean usingCash) {
+
+        LanguageManager lang = LanguageManager.get();
+        StringBuilder sb = new StringBuilder();
+
+        String perm = def.getPermission();
+        if (perm != null && !perm.isEmpty()) {
+            sb.append(lang.tr("ui.tags.req_permission_title"))
+                    .append("\n  ").append(perm).append("\n\n");
         }
 
-        // 1) Let WiFlow expand {placeholders} if the API is there
+        Integer mins = def.getRequiredPlaytimeMinutes();
+        if (mins != null) {
+            sb.append(lang.tr("ui.tags.req_playtime_title"))
+                    .append("\n  ").append(lang.tr("ui.tags.req_playtime_value", Map.of("minutes", String.valueOf(mins))))
+                    .append("\n\n");
+        }
+
+        List<String> required = def.getRequiredOwnedTags();
+        if (required != null && !required.isEmpty()) {
+            sb.append(lang.tr("ui.tags.req_owned_title")).append("\n");
+            for (String id : required) {
+                if (id == null || id.isBlank()) continue;
+                boolean have = (uuid != null) && TagManager.get().ownsTag(uuid, id);
+                sb.append("  ").append(have ? "✓ " : "✗ ").append(id).append("\n");
+            }
+            sb.append("\n");
+        }
+
+        boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
+        if (hasCost && !owns) {
+            sb.append(lang.tr("ui.tags.req_purchase_title"))
+                    .append("\n  ")
+                    .append(lang.tr(usingCash ? "ui.tags.req_purchase_value_cash" : "ui.tags.req_purchase_value_coins",
+                            Map.of("price", String.valueOf(def.getPrice()))));
+
+            if (!econEnabled) {
+                sb.append(" ").append(lang.tr("ui.tags.req_purchase_missing_econ_suffix"));
+            }
+            sb.append("\n\n");
+        }
+
+        if (!canUse && hasAnyRequirements(def)) {
+            sb.append(lang.tr("ui.tags.status_locked_requirements"));
+        } else if (hasCost && !owns) {
+            sb.append(lang.tr("ui.tags.status_locked_not_purchased"));
+        } else {
+            sb.append(lang.tr("ui.tags.status_available"));
+        }
+
+        return sb.toString().trim();
+    }
+
+    private void handlePurchaseResult(TagPurchaseResult result, TagDefinition def) {
+        LanguageManager lang = LanguageManager.get();
+
+        // Keep this colorized title, but make the text localizable
+        String title = "&b" + lang.tr("plugin.title");
+
+        String tagDisplay = def != null ? def.getDisplay() : "";
+
+        String msgKey;
+        Map<String, String> vars;
+
+        switch (result) {
+            case NOT_FOUND -> {
+                msgKey = "tags.not_found";
+                vars = Map.of();
+            }
+            case NO_PERMISSION -> {
+                msgKey = "tags.no_permission";
+                vars = Map.of();
+            }
+            case UNLOCKED_FREE -> {
+                msgKey = "tags.unlocked_free";
+                vars = Map.of("tag", tagDisplay);
+            }
+            case UNLOCKED_PAID -> {
+                msgKey = "tags.unlocked_paid";
+                vars = Map.of("tag", tagDisplay);
+            }
+            case EQUIPPED_ALREADY_OWNED -> {
+                msgKey = "tags.equipped";
+                vars = Map.of("tag", tagDisplay);
+            }
+            case UNEQUIPPED -> {
+                msgKey = "tags.unequipped";
+                vars = Map.of("tag", tagDisplay);
+            }
+            case NO_ECONOMY -> {
+                msgKey = "tags.no_economy";
+                vars = Map.of();
+            }
+            case NOT_ENOUGH_MONEY -> {
+                msgKey = "tags.not_enough_money";
+                vars = Map.of();
+            }
+            case TRANSACTION_FAILED -> {
+                msgKey = "tags.transaction_failed";
+                vars = Map.of();
+            }
+            default -> {
+                msgKey = "tags.unknown_result";
+                vars = Map.of("result", String.valueOf(result));
+            }
+        }
+
+        String msg = lang.tr(msgKey, vars);
+
         String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
         String parsedMsg   = WiFlowPlaceholderSupport.apply(playerRef, msg);
 
-        // 2) Then apply & + hex colors
         parsedTitle = ColorFormatter.colorize(parsedTitle);
         parsedMsg   = ColorFormatter.colorize(parsedMsg);
 
@@ -770,29 +818,21 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         public static final BuilderCodec<UIEventData> CODEC =
                 BuilderCodec.builder(UIEventData.class, UIEventData::new)
-                        .append(
-                                new KeyedCodec<>("Action", Codec.STRING),
+                        .append(new KeyedCodec<>("Action", Codec.STRING),
                                 (e, v) -> e.action = v,
-                                e -> e.action
-                        )
+                                e -> e.action)
                         .add()
-                        .append(
-                                new KeyedCodec<>("TagId", Codec.STRING),
+                        .append(new KeyedCodec<>("TagId", Codec.STRING),
                                 (e, v) -> e.tagId = v,
-                                e -> e.tagId
-                        )
+                                e -> e.tagId)
                         .add()
-                        .append(
-                                new KeyedCodec<>("Filter", Codec.STRING),
+                        .append(new KeyedCodec<>("Filter", Codec.STRING),
                                 (e, v) -> e.filter = v,
-                                e -> e.filter
-                        )
+                                e -> e.filter)
                         .add()
-                        .append(
-                                new KeyedCodec<>("RowIndex", Codec.STRING),
+                        .append(new KeyedCodec<>("RowIndex", Codec.STRING),
                                 (e, v) -> e.rowIndex = parseRowIndex(v),
-                                e -> (e.rowIndex >= 0 ? String.valueOf(e.rowIndex) : null)
-                        )
+                                e -> (e.rowIndex >= 0 ? String.valueOf(e.rowIndex) : null))
                         .add()
                         .build();
 
@@ -804,9 +844,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         public UIEventData() {}
 
         private static int parseRowIndex(String value) {
-            if (value == null || value.isEmpty()) {
-                return -1;
-            }
+            if (value == null || value.isEmpty()) return -1;
             try {
                 return Integer.parseInt(value);
             } catch (NumberFormatException ignored) {
