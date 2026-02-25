@@ -264,9 +264,7 @@ public class TagManager {
 
             String cat = def.getCategory();
             if (cat == null || cat.trim().isEmpty()) {
-                // Because TagDefinition lives in the same package, we can safely
-                // access its package-private field or setter here.
-                def.setCategory(DEFAULT_CATEGORY); // if you don't have a setter, use: def.category = DEFAULT_CATEGORY;
+                def.setCategory(DEFAULT_CATEGORY);
                 changed = true;
             }
         }
@@ -420,7 +418,8 @@ public class TagManager {
     /**
      * Returns true if the player can use this tag:
      * - already owns it in their saved data, OR
-     * - has the permission node configured on the tag.
+     * - has the permission node configured on the tag,
+     * AND they meet any non-item requirements (playtime, stats, required tags).
      *
      * Results are cached per-player to keep UI snappy when many tags exist.
      */
@@ -466,9 +465,8 @@ public class TagManager {
         boolean fullGate = Settings.get().isFullPermissionGateEnabled();
         String perm = def.getPermission();
 
-        // If full gate is enabled and a permission is defined,
-        // the permission MUST be present for this tag – even if
-        // the player "owns" it via JSON.
+        // 1) Full permission gate: if enabled and a permission is defined,
+        //    the permission MUST be present to even consider this tag.
         if (fullGate && perm != null && !perm.isEmpty()) {
             try {
                 if (!integrations.hasPermission(playerRef, perm)) {
@@ -480,30 +478,61 @@ public class TagManager {
             }
         }
 
-        // Owned in JSON data?
-        if (uuid != null) {
-            PlayerTagData data = getOrLoad(uuid);
-            if (data.owns(normalizedId)) {
-                return true;
+        // 2) If we have no UUID, we can't check stored ownership or requirements.
+        //    Fallback to a pure permission check (if a perm is configured).
+        if (uuid == null) {
+            if (perm != null && !perm.isEmpty()) {
+                try {
+                    return integrations.hasPermission(playerRef, perm);
+                } catch (Throwable ignored) {
+                    return false;
+                }
             }
+            return false;
         }
 
-        // Permission-based access as an alternate path when the full gate
-        // is disabled (or when no permission is defined).
+        PlayerTagData data = getOrLoad(uuid);
+
+        boolean owns = data.owns(normalizedId);
+        boolean hasPerm = false;
+
         if (perm != null && !perm.isEmpty()) {
             try {
-                return integrations.hasPermission(playerRef, perm);
+                hasPerm = integrations.hasPermission(playerRef, perm);
             } catch (Throwable ignored) {
-                // fall through
+                hasPerm = false;
             }
         }
 
-        return false;
+        // 3) Base access: must either own the tag OR have the permission
+        if (!owns && !hasPerm) {
+            return false;
+        }
+
+        // 4) Requirements: if any non-permission requirements exist,
+        //    they must be satisfied for "canUse" to be true.
+        if (!meetsRequirements(uuid, playerRef, def)) {
+            return false;
+        }
+
+        return true;
     }
 
-    private TagPurchaseResult checkRequirements(@Nonnull UUID uuid,
-                                                @Nonnull PlayerRef playerRef,
-                                                @Nonnull TagDefinition def) {
+    /**
+     * Returns true if the player satisfies ALL non-permission requirements
+     * for this tag:
+     *  - requiredOwnedTags
+     *  - requiredPlaytimeMinutes
+     *  - requiredStatKey / requiredStatValue
+     *
+     * NOTE: this does NOT check:
+     *  - tag permission (that is handled by full-gate & perm logic)
+     *  - price / economy
+     *  - item requirements (those are treated as unlock costs only)
+     */
+    private boolean meetsRequirements(@Nonnull UUID uuid,
+                                      @Nonnull PlayerRef playerRef,
+                                      @Nonnull TagDefinition def) {
 
         // 1) Required owned tags
         List<String> requiredTags = def.getRequiredOwnedTags();
@@ -512,7 +541,7 @@ public class TagManager {
             for (String req : requiredTags) {
                 if (req == null || req.isBlank()) continue;
                 if (!data.owns(req.toLowerCase(Locale.ROOT))) {
-                    return TagPurchaseResult.REQUIREMENTS_NOT_MET;
+                    return false;
                 }
             }
         }
@@ -522,6 +551,60 @@ public class TagManager {
         if (reqMinutes != null && reqMinutes > 0) {
             Integer playtime = integrations.getPlaytimeMinutes(uuid);
             if (playtime == null || playtime < reqMinutes) {
+                return false;
+            }
+        }
+
+        // 3) Required stat (challenge-style unlocks)
+        if (def.hasStatRequirement()) {
+            String statKey = def.getRequiredStatKey();
+            Integer statValue = def.getRequiredStatValue();
+
+            if (statKey == null || statKey.isBlank() || statValue == null || statValue <= 0) {
+                // Malformed config: treat as not met to avoid free bypasses
+                return false;
+            }
+
+            Integer current;
+            try {
+                current = integrations.getStatValue(uuid, statKey);
+            } catch (Throwable t) {
+                current = null;
+            }
+
+            if (current == null || current < statValue) {
+                return false;
+            }
+        }
+
+        // Item requirements intentionally NOT checked here.
+        return true;
+    }
+
+    /**
+     * Check unlock Requirements (without consuming anything):
+     *  - requiredOwnedTags / playtime / stats
+     *  - requiredItems presence (does NOT consume them)
+     *
+     * Returns REQUIREMENTS_NOT_MET on failure, or null if ok.
+     */
+    private TagPurchaseResult checkRequirements(@Nonnull UUID uuid,
+                                                @Nonnull PlayerRef playerRef,
+                                                @Nonnull TagDefinition def) {
+
+        // Non-item requirements first
+        if (!meetsRequirements(uuid, playerRef, def)) {
+            return TagPurchaseResult.REQUIREMENTS_NOT_MET;
+        }
+
+        // Required items: must be present in inventory (but not consumed yet)
+        if (def.hasItemRequirements()) {
+            try {
+                if (!integrations.hasItems(playerRef, def.getRequiredItems())) {
+                    return TagPurchaseResult.REQUIREMENTS_NOT_MET;
+                }
+            } catch (Throwable t) {
+                // Fail-safe: treat as not met
                 return TagPurchaseResult.REQUIREMENTS_NOT_MET;
             }
         }
@@ -545,23 +628,33 @@ public class TagManager {
             return TagPurchaseResult.NOT_FOUND;
         }
 
+        // Always normalize IDs when talking to PlayerTagData
+        String rawId = def.getId();
+        if (rawId == null || rawId.isEmpty()) {
+            return TagPurchaseResult.NOT_FOUND;
+        }
+        String keyId = rawId.toLowerCase(Locale.ROOT);
+
         PlayerTagData data = getOrLoad(uuid);
 
         // If this tag is already equipped -> unequip
         String equipped = data.getEquipped();
-        if (equipped != null && equipped.equalsIgnoreCase(def.getId())) {
+        if (equipped != null && equipped.equalsIgnoreCase(keyId)) {
             data.setEquipped(null);
             savePlayerData(uuid);
+
+            // Any "canUse" cache for this player+tag is now stale
+            clearCanUseCache(uuid);
+
+            refreshIfOnline(uuid);
+
             return TagPurchaseResult.UNEQUIPPED;
         }
 
-        // Otherwise, delegate to purchase + equip
-        return purchaseAndEquip(playerRef, uuid, id);
+        // Otherwise, delegate to purchase + equip (using normalized id)
+        return purchaseAndEquip(playerRef, uuid, keyId);
     }
 
-    /**
-     * Purchase a tag with economy (if configured) and equip it.
-     */
     public TagPurchaseResult purchaseAndEquip(@Nonnull PlayerRef playerRef,
                                               @Nonnull UUID uuid,
                                               @Nonnull String id) {
@@ -569,6 +662,13 @@ public class TagManager {
         if (def == null) {
             return TagPurchaseResult.NOT_FOUND;
         }
+
+        String rawId = def.getId();
+        if (rawId == null || rawId.isEmpty()) {
+            return TagPurchaseResult.NOT_FOUND;
+        }
+        // Normalized ID used for all PlayerTagData operations
+        String keyId = rawId.toLowerCase(Locale.ROOT);
 
         boolean fullGate = Settings.get().isFullPermissionGateEnabled();
         String perm = def.getPermission();
@@ -586,7 +686,7 @@ public class TagManager {
             }
         }
 
-        // Requirement Check if any
+        // Requirement Check if any (tags, playtime, stat, item presence)
         TagPurchaseResult reqFail = checkRequirements(uuid, playerRef, def);
         if (reqFail != null) {
             return reqFail;
@@ -594,22 +694,37 @@ public class TagManager {
 
         PlayerTagData data = getOrLoad(uuid);
 
-        if (data.owns(def.getId())) {
-            data.setEquipped(def.getId());
+        // Already owned: just equip
+        if (data.owns(keyId)) {
+            data.setEquipped(keyId);
             savePlayerData(uuid);
+            clearCanUseCache(uuid); // ownership/equip status affects canUseTag
+
+            refreshIfOnline(uuid);
+
             return TagPurchaseResult.EQUIPPED_ALREADY_OWNED;
         }
 
         // Free / non-purchasable tags – no economy needed
         if (!def.isPurchasable() || def.getPrice() <= 0) {
-            data.addOwned(def.getId());
-            data.setEquipped(def.getId());
+
+            // Item-only unlock (or items + other requirements)
+            if (!consumeItemsIfNeeded(playerRef, def)) {
+                return TagPurchaseResult.TRANSACTION_FAILED;
+            }
+
+            data.addOwned(keyId);
+            data.setEquipped(keyId);
             savePlayerData(uuid);
 
             runOnFirstUnlockCommands(def, playerRef);
 
             // grant permission if defined (for non-full-gate setups)
             maybeGrantPermission(uuid, perm);
+
+            clearCanUseCache(uuid);
+
+            refreshIfOnline(uuid);
 
             return TagPurchaseResult.UNLOCKED_FREE;
         }
@@ -623,17 +738,30 @@ public class TagManager {
             return TagPurchaseResult.NOT_ENOUGH_MONEY;
         }
 
+        // At this point we *know* items are present (checkRequirements).
+        // Withdraw money first:
         if (!integrations.withdraw(playerRef, uuid, def.getPrice())) {
             return TagPurchaseResult.TRANSACTION_FAILED;
         }
 
-        data.addOwned(def.getId());
-        data.setEquipped(def.getId());
+        // And now consume items.
+        // (If this fails we *could* attempt a refund; for now we just fail.)
+        if (!consumeItemsIfNeeded(playerRef, def)) {
+            return TagPurchaseResult.TRANSACTION_FAILED;
+        }
+
+        data.addOwned(keyId);
+        data.setEquipped(keyId);
         savePlayerData(uuid);
+
         runOnFirstUnlockCommands(def, playerRef);
 
         // grant permission if defined (for non-full-gate setups)
         maybeGrantPermission(uuid, perm);
+
+        clearCanUseCache(uuid);
+
+        refreshIfOnline(uuid);
 
         return TagPurchaseResult.UNLOCKED_PAID;
     }
@@ -754,7 +882,11 @@ public class TagManager {
             // Unified prefix backend (PrefixesPlus -> LuckPerms -> none)
             rank = integrations.getPrimaryPrefix(uuid);
 
-            TagDefinition active = getEquipped(uuid);
+            // BEFORE:
+            // TagDefinition active = getEquipped(uuid);
+
+            // AFTER: use default tag when nothing is equipped
+            TagDefinition active = resolveActiveOrDefaultTag(uuid);
             if (active != null) {
                 // Raw display string (may contain placeholders + color codes)
                 tag = active.getDisplay();
@@ -912,7 +1044,11 @@ public class TagManager {
     }
 
     public String getPlainActiveTag(@Nonnull UUID uuid) {
-        TagDefinition def = getEquipped(uuid);
+        // BEFORE:
+        // TagDefinition def = getEquipped(uuid);
+
+        // AFTER: respect default tag as “active”
+        TagDefinition def = resolveActiveOrDefaultTag(uuid);
         if (def == null) {
             return "";
         }
@@ -979,6 +1115,30 @@ public class TagManager {
             integrations.grantPermission(uuid, perm);
         } catch (Throwable ignored) {
             // we don't want permission failures to break purchases
+        }
+    }
+
+
+    /**
+     * Helper to consume required items for a tag, if any.
+     * Returns true if:
+     *  - no item requirements are defined, OR
+     *  - all required items were successfully consumed by the integration.
+     */
+    private boolean consumeItemsIfNeeded(@Nonnull PlayerRef playerRef,
+                                         @Nonnull TagDefinition def) {
+
+        List<TagDefinition.ItemRequirement> itemReqs = def.getRequiredItems();
+        if (itemReqs.isEmpty()) {
+            return true;
+        }
+
+        try {
+            return integrations.consumeItems(playerRef, itemReqs);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to consume items for tag purchase: " + def.getId());
+            return false;
         }
     }
 
@@ -1129,7 +1289,7 @@ public class TagManager {
     }
 
     @Nullable
-    private TagDefinition resolveActiveOrDefaultTag(@Nonnull UUID uuid) {
+    public TagDefinition resolveActiveOrDefaultTag(@Nonnull UUID uuid) {
         TagDefinition equipped = getEquipped(uuid);
         if (equipped != null) return equipped;
 
@@ -1164,6 +1324,19 @@ public class TagManager {
             world.execute(task);
         } else {
             task.run();            // offline/not tracked: best-effort
+        }
+    }
+
+    private void refreshIfOnline(@Nonnull UUID uuid) {
+        PlayerRef ref = onlinePlayers.get(uuid);
+        World world   = onlineWorlds.get(uuid);
+        if (ref != null && world != null) {
+            try {
+                refreshNameplate(ref, world);
+            } catch (Throwable t) {
+                LOGGER.at(Level.WARNING).withCause(t)
+                        .log("[MysticNameTags] Failed to refresh nameplate after tag change for " + uuid);
+            }
         }
     }
 }
