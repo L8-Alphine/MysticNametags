@@ -22,6 +22,17 @@ public class IntegrationManager {
     @Nullable private EndlessLevelingNameplateSystem endlessNameplateSystem;
     @Nullable private PlaytimeProvider playtimeProvider;
     @Nullable private CoinsAndMarketsBackend coinsAndMarketsBackend;
+    @Nullable private StatProvider statProvider;
+    @Nullable private ItemRequirementHandler itemRequirementHandler;
+
+    public void setStatProvider(@Nullable StatProvider statProvider) {
+        this.statProvider = statProvider;
+    }
+
+    @Nullable
+    public StatProvider getStatProvider() {
+        return statProvider;
+    }
 
     private java.util.List<EconomyBackend> ledgerBackends = java.util.List.of();
 
@@ -55,6 +66,7 @@ public class IntegrationManager {
         setupPermissionBackends();
         setupPrefixBackends();
         setupEconomyBackends();
+        setupItemRequirementHandler();
     }
 
     // ----------------------------------------------------------------
@@ -183,6 +195,18 @@ public class IntegrationManager {
         this.ledgerBackends = java.util.Collections.unmodifiableList(chain);
         if (!ledgerBackends.isEmpty()) {
             this.economyMode = EconomyMode.LEDGER;
+        }
+    }
+
+    private void setupItemRequirementHandler() {
+        try {
+            this.itemRequirementHandler = new HytaleInventoryItemRequirementHandler();
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] Item requirement handler enabled – tags can now require & consume items.");
+        } catch (Throwable t) {
+            this.itemRequirementHandler = null;
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize HytaleInventoryItemRequirementHandler – item requirements will be disabled.");
         }
     }
 
@@ -587,7 +611,90 @@ public class IntegrationManager {
         catch (Throwable t) { return null; }
     }
 
-    public void setPlaytimeProvider(@Nullable PlaytimeProvider provider) {
-        this.playtimeProvider = provider;
+    public void setPlaytimeProvider(@Nullable StatProvider statProvider) {
+        this.playtimeProvider = (PlaytimeProvider) statProvider;
+    }
+
+    // ----------------------------------------------------------------
+    // Stats / challenge integration
+    // ----------------------------------------------------------------
+
+    /**
+     * Expose stat values for tag requirements.
+     *
+     * @return current stat value or null if backend missing / error / zero.
+     */
+    @Nullable
+    public Integer getStatValue(@Nonnull UUID uuid, @Nonnull String key) {
+        if (statProvider == null) {
+            return null;
+        }
+
+        try {
+            return statProvider.getStatValue(uuid, key);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] StatProvider threw while resolving stat '%s' for %s",
+                            key, uuid);
+            return null;
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Item requirement integration
+    // ----------------------------------------------------------------
+
+    /**
+     * Check if the player has ALL items needed for a tag requirement.
+     *
+     * If no handler is configured, we treat item requirements as disabled
+     * (always satisfied) so tags aren't hard-locked by missing integrations.
+     */
+    public boolean hasItems(@Nonnull PlayerRef playerRef,
+                            @Nonnull java.util.List<com.mystichorizons.mysticnametags.tags.TagDefinition.ItemRequirement> requirements) {
+
+        ItemRequirementHandler handler = this.itemRequirementHandler;
+        if (handler == null) {
+            // Item requirements disabled -> behave as if satisfied
+            return true;
+        }
+
+        try {
+            return handler.hasItems(playerRef, requirements);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] ItemRequirementHandler threw while checking items for %s",
+                            playerRef.getUuid());
+            // Fail-safe: if the integration blows up, treat as satisfied so we don't brick tags.
+            return true;
+        }
+    }
+
+    /**
+     * Consume ALL required items from the player's inventory.
+     *
+     * If no handler is configured, this is treated as a no-op success.
+     */
+    public boolean consumeItems(@Nonnull PlayerRef playerRef,
+                                @Nonnull java.util.List<com.mystichorizons.mysticnametags.tags.TagDefinition.ItemRequirement> requirements) {
+
+        ItemRequirementHandler handler = this.itemRequirementHandler;
+        if (handler == null) {
+            // Item requirements disabled -> no-op success
+            return true;
+        }
+
+        try {
+            return handler.consumeItems(playerRef, requirements);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] ItemRequirementHandler threw while consuming items for %s",
+                            playerRef.getUuid());
+            return false;
+        }
+    }
+
+    public void setItemRequirementHandler(@Nullable ItemRequirementHandler handler) {
+        this.itemRequirementHandler = handler;
     }
 }
