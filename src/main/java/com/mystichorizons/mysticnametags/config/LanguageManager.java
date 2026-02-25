@@ -62,6 +62,7 @@ public final class LanguageManager {
         ensureMessagesUpToDate("en_US", defaults, true);
 
         // 2) Ensure UI overrides exist for en_US
+        // These paths are what you pass into cmd.append(), *not* the Common/UI/Custom prefix
         ensureUiOverrideExists("en_US", "mysticnametags/Dashboard.ui");
         ensureUiOverrideExists("en_US", "mysticnametags/Tags.ui");
 
@@ -72,7 +73,6 @@ public final class LanguageManager {
         ensureLanguageFileExists(activeLocale);
 
         // 5) Backfill missing keys for active locale from en_US defaults (never overwrites)
-        //    For non-en locales, we still write English values for missing keys as a usable fallback.
         ensureMessagesUpToDate(activeLocale, defaults, false);
 
         // 6) Export UI overrides for active locale (so users can edit immediately)
@@ -119,6 +119,7 @@ public final class LanguageManager {
      * If a localized UI override exists on disk, return that path; otherwise return bundled asset path.
      *
      * bundledAssetPath example: "mysticnametags/Tags.ui"
+     * Engine will resolve this relative to Common/UI/Custom/.
      */
     public String resolveUi(String bundledAssetPath) {
         File localeDir = new File(langRoot, activeLocale);
@@ -128,6 +129,7 @@ public final class LanguageManager {
             return localized.getPath().replace('\\', '/');
         }
 
+        // Fallback to the built-in asset path (searched from the classpath)
         return bundledAssetPath;
     }
 
@@ -316,6 +318,11 @@ public final class LanguageManager {
         defaults.put("ui.tags.status_available", "Status: AVAILABLE");
         defaults.put("ui.tags.status_locked_not_purchased", "Status: LOCKED (not purchased)");
 
+        // ----- Stat / Item requirement texts -----
+        defaults.put("ui.tags.req_stat_title", "Stat Required");
+        defaults.put("ui.tags.req_stat_value", "{key}: {value}+");
+        defaults.put("ui.tags.req_items_title", "Items Required");
+
         // ---------------- DASHBOARD UI (status bar / info boxes) ----------------
 
         // Version label and variants (used in populateDynamicFields)
@@ -441,6 +448,7 @@ public final class LanguageManager {
         defaults.put("tags.no_economy", "Economy plugin is not configured.");
         defaults.put("tags.not_enough_money", "You cannot afford that tag.");
         defaults.put("tags.transaction_failed", "Transaction failed. Please try again.");
+        defaults.put("tags.requirements_not_met", "You do not meet the requirements for that tag.");
 
         // /tags help
         defaults.put("cmd.help.header", "&b=== MysticNameTags Commands ===");
