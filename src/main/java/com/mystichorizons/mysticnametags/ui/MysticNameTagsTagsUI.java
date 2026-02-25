@@ -11,6 +11,7 @@ import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.protocol.packets.interface_.NotificationStyle;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.player.pages.InteractiveCustomUIPage;
+import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.ui.builder.EventData;
 import com.hypixel.hytale.server.core.ui.builder.UICommandBuilder;
 import com.hypixel.hytale.server.core.ui.builder.UIEventBuilder;
@@ -28,6 +29,7 @@ import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 
 import javax.annotation.Nonnull;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.logging.Level;
 
@@ -211,11 +213,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         // Equipped tag id
-        String equippedId = null;
-        if (uuid != null) {
-            TagDefinition equipped = tagManager.getEquipped(uuid);
-            if (equipped != null) equippedId = equipped.getId();
+        TagDefinition active = tagManager.getEquipped(uuid);
+        if (active == null) {
+            active = tagManager.resolveActiveOrDefaultTag(uuid); // expose or replicate logic
         }
+        String equippedId = (active != null) ? active.getId() : null;
 
         // ---- Balance ----
         double balance = 0.0;
@@ -436,7 +438,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 previewHex = ColorFormatter.extractFirstHexColor(rankPrefix);
 
                 if (previewHex == null) {
-                    TagDefinition active = tagManager.getEquipped(uuid);
                     if (active != null) previewHex = ColorFormatter.extractFirstHexColor(active.getDisplay());
                 }
             }
@@ -547,36 +548,47 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             }
 
             case "hover_tag" -> {
-                if (uuid == null) return;
+                try {
+                    if (uuid == null) return;
 
-                TagManager manager = TagManager.get();
-                TagDefinition def = (data.tagId != null && !data.tagId.isEmpty()) ? manager.getTag(data.tagId) : null;
-                if (def == null) return;
+                    TagManager manager = TagManager.get();
+                    TagDefinition def = (data.tagId != null && !data.tagId.isEmpty()) ? manager.getTag(data.tagId) : null;
+                    if (def == null) return;
 
-                boolean canUse = manager.canUseTag(playerRef, uuid, def);
-                boolean owns = manager.ownsTag(uuid, def.getId());
+                    boolean canUse = manager.canUseTag(playerRef, uuid, def);
+                    boolean owns = manager.ownsTag(uuid, def.getId());
 
-                boolean econEnabled = manager.getIntegrations().hasAnyEconomy();
-                boolean usingCash = Settings.get().isEconomySystemEnabled()
-                        && Settings.get().isUseCoinSystem()
-                        && manager.getIntegrations().isPrimaryEconomyAvailable();
+                    boolean econEnabled = manager.getIntegrations().hasAnyEconomy();
+                    boolean usingCash = Settings.get().isEconomySystemEnabled()
+                            && Settings.get().isUseCoinSystem()
+                            && manager.getIntegrations().isPrimaryEconomyAvailable();
 
-                if (!isLocked(def, canUse, owns)) {
+                    if (!isLocked(def, canUse, owns)) {
+                        UICommandBuilder cmd = new UICommandBuilder();
+                        cmd.set("#RequirementsPanel.Visible", false);
+                        sendUpdate(cmd, new UIEventBuilder(), false);
+                        return;
+                    }
+
+                    String title = ColorFormatter.stripFormatting(def.getDisplay() != null ? def.getDisplay() : def.getId());
+                    String body = buildRequirementsBody(def, canUse, owns, econEnabled, usingCash);
+
+                    UICommandBuilder cmd = new UICommandBuilder();
+                    cmd.set("#RequirementsPanel.Visible", true);
+                    cmd.set("#ReqTitleLabel.Text", title);
+                    cmd.set("#ReqBodyLabel.Text", body);
+
+                    sendUpdate(cmd, new UIEventBuilder(), false);
+                }
+                catch (Throwable t) {
+                    LOGGER.at(Level.WARNING)
+                            .withCause(t)
+                            .log("[MysticNameTags] Error while handling hover_tag for %s", data.tagId);
+
                     UICommandBuilder cmd = new UICommandBuilder();
                     cmd.set("#RequirementsPanel.Visible", false);
                     sendUpdate(cmd, new UIEventBuilder(), false);
-                    return;
                 }
-
-                String title = ColorFormatter.stripFormatting(def.getDisplay() != null ? def.getDisplay() : def.getId());
-                String body = buildRequirementsBody(def, canUse, owns, econEnabled, usingCash);
-
-                UICommandBuilder cmd = new UICommandBuilder();
-                cmd.set("#RequirementsPanel.Visible", true);
-                cmd.set("#ReqTitleLabel.Text", title);
-                cmd.set("#ReqBodyLabel.Text", body);
-
-                sendUpdate(cmd, new UIEventBuilder(), false);
             }
 
             case "hover_clear" -> {
@@ -595,7 +607,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
                 if (data.tagId != null && !data.tagId.isEmpty()) {
                     def = manager.getTag(data.tagId);
-                    if (def != null) resolvedId = def.getId();
+                    if (def != null) {
+                        resolvedId = def.getId();
+                    }
                 }
 
                 if (def == null) {
@@ -616,7 +630,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
                 if (resolvedId == null || resolvedId.isEmpty()) return;
 
-                TagPurchaseResult result = TagPurchaseResult.NOT_FOUND;
+                TagPurchaseResult result;
 
                 try {
                     result = manager.toggleTag(playerRef, uuid, resolvedId);
@@ -652,6 +666,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                             .log("[MysticNameTags] Failed to handle tag_click for " + resolvedId);
                 }
 
+                // IMPORTANT: local UI cache of canUseTag is now stale (perms/ownership changed)
+                canUseCache.clear();
+
                 UICommandBuilder updateCmd = new UICommandBuilder();
                 UIEventBuilder updateEvt = new UIEventBuilder();
                 rebuildPage(ref, store, updateCmd, updateEvt, true);
@@ -666,12 +683,18 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String perm = def.getPermission();
         boolean hasPerm = perm != null && !perm.isEmpty();
 
-        boolean hasPlaytime = def.getRequiredPlaytimeMinutes() != null;
+        boolean hasPlaytime = def.getRequiredPlaytimeMinutes() != null
+                && def.getRequiredPlaytimeMinutes() > 0;
 
         List<String> required = def.getRequiredOwnedTags();
         boolean hasOwnedTags = required != null && !required.isEmpty();
 
-        return hasPerm || hasPlaytime || hasOwnedTags;
+        boolean hasStat = def.getRequiredStatKey() != null && !def.getRequiredStatKey().isBlank()
+                && def.getRequiredStatValue() != null && def.getRequiredStatValue() > 0;
+
+        boolean hasItems = def.getRequiredItems() != null && !def.getRequiredItems().isEmpty();
+
+        return hasPerm || hasPlaytime || hasOwnedTags || hasStat || hasItems;
     }
 
     private boolean isLocked(TagDefinition def, boolean canUse, boolean owns) {
@@ -694,30 +717,78 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         LanguageManager lang = LanguageManager.get();
         StringBuilder sb = new StringBuilder();
 
+        // ----- Permission -----
         String perm = def.getPermission();
         if (perm != null && !perm.isEmpty()) {
             sb.append(lang.tr("ui.tags.req_permission_title"))
                     .append("\n  ").append(perm).append("\n\n");
         }
 
+        // ----- Playtime -----
         Integer mins = def.getRequiredPlaytimeMinutes();
         if (mins != null) {
             sb.append(lang.tr("ui.tags.req_playtime_title"))
-                    .append("\n  ").append(lang.tr("ui.tags.req_playtime_value", Map.of("minutes", String.valueOf(mins))))
+                    .append("\n  ")
+                    .append(lang.tr("ui.tags.req_playtime_value", Map.of("minutes", String.valueOf(mins))))
                     .append("\n\n");
         }
 
+        // ----- Owned Tags -----
         List<String> required = def.getRequiredOwnedTags();
         if (required != null && !required.isEmpty()) {
             sb.append(lang.tr("ui.tags.req_owned_title")).append("\n");
             for (String id : required) {
                 if (id == null || id.isBlank()) continue;
                 boolean have = (uuid != null) && TagManager.get().ownsTag(uuid, id);
-                sb.append("  ").append(have ? "✓ " : "✗ ").append(id).append("\n");
+
+                String pretty = resolveTagDisplayName(id);
+
+                sb.append("  • ").append(have ? "+ " : "- ").append(pretty).append("\n");
             }
             sb.append("\n");
         }
 
+        // ----- Stat requirement -----
+        String statKey = def.getRequiredStatKey();
+        Integer statValue = def.getRequiredStatValue();
+        if (statKey != null && !statKey.isBlank() && statValue != null && statValue > 0) {
+
+            String keyPretty = statKey;
+
+            // If this is a kill stat, show pretty entity name instead of raw id
+            // (but keep Player as "Player")
+            if (statKey.startsWith("killed.")) {
+                keyPretty = "Kills: " + resolveKillEntityDisplayNameFromStatKey(statKey);
+            }
+
+            sb.append(lang.tr("ui.tags.req_stat_title"))
+                    .append("\n  ")
+                    .append(lang.tr("ui.tags.req_stat_value", Map.of(
+                            "key", keyPretty,
+                            "value", String.valueOf(statValue)
+                    )))
+                    .append("\n\n");
+        }
+
+        // ----- Item requirements -----
+        List<TagDefinition.ItemRequirement> items = def.getRequiredItems();
+        if (items != null && !items.isEmpty()) {
+            sb.append(lang.tr("ui.tags.req_items_title")).append("\n");
+            for (TagDefinition.ItemRequirement req : items) {
+                if (req == null || req.getItemId() == null || req.getItemId().isBlank()) continue;
+
+                String prettyItem = resolveItemDisplayName(req.getItemId());
+
+                sb.append("  • ")
+                        .append(req.getAmount())
+                        .append("+ ")
+                        .append(prettyItem)
+                        .append("\n");
+            }
+            sb.append("\n");
+        }
+
+        // ----- Purchase cost -----
         boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
         if (hasCost && !owns) {
             sb.append(lang.tr("ui.tags.req_purchase_title"))
@@ -731,6 +802,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             sb.append("\n\n");
         }
 
+        // ----- Status line -----
         if (!canUse && hasAnyRequirements(def)) {
             sb.append(lang.tr("ui.tags.status_locked_requirements"));
         } else if (hasCost && !owns) {
@@ -740,6 +812,97 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         return sb.toString().trim();
+    }
+
+    // =====================================================================
+    // Pretty-name helpers for Requirements panel
+    // =====================================================================
+
+    @Nonnull
+    private static String prettifyId(@Nonnull String rawId) {
+        String id = rawId.trim();
+        if (id.isEmpty()) return rawId;
+
+        // strip namespace (hytale:goblin -> goblin)
+        int colon = id.indexOf(':');
+        if (colon >= 0 && colon < id.length() - 1) {
+            id = id.substring(colon + 1);
+        }
+
+        // normalize separators
+        id = id.replace('_', ' ').replace('-', ' ');
+
+        // title-case words
+        String[] parts = id.split("\\s+");
+        StringBuilder out = new StringBuilder();
+        for (String p : parts) {
+            if (p.isEmpty()) continue;
+            if (!out.isEmpty()) out.append(' ');
+            out.append(Character.toUpperCase(p.charAt(0)));
+            if (p.length() > 1) out.append(p.substring(1).toLowerCase(Locale.ROOT));
+        }
+        return out.length() > 0 ? out.toString() : rawId;
+    }
+
+    @Nonnull
+    private String resolveTagDisplayName(@Nonnull String tagId) {
+        TagDefinition def = TagManager.get().getTag(tagId);
+        if (def != null) {
+            String disp = def.getDisplay();
+            if (disp != null && !disp.isBlank()) {
+                return ColorFormatter.stripFormatting(disp);
+            }
+            String id = def.getId();
+            if (id != null && !id.isBlank()) return prettifyId(id);
+        }
+        return prettifyId(tagId);
+    }
+
+    @Nonnull
+    private static String resolveItemDisplayName(@Nonnull String itemId) {
+        // Try to get a real item name via API (reflection-safe),
+        // fall back to prettified id.
+        try {
+            ItemStack probe = new ItemStack(itemId, 1);
+            Object item = probe.getItem();
+            if (item != null) {
+                // Common patterns: getDisplayName(), getName(), getTitle(), etc.
+                for (String mName : new String[]{"getDisplayName", "getName", "getTitle"}) {
+                    try {
+                        Method m = item.getClass().getMethod(mName);
+                        if (m.getReturnType() == String.class) {
+                            String s = (String) m.invoke(item);
+                            if (s != null && !s.isBlank()) return s;
+                        }
+                    } catch (NoSuchMethodException ignored) { }
+                }
+            }
+        } catch (Throwable ignored) {
+            // invalid id / asset load issue / api mismatch
+        }
+        return prettifyId(itemId);
+    }
+
+    @Nonnull
+    private static String resolveKillEntityDisplayNameFromStatKey(@Nonnull String statKey) {
+        // Expecting keys like:
+        //  - killed.Player
+        //  - killed.hytale:goblin
+        //  - killed.goblin
+        String key = statKey.trim();
+        if (key.isEmpty()) return statKey;
+
+        String entityPart = key;
+        int dot = key.indexOf('.');
+        if (dot >= 0 && dot < key.length() - 1) {
+            entityPart = key.substring(dot + 1);
+        }
+
+        if ("Player".equalsIgnoreCase(entityPart)) {
+            return "Player";
+        }
+
+        return prettifyId(entityPart);
     }
 
     private void handlePurchaseResult(TagPurchaseResult result, TagDefinition def) {
@@ -788,6 +951,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             }
             case TRANSACTION_FAILED -> {
                 msgKey = "tags.transaction_failed";
+                vars = Map.of();
+            }
+            case REQUIREMENTS_NOT_MET -> {
+                msgKey = "tags.requirements_not_met";
                 vars = Map.of();
             }
             default -> {
