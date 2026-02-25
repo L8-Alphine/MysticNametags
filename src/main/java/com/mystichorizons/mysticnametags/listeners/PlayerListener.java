@@ -8,6 +8,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.stats.PlayerStatManager;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.mystichorizons.mysticnametags.util.UpdateChecker;
@@ -49,6 +50,21 @@ public class PlayerListener {
 
         if (playerRef == null || world == null) {
             return;
+        }
+
+        UUID uuid = playerRef.getUuid();
+
+        // ─────────────────────────────────────────────
+        // Stats: initialize session stats for this player
+        // ─────────────────────────────────────────────
+        try {
+            PlayerStatManager mgr = PlayerStatManager.get();
+            if (mgr != null) {
+                mgr.onPlayerJoin(uuid);
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize PlayerStatManager session on join for %s", uuid);
         }
 
         // Track + refresh nameplate
@@ -104,6 +120,20 @@ public class PlayerListener {
         }
 
         UUID uuid = playerRef.getUuid();
+
+        // ─────────────────────────────────────────────
+        // Stats: cleanup session + persist on quit
+        // ─────────────────────────────────────────────
+        try {
+            PlayerStatManager mgr = PlayerStatManager.get();
+            if (mgr != null) {
+                mgr.onPlayerQuit(uuid);
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed to finalize PlayerStatManager session on quit for %s", uuid);
+        }
+
         TagManager.get().untrackOnlinePlayer(uuid);
     }
 }
