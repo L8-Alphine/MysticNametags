@@ -5,6 +5,7 @@ import com.hypixel.hytale.event.EventRegistry;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.commands.MysticNameTagsPluginCommand;
 import com.mystichorizons.mysticnametags.commands.TagsAdminCommand;
 import com.mystichorizons.mysticnametags.commands.TagsCommand;
@@ -16,6 +17,11 @@ import com.mystichorizons.mysticnametags.nameplate.LevelNameplateRefreshTask;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook;
+import com.mystichorizons.mysticnametags.stats.PlayerStatManager;
+import com.mystichorizons.mysticnametags.stats.systems.BlockBreakStatSystem;
+import com.mystichorizons.mysticnametags.stats.systems.BlockPlaceStatSystem;
+import com.mystichorizons.mysticnametags.stats.systems.DamageStatSystem;
+import com.mystichorizons.mysticnametags.stats.systems.DeathStatSystem;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.UpdateChecker;
@@ -93,6 +99,17 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         // Init core config + tags + Lang
         Settings.init();
         LanguageManager.init();
+
+        try {
+            PlayerStatManager.init(integrations);
+            this.integrations.setStatProvider(PlayerStatManager.get());
+            this.integrations.setPlaytimeProvider(PlayerStatManager.get());
+            LOGGER.at(Level.INFO).log("[MysticNameTags] PlayerStatManager registered as StatProvider.");
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize PlayerStatManager; stat-based tag requirements will be unavailable.");
+        }
+
         TagManager.init(integrations);
 
         // Register commands
@@ -100,6 +117,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
         // Register event listeners
         registerListeners();
+        registerEcsSystems();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Setup complete!");
     }
@@ -131,6 +149,24 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.WARNING)
                     .withCause(e)
                     .log("[MysticNameTags] Failed to register listeners");
+        }
+    }
+
+    private void registerEcsSystems() {
+        try {
+            com.hypixel.hytale.component.ComponentRegistryProxy<EntityStore> ecs = getEntityStoreRegistry();
+
+            ecs.registerSystem(new BlockBreakStatSystem());
+            ecs.registerSystem(new BlockPlaceStatSystem());
+            ecs.registerSystem(new DamageStatSystem());
+            ecs.registerSystem(new DeathStatSystem());
+
+            LOGGER.at(Level.INFO)
+                    .log("[MysticNameTags] Registered ECS stat systems (break/place/damage/death).");
+        } catch (Exception e) {
+            LOGGER.at(Level.WARNING)
+                    .withCause(e)
+                    .log("[MysticNameTags] Failed to register ECS stat systems");
         }
     }
 
@@ -201,8 +237,14 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
         try {
             stopLevelScheduler();
-        } catch (Throwable ignored) {}
-
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop level scheduler");
+        }
+        try {
+            PlayerStatManager.shutdownGlobal();
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop PlayerStatManager");
+        }
         try {
             NameplateManager.get().clearAll();
         } catch (Throwable t) {
@@ -310,6 +352,13 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         // 2) Re-run integration detection (permissions, prefixes, economy)
         //    This allows the plugin to hook into newly-installed plugins
         //    like LuckPerms / EcoTale / PrefixesPlus without a full restart.
+        try {
+            PlayerStatManager.init(integrations);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to re-init PlayerStatManager during reload.");
+        }
+
         try {
             this.integrations.init();
             LOGGER.at(Level.INFO).log("[MysticNameTags] Integrations re-initialized after reload.");
