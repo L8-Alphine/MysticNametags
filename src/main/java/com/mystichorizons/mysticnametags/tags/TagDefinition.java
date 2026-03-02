@@ -27,6 +27,28 @@ public class TagDefinition {
     // Commands run on *first* unlock
     List<String> onUnlockCommands;        // null/empty = none
 
+    List<PlaceholderRequirement> placeholderRequirements = List.of();
+
+    public List<PlaceholderRequirement> getPlaceholderRequirements() {
+        return placeholderRequirements != null ? placeholderRequirements : List.of();
+    }
+
+    public void setPlaceholderRequirements(List<PlaceholderRequirement> placeholderRequirements) {
+        this.placeholderRequirements = (placeholderRequirements != null)
+                ? placeholderRequirements
+                : List.of();
+    }
+
+    public static class PlaceholderRequirement {
+        String placeholder;  // e.g. "%wi_level%"
+        String operator;     // "==", "!=", ">", ">=", "<", "<=", "contains"
+        String value;        // comparison value, text or number
+
+        public String getPlaceholder() { return placeholder; }
+        public String getOperator() { return operator; }
+        public String getValue() { return value; }
+    }
+
     // ----------------------------------------------------------------
     // EXISTING ACCESSORS
     // ----------------------------------------------------------------
