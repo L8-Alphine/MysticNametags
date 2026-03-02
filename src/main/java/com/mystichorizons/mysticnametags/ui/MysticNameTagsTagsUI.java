@@ -60,19 +60,37 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private final Map<String, Boolean> canUseCache = new HashMap<>();
 
+    private boolean ownedOnly = false;
+
+    /**
+     * Last time (ms) a tag was successfully EQUIPPED for each player.
+     * Used for enforcing the configurable equip cooldown.
+     */
+    private static final Map<UUID, Long> LAST_EQUIP_TIME =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid) {
-        this(playerRef, uuid, 0, null);
+        this(playerRef, uuid, 0, null, false);
     }
 
     public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef,
                                 @Nonnull UUID uuid,
                                 int page,
                                 String filterQuery) {
+        this(playerRef, uuid, page, filterQuery, false);
+    }
+
+    public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef,
+                                @Nonnull UUID uuid,
+                                int page,
+                                String filterQuery,
+                                boolean ownedOnly) {
         super(playerRef, CustomPageLifetime.CanDismiss, UIEventData.CODEC);
         this.playerRef = playerRef;
         this.uuid = uuid;
         this.currentPage = Math.max(page, 0);
         this.filterQuery = normalizeFilter(filterQuery);
+        this.ownedOnly = ownedOnly;
     }
 
     private static String normalizeFilter(String filter) {
@@ -630,6 +648,30 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
                 if (resolvedId == null || resolvedId.isEmpty()) return;
 
+                // ----------------------------------------------------------------
+                // EQUIP COOLDOWN CHECK
+                // ----------------------------------------------------------------
+                int delaySeconds = Settings.get().getTagEquipDelaySeconds();
+                if (delaySeconds > 0) {
+                    TagDefinition currentlyEquipped = manager.getEquipped(uuid);
+                    boolean isCurrentlyEquipped = currentlyEquipped != null
+                            && resolvedId.equalsIgnoreCase(currentlyEquipped.getId());
+
+                    // Only throttle *equipping a different tag*, not unequips
+                    if (!isCurrentlyEquipped) {
+                        long now = System.currentTimeMillis();
+                        Long last = LAST_EQUIP_TIME.get(uuid);
+                        long minDelta = delaySeconds * 1000L;
+
+                        if (last != null && now - last < minDelta) {
+                            long remainingMs = minDelta - (now - last);
+                            long remainingSec = (remainingMs + 999L) / 1000L;
+                            sendEquipCooldownNotification(remainingSec);
+                            return;
+                        }
+                    }
+                }
+
                 TagPurchaseResult result;
 
                 try {
@@ -640,23 +682,34 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                         String baseName = playerRef.getUsername();
                         try {
                             switch (result) {
-                                case UNLOCKED_FREE:
-                                case UNLOCKED_PAID:
-                                case EQUIPPED_ALREADY_OWNED: {
+                                case UNLOCKED_FREE,
+                                     UNLOCKED_PAID,
+                                     EQUIPPED_ALREADY_OWNED -> {
                                     String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
                                     NameplateManager.get().apply(uuid, store, ref, text);
-                                    break;
                                 }
-                                case UNEQUIPPED: {
+                                case UNEQUIPPED -> {
                                     NameplateManager.get().restore(uuid, store, ref, baseName);
                                     String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
                                     NameplateManager.get().apply(uuid, store, ref, text);
-                                    break;
                                 }
-                                default:
-                                    break;
+                                default -> {
+                                    // no-op
+                                }
                             }
                         } catch (Throwable ignored) { }
+                    }
+
+                    // If we just EQUIPPED a tag, record cooldown timestamp
+                    switch (result) {
+                        case UNLOCKED_FREE:
+                        case UNLOCKED_PAID:
+                        case EQUIPPED_ALREADY_OWNED:
+                            LAST_EQUIP_TIME.put(uuid, System.currentTimeMillis());
+                            break;
+                        default:
+                            // unequip / errors do not affect cooldown
+                            break;
                     }
 
                     handlePurchaseResult(result, def);
@@ -726,11 +779,41 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         // ----- Playtime -----
         Integer mins = def.getRequiredPlaytimeMinutes();
-        if (mins != null) {
-            sb.append(lang.tr("ui.tags.req_playtime_title"))
-                    .append("\n  ")
-                    .append(lang.tr("ui.tags.req_playtime_value", Map.of("minutes", String.valueOf(mins))))
-                    .append("\n\n");
+        if (mins != null && mins > 0) {
+            sb.append(lang.tr("ui.tags.req_playtime_title")).append("\n  ");
+
+            int currentMinutes = 0;
+
+            if (uuid != null) {
+                try {
+                    Integer cur = TagManager.get()
+                            .getIntegrations()
+                            .getPlaytimeMinutes(uuid);
+                    if (cur != null && cur > 0) {
+                        currentMinutes = cur;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+
+            // Try a dedicated i18n key first
+            String key = "ui.tags.req_playtime_progress";
+            String progress = lang.tr(key, Map.of(
+                    "current", String.valueOf(currentMinutes),
+                    "required", String.valueOf(mins)
+            ));
+
+            // If the translation is missing, tr() will return the key itself –
+            // fall back to the old single-value string plus inline progress.
+            if (progress.equals(key)) {
+                String base = lang.tr(
+                        "ui.tags.req_playtime_value",
+                        Map.of("minutes", String.valueOf(mins))
+                );
+                progress = base + " (" + currentMinutes + " / " + mins + " min)";
+            }
+
+            sb.append(progress).append("\n\n");
         }
 
         // ----- Owned Tags -----
@@ -753,13 +836,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         Integer statValue = def.getRequiredStatValue();
         if (statKey != null && !statKey.isBlank() && statValue != null && statValue > 0) {
 
-            String keyPretty = statKey;
-
-            // If this is a kill stat, show pretty entity name instead of raw id
-            // (but keep Player as "Player")
-            if (statKey.startsWith("killed.")) {
-                keyPretty = "Kills: " + resolveKillEntityDisplayNameFromStatKey(statKey);
-            }
+            String keyPretty = resolveStatDisplayName(statKey);
 
             sb.append(lang.tr("ui.tags.req_stat_title"))
                     .append("\n  ")
@@ -767,7 +844,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                             "key", keyPretty,
                             "value", String.valueOf(statValue)
                     )))
-                    .append("\n\n");
+                    .append("\n");
         }
 
         // ----- Item requirements -----
@@ -783,6 +860,25 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                         .append(req.getAmount())
                         .append("+ ")
                         .append(prettyItem)
+                        .append("\n");
+            }
+            sb.append("\n");
+        }
+
+        // ----- Placeholder requirements -----
+        List<TagDefinition.PlaceholderRequirement> phReqs = def.getPlaceholderRequirements();
+        if (phReqs != null && !phReqs.isEmpty()) {
+            sb.append(lang.tr("ui.tags.req_placeholders_title")).append("\n");
+            for (TagDefinition.PlaceholderRequirement req : phReqs) {
+                if (req == null) continue;
+                String ph = req.getPlaceholder();
+                String op = req.getOperator();
+                String val = req.getValue();
+                if (ph == null || op == null || val == null) continue;
+
+                sb.append("  • ").append(ph)
+                        .append(" ").append(op).append(" ")
+                        .append(val)
                         .append("\n");
             }
             sb.append("\n");
@@ -905,6 +1001,106 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         return prettifyId(entityPart);
     }
 
+    @Nonnull
+    private String resolveStatDisplayName(@Nonnull String statKey) {
+        String key = statKey.trim();
+        if (key.isEmpty()) return statKey;
+
+        LanguageManager lang = LanguageManager.get();
+
+        // ---------------- EndlessLeveling.* stats ----------------
+        if (key.startsWith("endlessleveling.")) {
+            String tail = key.substring("endlessleveling.".length());
+
+            // Level
+            if (tail.equalsIgnoreCase("level")) {
+                return lang.tr("ui.stats.endlessleveling.level");
+            }
+
+            // XP
+            if (tail.equalsIgnoreCase("xp")) {
+                return lang.tr("ui.stats.endlessleveling.xp");
+            }
+
+            // Skill attributes: endlessleveling.skill.<ATTR>
+            String lowerTail = tail.toLowerCase(Locale.ROOT);
+            if (lowerTail.startsWith("skill.")) {
+                String rawAttr = tail.substring("skill.".length());
+                String pretty  = prettifyId(rawAttr);
+
+                String label = lang.tr(
+                        "ui.stats.endlessleveling.skill_prefix",
+                        Map.of("name", pretty)
+                );
+
+                // tr() returns the key itself if missing – detect and fallback
+                if (!label.equals("ui.stats.endlessleveling.skill_prefix")) {
+                    return label;
+                }
+                return "Skill Level: " + pretty;
+            }
+
+            // Unknown EndlessLeveling stat – just prettify the tail
+            return prettifyId(tail);
+        }
+
+        // ---------------- custom.<stat> (directly localized) ----------------
+        if (key.startsWith("custom.")) {
+            String statPart = key.substring("custom.".length()); // e.g. "kills_total"
+            String langKey  = "ui.stats.custom." + statPart;
+
+            String translated = lang.tr(langKey);
+            // tr() returns the key itself if missing – detect that
+            if (!translated.equals(langKey)) {
+                return translated;
+            }
+        }
+
+        // ---------------- killed.* (per-entity kills) ----------------
+        if (key.startsWith("killed.")) {
+            String entityName = resolveKillEntityDisplayNameFromStatKey(key); // "Goblin Miner"
+            String translated = lang.tr("ui.stats.prefix.kills",
+                    Map.of("name", entityName));
+            if (!translated.equals("ui.stats.prefix.kills")) {
+                return translated;
+            }
+            return "Kills: " + entityName;
+        }
+
+        // ---------------- mined.* (blocks broken) ----------------
+        if (key.startsWith("mined.")) {
+            String blockId   = key.substring("mined.".length());
+            String pretty    = prettifyId(blockId);
+            String translated = lang.tr("ui.stats.prefix.mined",
+                    Map.of("name", pretty));
+            if (!translated.equals("ui.stats.prefix.mined")) {
+                return translated;
+            }
+            return "Blocks Mined: " + pretty;
+        }
+
+        // ---------------- placed.* (blocks placed) ----------------
+        if (key.startsWith("placed.")) {
+            String blockId   = key.substring("placed.".length());
+            String pretty    = prettifyId(blockId);
+            String translated = lang.tr("ui.stats.prefix.placed",
+                    Map.of("name", pretty));
+            if (!translated.equals("ui.stats.prefix.placed")) {
+                return translated;
+            }
+            return "Blocks Placed: " + pretty;
+        }
+
+        // ---------------- generic fallback ----------------
+        int dot = key.indexOf('.');
+        if (dot >= 0 && dot < key.length() - 1) {
+            String statPart = key.substring(dot + 1); // after category
+            return prettifyId(statPart);
+        }
+
+        return prettifyId(key);
+    }
+
     private void handlePurchaseResult(TagPurchaseResult result, TagDefinition def) {
         LanguageManager lang = LanguageManager.get();
 
@@ -964,6 +1160,27 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         String msg = lang.tr(msgKey, vars);
+
+        String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
+        String parsedMsg   = WiFlowPlaceholderSupport.apply(playerRef, msg);
+
+        parsedTitle = ColorFormatter.colorize(parsedTitle);
+        parsedMsg   = ColorFormatter.colorize(parsedMsg);
+
+        MysticNotificationUtil.send(
+                playerRef.getPacketHandler(),
+                parsedTitle,
+                parsedMsg,
+                NotificationStyle.Default
+        );
+    }
+
+    private void sendEquipCooldownNotification(long secondsLeft) {
+        LanguageManager lang = LanguageManager.get();
+
+        String title = "&b" + lang.tr("plugin.title");
+        String msg = lang.tr("tags.equip_cooldown",
+                Map.of("seconds", String.valueOf(secondsLeft)));
 
         String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
         String parsedMsg   = WiFlowPlaceholderSupport.apply(playerRef, msg);
