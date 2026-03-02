@@ -2,6 +2,8 @@ package com.mystichorizons.mysticnametags.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
@@ -26,6 +28,11 @@ public class Settings {
     private String nameplateFormat = "{rank} {name} {tag}";
     private boolean stripExtraSpaces = true;
     private String language = "en_US";
+    /**
+     * Delay in seconds before a player can EQUIP a *different* tag again.
+     * 0 = no cooldown.
+     */
+    private int tagDelaysecs = 60;
 
     // ---------------------------------------------------------------------
     // Storage backend (FILE / SQLITE / MYSQL)
@@ -50,6 +57,9 @@ public class Settings {
     private String mysqlUser = "root";
     private String mysqlPassword = "password";
 
+    // Playtime Setup
+    private String playtimeProvider = "AUTO"; // AUTO, INTERNAL, ZIB_PLAYTIME, NONE
+
     // --- Nameplate toggles ------------------------------------------------------
 
     /** Master toggle for MysticNameTags nameplates (default ON). */
@@ -66,6 +76,7 @@ public class Settings {
 
     /** EndlessLeveling Integration for RACE DISPLAY */
     private boolean endlessRaceDisplay = false;
+
     // --- Placeholder toggles -------------------------------------------------
 
     /**
@@ -124,6 +135,13 @@ public class Settings {
      */
     private int rpgLevelingRefreshSeconds = 30;
 
+    // --- Commands / features -------------------------------------------------
+
+    /**
+     * If true, enables the "owned tags" command/UI (e.g. /tags owned).
+     */
+    private Boolean ownedTagsCommandEnabled = Boolean.TRUE; // nullable for backward compat
+
     // ---------------------------------------------------------------------
 
     public static void init() {
@@ -153,9 +171,10 @@ public class Settings {
         try (FileReader reader = new FileReader(file)) {
             Settings loaded = GSON.fromJson(reader, Settings.class);
             if (loaded != null) {
-                this.nameplateFormat       = loaded.nameplateFormat;
-                this.stripExtraSpaces      = loaded.stripExtraSpaces;
-                this.language           = loaded.language;
+                this.nameplateFormat   = loaded.nameplateFormat;
+                this.stripExtraSpaces  = loaded.stripExtraSpaces;
+                this.language          = loaded.language;
+                this.tagDelaysecs      = Math.max(0, loaded.tagDelaysecs);
 
                 this.storageBackend = loaded.storageBackend != null ? loaded.storageBackend : "FILE";
                 this.sqliteFile     = loaded.sqliteFile != null ? loaded.sqliteFile : "playerdata.db";
@@ -166,23 +185,26 @@ public class Settings {
                 this.mysqlUser      = loaded.mysqlUser != null ? loaded.mysqlUser : "root";
                 this.mysqlPassword  = loaded.mysqlPassword != null ? loaded.mysqlPassword : "password";
 
+                this.playtimeProvider = loaded.playtimeProvider;
+
                 this.nameplatesEnabled      = loaded.nameplatesEnabled;
-                this.defaultTagEnabled   = loaded.defaultTagEnabled;
-                this.defaultTagId         = loaded.defaultTagId;
+                this.defaultTagEnabled      = loaded.defaultTagEnabled;
+                this.defaultTagId           = loaded.defaultTagId;
 
                 this.endlessLevelingNameplatesEnabled = loaded.endlessLevelingNameplatesEnabled;
-                this.endlessRaceDisplay = loaded.endlessRaceDisplay;
+                this.endlessRaceDisplay               = loaded.endlessRaceDisplay;
 
-                // Start with whatever was in the file
                 this.wiFlowPlaceholdersEnabled   = loaded.wiFlowPlaceholdersEnabled;
                 this.helpchPlaceholderApiEnabled = loaded.helpchPlaceholderApiEnabled;
 
-                this.economySystemEnabled  = loaded.economySystemEnabled;
-                this.useCoinSystem         = loaded.useCoinSystem;
-                this.usePhysicalCoinEconomy = loaded.usePhysicalCoinEconomy;
-                this.fullPermissionGate    = loaded.fullPermissionGate;
+                this.economySystemEnabled         = loaded.economySystemEnabled;
+                this.useCoinSystem                = loaded.useCoinSystem;
+                this.usePhysicalCoinEconomy       = loaded.usePhysicalCoinEconomy;
+                this.fullPermissionGate           = loaded.fullPermissionGate;
                 this.rpgLevelingNameplatesEnabled = loaded.rpgLevelingNameplatesEnabled;
                 this.rpgLevelingRefreshSeconds    = loaded.rpgLevelingRefreshSeconds;
+
+                this.ownedTagsCommandEnabled = loaded.ownedTagsCommandEnabled;
             }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
@@ -198,12 +220,196 @@ public class Settings {
 
     /**
      * Writes the current in-memory settings to settings.json.
-     * This is used both for first-run defaults and for upgrading old files.
+     *
+     * NOTE:
+     *   JSON does not support real comments, so we add a few special
+     *   "_comment_*" fields to the root object. These act as inline
+     *   documentation for server owners while remaining safe:
+     *     - Settings has no fields with those names, so Gson ignores
+     *       them when reading.
+     *     - We regenerate them on each save so they don’t disappear.
      */
     private void saveToDisk() {
         File file = getFile();
         try (FileWriter writer = new FileWriter(file)) {
-            GSON.toJson(this, writer);
+            // Serialize the current settings to a JsonObject (flat)
+            JsonElement tree = GSON.toJsonTree(this);
+            JsonObject root = tree.getAsJsonObject();
+
+            JsonObject out = new JsonObject();
+
+            // ------------------------------------------------------------------
+            // Global header
+            // ------------------------------------------------------------------
+            out.addProperty("_", "MysticNameTags settings.json – edit & reload/restart to apply changes.");
+
+            // Helper to copy a single field if present
+            java.util.function.BiConsumer<String, String> copyField =
+                    (field, section) -> {
+                        if (root.has(field)) {
+                            out.add(field, root.get(field));
+                        }
+                    };
+
+            // Track which fields we’ve already copied so we can add unknowns later
+            java.util.Set<String> copied = new java.util.HashSet<>();
+
+            java.util.function.Consumer<String[]> markCopied = keys -> {
+                for (String k : keys) {
+                    copied.add(k);
+                }
+            };
+
+            // ------------------------------------------------------------------
+            // 1) Core nameplate settings
+            // ------------------------------------------------------------------
+            out.addProperty("__core",
+                    "Core nameplate settings. " +
+                            "nameplateFormat = layout of the visible nameplate (tokens: {rank}, {name}, {tag}). " +
+                            "stripExtraSpaces = clean up double spaces. " +
+                            "language = translation bundle (e.g. en_US). " +
+                            "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = no cooldown).");
+            String[] coreKeys = {
+                    "nameplateFormat",
+                    "stripExtraSpaces",
+                    "language",
+                    "tagDelaysecs"
+            };
+            for (String key : coreKeys) copyField.accept(key, "__core");
+            markCopied.accept(coreKeys);
+
+            // ------------------------------------------------------------------
+            // 2) Storage backend
+            // ------------------------------------------------------------------
+            out.addProperty("__storage",
+                    "Storage backend for tag ownership data. " +
+                            "storageBackend = FILE / SQLITE / MYSQL. " +
+                            "FILE keeps JSON in playerdata/. SQLITE stores everything in sqliteFile. " +
+                            "MYSQL uses mysqlHost/mysqlPort/mysqlDatabase/mysqlUser/mysqlPassword.");
+            String[] storageKeys = {
+                    "storageBackend",
+                    "sqliteFile",
+                    "mysqlHost",
+                    "mysqlPort",
+                    "mysqlDatabase",
+                    "mysqlUser",
+                    "mysqlPassword"
+            };
+            for (String key : storageKeys) copyField.accept(key, "__storage");
+            markCopied.accept(storageKeys);
+
+            // ------------------------------------------------------------------
+            // 3) Nameplates + default tag
+            // ------------------------------------------------------------------
+            out.addProperty("__nameplates",
+                    "Nameplate / default tag behavior. " +
+                            "nameplatesEnabled = master toggle for MysticNameTags nameplates. " +
+                            "defaultTagEnabled = use defaultTagId when a player has no tag equipped. " +
+                            "defaultTagId must match an id from tags.json (e.g. mystic).");
+            String[] nameplateKeys = {
+                    "nameplatesEnabled",
+                    "defaultTagEnabled",
+                    "defaultTagId"
+            };
+            for (String key : nameplateKeys) copyField.accept(key, "__nameplates");
+            markCopied.accept(nameplateKeys);
+
+            // ------------------------------------------------------------------
+            // 4) EndlessLeveling integration
+            // ------------------------------------------------------------------
+            out.addProperty("__endless",
+                    "EndlessLeveling integration. " +
+                            "endlessLevelingNameplatesEnabled = let MysticNameTags override EndlessLeveling's name label. " +
+                            "endlessRaceDisplay = append the EndlessLeveling race to the nameplate when available.");
+            String[] endlessKeys = {
+                    "endlessLevelingNameplatesEnabled",
+                    "endlessRaceDisplay"
+            };
+            for (String key : endlessKeys) copyField.accept(key, "__endless");
+            markCopied.accept(endlessKeys);
+
+            // ------------------------------------------------------------------
+            // 5) Placeholder backends
+            // ------------------------------------------------------------------
+            out.addProperty("__placeholders",
+                    "Placeholder APIs. " +
+                            "wiFlowPlaceholdersEnabled = use WiFlowPlaceholderAPI in nameplates. " +
+                            "helpchPlaceholderApiEnabled = use at.helpch PlaceholderAPI in nameplates. " +
+                            "These are usually auto-detected, but can be forced on/off here.");
+            String[] placeholderKeys = {
+                    "wiFlowPlaceholdersEnabled",
+                    "helpchPlaceholderApiEnabled"
+            };
+            for (String key : placeholderKeys) copyField.accept(key, "__placeholders");
+            markCopied.accept(placeholderKeys);
+
+            // ------------------------------------------------------------------
+            // 6) Economy & permissions
+            // ------------------------------------------------------------------
+            out.addProperty("__economy",
+                    "Tag purchasing & permission gating. " +
+                            "economySystemEnabled = master toggle for ALL economy support (including EcoTale, HyEssentialsX, VaultUnlocked, etc). " +
+                            "useCoinSystem = if your primary backend supports a 'cash/coin' balance, use that instead of the main balance. " +
+                            "usePhysicalCoinEconomy = use CoinsAndMarkets physical coins (pouch+inventory) instead of ledger/bank balances. " +
+                            "fullPermissionGate = if true, permission nodes fully gate tags (no permission = tag stays hidden/unusable).");
+            String[] economyKeys = {
+                    "economySystemEnabled",
+                    "useCoinSystem",
+                    "usePhysicalCoinEconomy",
+                    "fullPermissionGate"
+            };
+            for (String key : economyKeys) copyField.accept(key, "__economy");
+            markCopied.accept(economyKeys);
+
+            // ------------------------------------------------------------------
+            // 7) RPGLeveling integration
+            // ------------------------------------------------------------------
+            out.addProperty("__rpg",
+                    "RPGLeveling integration. " +
+                            "rpgLevelingNameplatesEnabled = append RPGLeveling level to nameplates when the API is available. " +
+                            "rpgLevelingRefreshSeconds = how often to refresh levels for online players (min 5 seconds).");
+            String[] rpgKeys = {
+                    "rpgLevelingNameplatesEnabled",
+                    "rpgLevelingRefreshSeconds"
+            };
+            for (String key : rpgKeys) copyField.accept(key, "__rpg");
+            markCopied.accept(rpgKeys);
+
+            // ------------------------------------------------------------------
+            // 8) Playtime & commands
+            // ------------------------------------------------------------------
+            out.addProperty("__playtime",
+                    "Playtime provider + extra commands. " +
+                            "playtimeProvider = AUTO (prefer Zib's Playtime), INTERNAL (use MysticNameTags built-in), " +
+                            "ZIB_PLAYTIME (force external mod), or NONE (disable playtime requirements). " +
+                            "ownedTagsCommandEnabled = enable/disable the '/tags owned' command and related UI.");
+            String[] playtimeKeys = {
+                    "playtimeProvider",
+                    "ownedTagsCommandEnabled"
+            };
+            for (String key : playtimeKeys) copyField.accept(key, "__playtime");
+            markCopied.accept(playtimeKeys);
+
+            // ------------------------------------------------------------------
+            // 9) Any future/unknown fields (backwards/forwards compatibility)
+            // ------------------------------------------------------------------
+            JsonObject other = new JsonObject();
+            for (java.util.Map.Entry<String, JsonElement> entry : root.entrySet()) {
+                String key = entry.getKey();
+                if (key.startsWith("_")) continue;        // ignore any existing comment keys
+                if (copied.contains(key)) continue;       // already added in a section
+                other.add(key, entry.getValue());
+            }
+
+            if (!other.entrySet().isEmpty()) {
+                out.addProperty("__other", "=== Other / future settings ===");
+                for (java.util.Map.Entry<String, JsonElement> entry : other.entrySet()) {
+                    out.add(entry.getKey(), entry.getValue());
+                }
+            }
+
+            // Finally, write the ordered object
+            GSON.toJson(out, writer);
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
                     .log("[MysticNameTags] Failed to save settings.json");
@@ -378,5 +584,34 @@ public class Settings {
 
     public String getLanguage() {
         return (language == null || language.trim().isEmpty()) ? "en_US" : language.trim();
+    }
+
+    public boolean isOwnedTagsCommandEnabled() {
+        // Default to true if field is missing in old configs
+        return ownedTagsCommandEnabled == null || ownedTagsCommandEnabled;
+    }
+
+    /**
+     * Playtime provider mode.
+     *
+     * Values:
+     *  - "AUTO"        – prefer Zid's Playtime mod if present, else internal
+     *  - "INTERNAL"    – always use MysticNameTags internal PlaytimeService
+     *  - "ZIB_PLAYTIME"– force Zid's Playtime mod (falls back to internal if missing)
+     *  - "NONE"        – disable playtime requirements (they always pass)
+     */
+    public String getPlaytimeProviderMode() {
+        String value = playtimeProvider;
+        if (value == null || value.trim().isEmpty()) {
+            return "AUTO";
+        }
+        return value.trim().toUpperCase();
+    }
+
+    /**
+     * @return tag equip delay in seconds, clamped to >= 0.
+     */
+    public int getTagEquipDelaySeconds() {
+        return Math.max(0, tagDelaysecs);
     }
 }
