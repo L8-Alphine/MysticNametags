@@ -10,7 +10,8 @@ import java.util.UUID;
 /**
  * WiFlow integration using reflection only, so WiFlowPlaceholderAPI remains
  * a true optional dependency. If the WiFlow jar isn't present or anything
- * fails, this just returns the original text unchanged.
+ * fails, this just returns the original text unchanged (or null for the
+ * single-placeholder helpers).
  *
  * Expected WiFlow types (by name):
  *  - com.wiflow.placeholderapi.WiFlowPlaceholderAPI
@@ -167,5 +168,60 @@ public final class WiFlowPlaceholderSupport {
         } catch (IllegalAccessException | InvocationTargetException e) {
             return text;
         }
+    }
+
+    // ============================================================
+    // Single-placeholder helpers (used by IntegrationManager)
+    // ============================================================
+
+    /**
+     * Apply WiFlow to a *single* placeholder token.
+     *
+     * Returns:
+     *  - the resolved value, trimmed, if it actually changed and is non-empty
+     *  - null if unchanged / empty / failed
+     */
+    @Nullable
+    public static String applySingle(@Nullable PlayerRef playerRef,
+                                     @Nullable String placeholder) {
+        if (placeholder == null || placeholder.isEmpty()) {
+            return null;
+        }
+
+        String out = apply(playerRef, placeholder);
+        if (out == null) {
+            return null;
+        }
+
+        out = out.trim();
+        if (out.isEmpty() || out.equals(placeholder)) {
+            return null;
+        }
+
+        return out;
+    }
+
+    /**
+     * Overload for UUID + name.
+     */
+    @Nullable
+    public static String applySingle(@Nullable UUID uuid,
+                                     @Nullable String name,
+                                     @Nullable String placeholder) {
+        if (placeholder == null || placeholder.isEmpty()) {
+            return null;
+        }
+
+        String out = apply(uuid, name, placeholder);
+        if (out == null) {
+            return null;
+        }
+
+        out = out.trim();
+        if (out.isEmpty() || out.equals(placeholder)) {
+            return null;
+        }
+
+        return out;
     }
 }
