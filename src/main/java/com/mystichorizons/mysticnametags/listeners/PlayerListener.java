@@ -8,6 +8,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
 import com.mystichorizons.mysticnametags.stats.PlayerStatManager;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
@@ -20,6 +21,12 @@ import java.util.logging.Level;
 public class PlayerListener {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
+
+    private final PlaytimeService playtimeService;
+
+    public PlayerListener(@Nonnull PlaytimeService playtimeService) {
+        this.playtimeService = playtimeService;
+    }
 
     public void register(@Nonnull EventRegistry eventBus) {
         try {
@@ -65,6 +72,16 @@ public class PlayerListener {
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
                     .log("[MysticNameTags] Failed to initialize PlayerStatManager session on join for %s", uuid);
+        }
+
+        // ─────────────────────────────────────────────
+        // Playtime: mark player as online for ticking
+        // ─────────────────────────────────────────────
+        try {
+            playtimeService.markOnline(uuid);
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed to mark player online for playtime tracking: %s", uuid);
         }
 
         // Track + refresh nameplate
@@ -132,6 +149,16 @@ public class PlayerListener {
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
                     .log("[MysticNameTags] Failed to finalize PlayerStatManager session on quit for %s", uuid);
+        }
+
+        // ─────────────────────────────────────────────
+        // Playtime: mark offline
+        // ─────────────────────────────────────────────
+        try {
+            playtimeService.markOffline(uuid);
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed to mark player offline for playtime tracking: %s", uuid);
         }
 
         TagManager.get().untrackOnlinePlayer(uuid);
