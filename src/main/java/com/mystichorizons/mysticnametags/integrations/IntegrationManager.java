@@ -55,13 +55,15 @@ public class IntegrationManager {
 
     // Permission backends
     private LuckPermsSupport luckPermsSupport;
-    private PermissionSupport permissionsBackend; // active backend (LuckPerms / PermissionsPlus / Native)
+    private HyperPermsSupport hyperPermsSupport;
+    private PermissionSupport permissionsBackend; // active backend (LuckPerms / PermissionsPlus / Hyperperms / Native)
 
     // Prefix backend
     private PrefixesPlusSupport prefixesPlusSupport;
 
     private enum PermissionBackendType {
         LUCKPERMS,
+        HYPERPERMS,
         PERMISSIONS_PLUS,
         NATIVE
     }
@@ -149,7 +151,7 @@ public class IntegrationManager {
     // ----------------------------------------------------------------
 
     private void setupPermissionBackends() {
-        // 1) Try LuckPerms (defensive: may not exist at all)
+        // 1) LuckPerms
         try {
             this.luckPermsSupport = new LuckPermsSupport();
             if (luckPermsSupport.isAvailable()) {
@@ -158,74 +160,87 @@ public class IntegrationManager {
                 LOGGER.at(Level.INFO).log("[MysticNameTags] Using LuckPerms for permissions.");
                 return;
             } else {
-                // Not actually available at runtime
                 this.luckPermsSupport = null;
             }
         } catch (NoClassDefFoundError e) {
-            // LuckPerms API classes not present on classpath
             this.luckPermsSupport = null;
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] LuckPerms API not found – skipping LuckPerms integration.");
+            LOGGER.at(Level.INFO).log("[MysticNameTags] LuckPerms API not found – skipping LuckPerms integration.");
         } catch (Throwable t) {
-            // Any other weirdness, just skip LP
             this.luckPermsSupport = null;
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] Error probing LuckPerms – skipping LuckPerms integration.");
+            LOGGER.at(Level.WARNING).withCause(t).log("[MysticNameTags] Error probing LuckPerms – skipping LuckPerms integration.");
         }
 
-        // 2) Try PermissionsPlus / PermissionsModule (defensive as well)
+        // 2) HyperPerms
+        try {
+            this.hyperPermsSupport = new HyperPermsSupport();
+            if (hyperPermsSupport.isAvailable()) {
+                this.permissionsBackend = hyperPermsSupport;
+                this.activePermissionBackend = PermissionBackendType.HYPERPERMS;
+                LOGGER.at(Level.INFO).log("[MysticNameTags] Using HyperPerms for permissions.");
+                return;
+            } else {
+                this.hyperPermsSupport = null;
+            }
+        } catch (NoClassDefFoundError e) {
+            this.hyperPermsSupport = null;
+            LOGGER.at(Level.INFO).log("[MysticNameTags] HyperPerms API not found – skipping HyperPerms integration.");
+        } catch (Throwable t) {
+            this.hyperPermsSupport = null;
+            LOGGER.at(Level.WARNING).withCause(t).log("[MysticNameTags] Error probing HyperPerms – skipping HyperPerms integration.");
+        }
+
+        // 3) PermissionsPlus
         try {
             PermissionsPlusSupport permsPlus = new PermissionsPlusSupport();
             if (permsPlus.isAvailable()) {
                 this.permissionsBackend = permsPlus;
                 this.activePermissionBackend = PermissionBackendType.PERMISSIONS_PLUS;
-                LOGGER.at(Level.INFO)
-                        .log("[MysticNameTags] Using PermissionsPlus / PermissionsModule for permissions.");
+                LOGGER.at(Level.INFO).log("[MysticNameTags] Using PermissionsPlus / PermissionsModule for permissions.");
                 return;
             }
         } catch (NoClassDefFoundError e) {
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] PermissionsPlus API not found – skipping PermissionsPlus integration.");
+            LOGGER.at(Level.INFO).log("[MysticNameTags] PermissionsPlus API not found – skipping PermissionsPlus integration.");
         } catch (Throwable t) {
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] Error probing PermissionsPlus – skipping PermissionsPlus integration.");
+            LOGGER.at(Level.WARNING).withCause(t).log("[MysticNameTags] Error probing PermissionsPlus – skipping PermissionsPlus integration.");
         }
 
-        // 3) Native Hytale permissions only
+        // 4) Native
         this.permissionsBackend = new NativePermissionsSupport();
         this.activePermissionBackend = PermissionBackendType.NATIVE;
-        LOGGER.at(Level.INFO)
-                .log("[MysticNameTags] No external permission plugin found – using native Hytale permissions.");
+        LOGGER.at(Level.INFO).log("[MysticNameTags] No external permission plugin found – using native Hytale permissions.");
     }
 
     private void setupPrefixBackends() {
-        // Try PrefixesPlus first
+        // PrefixesPlus first
         try {
             this.prefixesPlusSupport = new PrefixesPlusSupport();
             if (prefixesPlusSupport.isAvailable()) {
-                LOGGER.at(Level.INFO)
-                        .log("[MysticNameTags] Detected PrefixesPlus – using it for rank prefixes.");
+                LOGGER.at(Level.INFO).log("[MysticNameTags] Detected PrefixesPlus – using it for rank prefixes.");
                 return;
             } else {
                 this.prefixesPlusSupport = null;
             }
         } catch (NoClassDefFoundError e) {
             this.prefixesPlusSupport = null;
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] PrefixesPlus API not found – skipping PrefixesPlus prefix provider.");
+            LOGGER.at(Level.INFO).log("[MysticNameTags] PrefixesPlus API not found – skipping PrefixesPlus prefix provider.");
         } catch (Throwable t) {
             this.prefixesPlusSupport = null;
-            LOGGER.at(Level.WARNING).withCause(t)
-                    .log("[MysticNameTags] Error probing PrefixesPlus – skipping PrefixesPlus prefix provider.");
+            LOGGER.at(Level.WARNING).withCause(t).log("[MysticNameTags] Error probing PrefixesPlus – skipping PrefixesPlus prefix provider.");
         }
 
-        // Fall back to LuckPerms meta if we successfully wired LuckPerms
+        // HyperPerms (prefix via ChatAPI)
+        try {
+            if (hyperPermsSupport != null && hyperPermsSupport.isAvailable()) {
+                LOGGER.at(Level.INFO).log("[MysticNameTags] Using HyperPerms ChatAPI for rank prefixes.");
+                return;
+            }
+        } catch (Throwable ignored) {}
+
+        // LuckPerms meta fallback (existing behavior)
         if (luckPermsSupport != null && luckPermsSupport.isAvailable()) {
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] Using LuckPerms meta data for rank prefixes.");
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Using LuckPerms meta data for rank prefixes.");
         } else {
-            LOGGER.at(Level.INFO)
-                    .log("[MysticNameTags] No prefix provider detected – nameplates will only show tags + player names.");
+            LOGGER.at(Level.INFO).log("[MysticNameTags] No prefix provider detected – nameplates will only show tags + player names.");
         }
     }
 
@@ -314,16 +329,17 @@ public class IntegrationManager {
     public String getPrimaryPrefix(@Nonnull UUID uuid) {
         if (prefixesPlusSupport != null && prefixesPlusSupport.isAvailable()) {
             String p = prefixesPlusSupport.getPrefix(uuid);
-            if (p != null && !p.isEmpty()) {
-                return p;
-            }
+            if (p != null && !p.isEmpty()) return p;
+        }
+
+        if (hyperPermsSupport != null && hyperPermsSupport.isAvailable()) {
+            String p = hyperPermsSupport.getPrefix(uuid);
+            if (p != null && !p.isEmpty()) return p;
         }
 
         if (luckPermsSupport != null && luckPermsSupport.isAvailable()) {
             String p = luckPermsSupport.getPrefix(uuid);
-            if (p != null && !p.isEmpty()) {
-                return p;
-            }
+            if (p != null && !p.isEmpty()) return p;
         }
 
         return null;
@@ -348,6 +364,10 @@ public class IntegrationManager {
 
     public boolean isPermissionsPlusActive() {
         return activePermissionBackend == PermissionBackendType.PERMISSIONS_PLUS;
+    }
+
+    public boolean isHyperPermsAvailable() {
+        return hyperPermsSupport != null && hyperPermsSupport.isAvailable();
     }
 
     @Nullable
