@@ -8,6 +8,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.nameplate.GlyphNameplateManager;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
 import com.mystichorizons.mysticnametags.stats.PlayerStatManager;
 import com.mystichorizons.mysticnametags.tags.TagManager;
@@ -149,6 +150,14 @@ public class PlayerListener {
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
                     .log("[MysticNameTags] Failed to finalize PlayerStatManager session on quit for %s", uuid);
+        }
+
+        World world = TagManager.get().getOnlineWorld(uuid);
+        if (world != null) {
+            GlyphNameplateManager.get().remove(uuid, world);
+        } else {
+            // No world tracked: at least forget cached state so it won’t leak memory
+            GlyphNameplateManager.get().forget(uuid);
         }
 
         // ─────────────────────────────────────────────
