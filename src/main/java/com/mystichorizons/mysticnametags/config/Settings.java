@@ -142,6 +142,23 @@ public class Settings {
      */
     private Boolean ownedTagsCommandEnabled = Boolean.TRUE; // nullable for backward compat
 
+    // --- Experimental glyph / hologram nameplates ----------------------------
+
+    /**
+     * EXPERIMENTAL: Use glyph-based hologram nameplates (one entity per character).
+     * This is VERY expensive and can cause lag/crashes on large servers.
+     */
+    private boolean experimentalGlyphNameplatesEnabled = false;
+
+    /** Maximum visible characters for glyph nameplates (hard cap to prevent abuse). */
+    private int experimentalGlyphMaxChars = 32;
+
+    /** Update interval in ticks/seconds for repositioning glyphs. */
+    private int experimentalGlyphUpdateTicks = 10; // ~0.5s if 20tps
+
+    /** Distance culling (don’t render for viewers far away). */
+    private float experimentalGlyphRenderDistance = 24.0f;
+
     // ---------------------------------------------------------------------
 
     public static void init() {
@@ -205,6 +222,12 @@ public class Settings {
                 this.rpgLevelingRefreshSeconds    = loaded.rpgLevelingRefreshSeconds;
 
                 this.ownedTagsCommandEnabled = loaded.ownedTagsCommandEnabled;
+
+                this.experimentalGlyphNameplatesEnabled  = loaded.experimentalGlyphNameplatesEnabled;
+                this.experimentalGlyphMaxChars = loaded.experimentalGlyphMaxChars;
+                this.experimentalGlyphUpdateTicks = loaded.experimentalGlyphUpdateTicks;
+                this.experimentalGlyphRenderDistance = loaded.experimentalGlyphRenderDistance;
+
             }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
@@ -264,11 +287,11 @@ public class Settings {
             // 1) Core nameplate settings
             // ------------------------------------------------------------------
             out.addProperty("__core",
-                    "Core nameplate settings. " +
-                            "nameplateFormat = layout of the visible nameplate (tokens: {rank}, {name}, {tag}). " +
-                            "stripExtraSpaces = clean up double spaces. " +
-                            "language = translation bundle (e.g. en_US). " +
-                            "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = no cooldown).");
+                    "Core nameplate settings. \n" +
+                            "nameplateFormat = layout of the visible nameplate (tokens: {rank}, {name}, {tag}). \n" +
+                            "stripExtraSpaces = clean up double spaces. \n" +
+                            "language = translation bundle (e.g. en_US). \n" +
+                            "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = no cooldown).\n");
             String[] coreKeys = {
                     "nameplateFormat",
                     "stripExtraSpaces",
@@ -282,10 +305,10 @@ public class Settings {
             // 2) Storage backend
             // ------------------------------------------------------------------
             out.addProperty("__storage",
-                    "Storage backend for tag ownership data. " +
-                            "storageBackend = FILE / SQLITE / MYSQL. " +
-                            "FILE keeps JSON in playerdata/. SQLITE stores everything in sqliteFile. " +
-                            "MYSQL uses mysqlHost/mysqlPort/mysqlDatabase/mysqlUser/mysqlPassword.");
+                    "Storage backend for tag ownership data. \n" +
+                            "storageBackend = FILE / SQLITE / MYSQL. \n" +
+                            "FILE keeps JSON in playerdata/. SQLITE stores everything in sqliteFile. \n" +
+                            "MYSQL uses mysqlHost/mysqlPort/mysqlDatabase/mysqlUser/mysqlPassword.\n");
             String[] storageKeys = {
                     "storageBackend",
                     "sqliteFile",
@@ -302,10 +325,10 @@ public class Settings {
             // 3) Nameplates + default tag
             // ------------------------------------------------------------------
             out.addProperty("__nameplates",
-                    "Nameplate / default tag behavior. " +
-                            "nameplatesEnabled = master toggle for MysticNameTags nameplates. " +
-                            "defaultTagEnabled = use defaultTagId when a player has no tag equipped. " +
-                            "defaultTagId must match an id from tags.json (e.g. mystic).");
+                    "Nameplate / default tag behavior. \n" +
+                            "nameplatesEnabled = master toggle for MysticNameTags nameplates. \n" +
+                            "defaultTagEnabled = use defaultTagId when a player has no tag equipped. \n" +
+                            "defaultTagId must match an id from tags.json (e.g. mystic).\n");
             String[] nameplateKeys = {
                     "nameplatesEnabled",
                     "defaultTagEnabled",
@@ -318,9 +341,9 @@ public class Settings {
             // 4) EndlessLeveling integration
             // ------------------------------------------------------------------
             out.addProperty("__endless",
-                    "EndlessLeveling integration. " +
-                            "endlessLevelingNameplatesEnabled = let MysticNameTags override EndlessLeveling's name label. " +
-                            "endlessRaceDisplay = append the EndlessLeveling race to the nameplate when available.");
+                    "EndlessLeveling integration. \n" +
+                            "endlessLevelingNameplatesEnabled = let MysticNameTags override EndlessLeveling's name label. \n" +
+                            "endlessRaceDisplay = append the EndlessLeveling race to the nameplate when available.\n");
             String[] endlessKeys = {
                     "endlessLevelingNameplatesEnabled",
                     "endlessRaceDisplay"
@@ -332,10 +355,10 @@ public class Settings {
             // 5) Placeholder backends
             // ------------------------------------------------------------------
             out.addProperty("__placeholders",
-                    "Placeholder APIs. " +
-                            "wiFlowPlaceholdersEnabled = use WiFlowPlaceholderAPI in nameplates. " +
-                            "helpchPlaceholderApiEnabled = use at.helpch PlaceholderAPI in nameplates. " +
-                            "These are usually auto-detected, but can be forced on/off here.");
+                    "Placeholder APIs. \n" +
+                            "wiFlowPlaceholdersEnabled = use WiFlowPlaceholderAPI in nameplates. \n" +
+                            "helpchPlaceholderApiEnabled = use at.helpch PlaceholderAPI in nameplates. \n" +
+                            "These are usually auto-detected, but can be forced on/off here.\n");
             String[] placeholderKeys = {
                     "wiFlowPlaceholdersEnabled",
                     "helpchPlaceholderApiEnabled"
@@ -347,11 +370,11 @@ public class Settings {
             // 6) Economy & permissions
             // ------------------------------------------------------------------
             out.addProperty("__economy",
-                    "Tag purchasing & permission gating. " +
-                            "economySystemEnabled = master toggle for ALL economy support (including EcoTale, HyEssentialsX, VaultUnlocked, etc). " +
-                            "useCoinSystem = if your primary backend supports a 'cash/coin' balance, use that instead of the main balance. " +
-                            "usePhysicalCoinEconomy = use CoinsAndMarkets physical coins (pouch+inventory) instead of ledger/bank balances. " +
-                            "fullPermissionGate = if true, permission nodes fully gate tags (no permission = tag stays hidden/unusable).");
+                    "Tag purchasing & permission gating. \n" +
+                            "economySystemEnabled = master toggle for ALL economy support (including EcoTale, HyEssentialsX, VaultUnlocked, etc). \n" +
+                            "useCoinSystem = if your primary backend supports a 'cash/coin' balance, use that instead of the main balance. \n" +
+                            "usePhysicalCoinEconomy = use CoinsAndMarkets physical coins (pouch+inventory) instead of ledger/bank balances. \n" +
+                            "fullPermissionGate = if true, permission nodes fully gate tags (no permission = tag stays hidden/unusable).\n");
             String[] economyKeys = {
                     "economySystemEnabled",
                     "useCoinSystem",
@@ -365,9 +388,9 @@ public class Settings {
             // 7) RPGLeveling integration
             // ------------------------------------------------------------------
             out.addProperty("__rpg",
-                    "RPGLeveling integration. " +
-                            "rpgLevelingNameplatesEnabled = append RPGLeveling level to nameplates when the API is available. " +
-                            "rpgLevelingRefreshSeconds = how often to refresh levels for online players (min 5 seconds).");
+                    "RPGLeveling integration. \n" +
+                            "rpgLevelingNameplatesEnabled = append RPGLeveling level to nameplates when the API is available. \n" +
+                            "rpgLevelingRefreshSeconds = how often to refresh levels for online players (min 5 seconds).\n");
             String[] rpgKeys = {
                     "rpgLevelingNameplatesEnabled",
                     "rpgLevelingRefreshSeconds"
@@ -379,9 +402,9 @@ public class Settings {
             // 8) Playtime & commands
             // ------------------------------------------------------------------
             out.addProperty("__playtime",
-                    "Playtime provider + extra commands. " +
-                            "playtimeProvider = AUTO (prefer Zib's Playtime), INTERNAL (use MysticNameTags built-in), " +
-                            "ZIB_PLAYTIME (force external mod), or NONE (disable playtime requirements). " +
+                    "Playtime provider + extra commands. \n" +
+                            "playtimeProvider = AUTO (prefer Zib's Playtime), INTERNAL (use MysticNameTags built-in), \n" +
+                            "ZIB_PLAYTIME (force external mod), or NONE (disable playtime requirements). \n" +
                             "ownedTagsCommandEnabled = enable/disable the '/tags owned' command and related UI.");
             String[] playtimeKeys = {
                     "playtimeProvider",
@@ -389,6 +412,21 @@ public class Settings {
             };
             for (String key : playtimeKeys) copyField.accept(key, "__playtime");
             markCopied.accept(playtimeKeys);
+
+            out.addProperty("__experimental_glyph_nameplates",
+                    "⚠ EXPERIMENTAL / UNSUPPORTED ⚠\n" +
+                            "Glyph nameplates spawn an entity per character to achieve true hex/gradient text.\n" +
+                            "This is HIGHLY unstable and EXTREMELY resource intensive.\n" +
+                            "Recommended: keep disabled unless testing with very low player counts.\n" +
+                            "Hard limits exist to prevent runaway entity counts.");
+            String[] glyphKeys = {
+                    "experimentalGlyphNameplatesEnabled",
+                    "experimentalGlyphMaxChars",
+                    "experimentalGlyphUpdateTicks",
+                    "experimentalGlyphRenderDistance"
+            };
+            for (String key : glyphKeys) copyField.accept(key, "__experimental_glyph_nameplates");
+            markCopied.accept(glyphKeys);
 
             // ------------------------------------------------------------------
             // 9) Any future/unknown fields (backwards/forwards compatibility)
@@ -613,5 +651,21 @@ public class Settings {
      */
     public int getTagEquipDelaySeconds() {
         return Math.max(0, tagDelaysecs);
+    }
+
+    public boolean isExperimentalGlyphNameplatesEnabled() {
+        return experimentalGlyphNameplatesEnabled;
+    }
+
+    public int getExperimentalGlyphMaxChars() {
+        return Math.max(8, experimentalGlyphMaxChars);
+    }
+
+    public int getExperimentalGlyphUpdateTicks() {
+        return Math.max(1, experimentalGlyphUpdateTicks);
+    }
+
+    public float getExperimentalGlyphRenderDistance() {
+        return Math.max(8f, experimentalGlyphRenderDistance);
     }
 }
