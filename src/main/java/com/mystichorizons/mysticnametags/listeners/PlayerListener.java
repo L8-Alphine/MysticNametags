@@ -139,9 +139,6 @@ public class PlayerListener {
 
         UUID uuid = playerRef.getUuid();
 
-        // ─────────────────────────────────────────────
-        // Stats: cleanup session + persist on quit
-        // ─────────────────────────────────────────────
         try {
             PlayerStatManager mgr = PlayerStatManager.get();
             if (mgr != null) {
@@ -155,14 +152,8 @@ public class PlayerListener {
         World world = TagManager.get().getOnlineWorld(uuid);
         if (world != null) {
             GlyphNameplateManager.get().remove(uuid, world);
-        } else {
-            // No world tracked: at least forget cached state so it won’t leak memory
-            GlyphNameplateManager.get().forget(uuid);
         }
 
-        // ─────────────────────────────────────────────
-        // Playtime: mark offline
-        // ─────────────────────────────────────────────
         try {
             playtimeService.markOffline(uuid);
         } catch (Throwable t) {
