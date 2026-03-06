@@ -56,7 +56,7 @@ public final class MysticNameTagsAPI {
     }
 
     // ---------------------------------------------------------------------
-    // Basic tag helpers (backwards compatible with your existing API)
+    // Basic tag helpers
     // ---------------------------------------------------------------------
 
     /**
@@ -113,7 +113,7 @@ public final class MysticNameTagsAPI {
         return mgr().getAllTags()
                 .stream()
                 .map(TagView::from)
-                .collect(Collectors.toUnmodifiableList());
+                .toList();
     }
 
     /**
