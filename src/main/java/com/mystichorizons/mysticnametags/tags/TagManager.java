@@ -921,10 +921,6 @@ public class TagManager {
     }
 
     /**
-     * Rebuild and apply the plain nameplate for this player if it changed.
-     * Entry point for join, tag changes, rank changes, etc.
-     */
-    /**
      * Rebuild and apply the nameplate for this player if it changed.
      * Entry point for join, tag changes, rank changes, etc.
      */
@@ -933,56 +929,60 @@ public class TagManager {
 
         UUID uuid = playerRef.getUuid();
         String baseName = playerRef.getUsername();
-        if (baseName == null) baseName = "Player";
+        if (baseName == null || baseName.isBlank()) {
+            baseName = "Player";
+        }
 
-        // If nameplates are disabled: restore vanilla and remove glyph overlay (if any).
-        if (!Settings.get().isNameplatesEnabled()) {
-            String finalBaseName = baseName;
+        Settings settings = Settings.get();
+
+        // Nameplates disabled entirely -> restore vanilla and remove glyphs
+        if (!settings.isNameplatesEnabled()) {
+            String fallbackName = baseName;
+
             world.execute(() -> {
                 try {
                     Store<EntityStore> store = world.getEntityStore().getStore();
                     Ref<EntityStore> ref = playerRef.getReference();
                     if (ref == null || !ref.isValid()) return;
 
-                    NameplateManager.get().restore(uuid, store, ref, finalBaseName);
-
-                    // Remove glyph overlay entities (safe even if none)
+                    NameplateManager.get().restore(uuid, store, ref, fallbackName);
                     GlyphNameplateManager.get().remove(uuid, world, store);
-
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                }
             });
 
             lastNameplateText.remove(uuid);
             return;
         }
 
-        // Build rank + tag (colored source)
-        String rank = null;
-        String tag  = null;
-
-        rank = integrations.getPrimaryPrefix(uuid);
+        String rank = integrations.getPrimaryPrefix(uuid);
         TagDefinition active = resolveActiveOrDefaultTag(uuid);
-        if (active != null) tag = active.getDisplay();
-
-        // This is the "full" formatted text, may contain &#RRGGBB or <#RRGGBB>
-        String resolvedColored = NameplateTextResolver.build(playerRef, rank, baseName, tag);
-
-        // Plain fallback for vanilla Nameplate component
-        String plainFallback = ColorFormatter.stripFormatting(resolvedColored).trim();
-
-        boolean glyphEnabled = Settings.get().isExperimentalGlyphNameplatesEnabled();
+        String tag = (active != null) ? active.getDisplay() : null;
 
         // IMPORTANT:
-        // - If glyph is enabled, cache/compare COLORED text so color-only changes rebuild glyphs.
-        // - Otherwise cache/compare PLAIN text to avoid spamming vanilla.
+        // NameplateTextResolver.build(...) should be your single source of truth.
+        // Make sure EL level/race are included there or in the integrations path it calls.
+        String resolvedColored = NameplateTextResolver.build(playerRef, rank, baseName, tag);
+        String plainFallback = ColorFormatter.stripFormatting(resolvedColored).trim();
+
+        boolean glyphEnabled = settings.isExperimentalGlyphNameplatesEnabled();
+
+        // Glyph mode must compare COLORED text so color-only changes rebuild glyphs.
+        // Vanilla mode can compare stripped text.
         String compareKey = glyphEnabled ? resolvedColored : plainFallback;
 
         String previous = lastNameplateText.put(uuid, compareKey);
+
+        // Do not skip if glyph mode is enabled but the glyph state does not exist yet.
         if (previous != null && previous.equals(compareKey)) {
-            return;
+            if (!glyphEnabled || GlyphNameplateManager.get().hasState(uuid)) {
+                return;
+            }
         }
 
         String finalBaseName = baseName;
+        String finalResolvedColored = resolvedColored;
+        String finalPlainFallback = plainFallback;
 
         world.execute(() -> {
             try {
@@ -993,27 +993,22 @@ public class TagManager {
                 if (ref == null || !ref.isValid()) return;
 
                 if (glyphEnabled) {
+                    // Hide vanilla text without fully removing the component.
+                    // A single space tends to be safer than empty-string in some builds.
+                    NameplateManager.get().apply(uuid, store, ref, " ");
 
-                    // Hide vanilla to prevent double-render (glyph will show the "real" text).
-                    NameplateManager.get().apply(uuid, store, ref, "");
-
-                    // Glyph overlay uses colored text
-                    GlyphNameplateManager.get().apply(uuid, world, store, ref, resolvedColored);
-
+                    // Glyph overlay renders the full colored text.
+                    GlyphNameplateManager.get().apply(uuid, world, store, ref, finalResolvedColored);
                 } else {
-
-                    // Normal vanilla-only
-                    NameplateManager.get().apply(uuid, store, ref, plainFallback);
-
-                    // Ensure glyph entities are removed if switching off
+                    NameplateManager.get().apply(uuid, store, ref, finalPlainFallback);
                     GlyphNameplateManager.get().remove(uuid, world, store);
                 }
 
-                if (Settings.get().isEndlessLevelingNameplatesEnabled()) {
+                if (settings.isEndlessLevelingNameplatesEnabled()) {
                     integrations.invalidateEndlessLevelingNameplate(uuid);
                 }
 
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 LOGGER.at(Level.WARNING).withCause(e)
                         .log("[MysticNameTags] Failed to refresh nameplate for %s", finalBaseName);
             }
@@ -1106,11 +1101,10 @@ public class TagManager {
         forgetNameplate(uuid);
         clearCanUseCache(uuid);
 
-        // Clear vanilla cache
         NameplateManager.get().forget(uuid);
 
-        // Clear glyph cache (entities will be removed on next world-thread call; cache at least won’t leak)
-        GlyphNameplateManager.get().forget(uuid);
+        // DO NOT call GlyphNameplateManager.forget(uuid) here.
+        // Disconnect flow should remove glyphs first on the world thread.
     }
 
     @Nullable
