@@ -312,6 +312,8 @@ public final class LanguageManager {
         defaults.put("ui.tags.info_icon", "...");
 
         defaults.put("ui.tags.req_permission_title", "Requirements");
+        defaults.put("ui.tags.req_permission_gate_full", "Required to access this tag.");
+        defaults.put("ui.tags.req_permission_gate_soft", "Required to unlock/equip this tag.");
         defaults.put("ui.tags.req_playtime_title", "Playtime Required");
         // OLD simple value (kept for backwards compatibility / other usages)
         defaults.put("ui.tags.req_playtime_value", "{minutes} minutes");
@@ -323,6 +325,8 @@ public final class LanguageManager {
         defaults.put("ui.tags.status_locked_requirements", "Status: LOCKED (requirements not met)");
         defaults.put("ui.tags.status_available", "Status: AVAILABLE");
         defaults.put("ui.tags.status_locked_not_purchased", "Status: LOCKED (not purchased)");
+
+        defaults.put("ui.tags.req_placeholders_title", "Placeholder Requirements");
 
         // ----- Stat / Item requirement texts -----
         defaults.put("ui.tags.req_stat_title", "Stat Required");
