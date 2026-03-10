@@ -2,7 +2,7 @@ package com.mystichorizons.mysticnametags.stats;
 
 import javax.annotation.Nonnull;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class PlayerStatsData {
 
-    private static final int CURRENT_DATA_VERSION = 1;
+    private static final int CURRENT_DATA_VERSION = 2;
 
     private final Map<String, Map<String, Long>> stats = new ConcurrentHashMap<>();
     private int dataVersion = CURRENT_DATA_VERSION;
@@ -59,7 +59,8 @@ public final class PlayerStatsData {
         categoryStats.merge(stat, amount, Long::sum);
 
         // Remove zeros to keep data sparse
-        if (categoryStats.get(stat) != null && categoryStats.get(stat) == 0L) {
+        Long newValue = categoryStats.get(stat);
+        if (newValue != null && newValue == 0L) {
             categoryStats.remove(stat);
         }
         if (categoryStats.isEmpty()) {
@@ -81,15 +82,32 @@ public final class PlayerStatsData {
         if (categoryStats == null || categoryStats.isEmpty()) {
             return Collections.emptyMap();
         }
-        return Collections.unmodifiableMap(new HashMap<>(categoryStats));
+        return Map.copyOf(categoryStats);
     }
 
+    /**
+     * Read-only view of all stats.
+     * Useful for serializers and general inspection.
+     */
     @Nonnull
     public Map<String, Map<String, Long>> getAll() {
-        Map<String, Map<String, Long>> copy = new HashMap<>();
-        stats.forEach((category, categoryStats) ->
-                copy.put(category, Collections.unmodifiableMap(new HashMap<>(categoryStats))));
-        return Collections.unmodifiableMap(copy);
+        Map<String, Map<String, Long>> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Long>> entry : stats.entrySet()) {
+            Map<String, Long> inner = entry.getValue();
+            if (inner == null || inner.isEmpty()) {
+                continue;
+            }
+            copy.put(entry.getKey(), Map.copyOf(inner));
+        }
+        return Map.copyOf(copy);
+    }
+
+    /**
+     * Read-only snapshot used by wildcard/stat-pattern matching.
+     */
+    @Nonnull
+    public Map<String, Map<String, Long>> viewAll() {
+        return getAll();
     }
 
     public boolean hasCategory(@Nonnull String category) {
@@ -101,15 +119,32 @@ public final class PlayerStatsData {
     // Serialization helpers (used by Gson adapter)
     // --------------------------------------------------
 
-    Map<String, Map<String, Long>> getStatsInternal() {
-        return stats;
-    }
-
     void setStats(@Nonnull Map<String, Map<String, Long>> loadedStats) {
         stats.clear();
-        loadedStats.forEach((category, categoryStats) -> {
-            Map<String, Long> newCategoryStats = new ConcurrentHashMap<>(categoryStats);
-            stats.put(category, newCategoryStats);
-        });
+
+        for (Map.Entry<String, Map<String, Long>> entry : loadedStats.entrySet()) {
+            String category = entry.getKey();
+            Map<String, Long> categoryStats = entry.getValue();
+
+            if (category == null || category.isBlank() || categoryStats == null || categoryStats.isEmpty()) {
+                continue;
+            }
+
+            Map<String, Long> cleaned = new ConcurrentHashMap<>();
+            for (Map.Entry<String, Long> statEntry : categoryStats.entrySet()) {
+                String statKey = statEntry.getKey();
+                Long value = statEntry.getValue();
+
+                if (statKey == null || statKey.isBlank() || value == null || value == 0L) {
+                    continue;
+                }
+
+                cleaned.put(statKey, value);
+            }
+
+            if (!cleaned.isEmpty()) {
+                stats.put(category, cleaned);
+            }
+        }
     }
 }
