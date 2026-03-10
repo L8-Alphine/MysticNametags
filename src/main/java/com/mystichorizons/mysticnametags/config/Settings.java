@@ -77,6 +77,12 @@ public final class Settings {
     /** EndlessLeveling Integration for RACE DISPLAY */
     private boolean endlessRaceDisplay = false;
 
+    /** EndlessLeveling prestige display toggle. */
+    private boolean endlessPrestigeDisplay = false;
+
+    /** Prefix used before prestige number in EL nameplates. Example: "P" -> "P3". */
+    private String endlessPrestigePrefix = "P";
+
     // --- Placeholder toggles -------------------------------------------------
 
     /**
@@ -109,6 +115,7 @@ public final class Settings {
     private boolean useCoinSystem = false;
     private boolean usePhysicalCoinEconomy = false;
     private boolean fullPermissionGate = false;
+    private boolean permissionGate = false;
 
     private boolean rpgLevelingNameplatesEnabled = false;
     private int rpgLevelingRefreshSeconds = 30;
@@ -188,6 +195,8 @@ public final class Settings {
 
                 this.endlessLevelingNameplatesEnabled = loaded.endlessLevelingNameplatesEnabled;
                 this.endlessRaceDisplay               = loaded.endlessRaceDisplay;
+                this.endlessPrestigeDisplay           = loaded.endlessPrestigeDisplay;
+                this.endlessPrestigePrefix            = nonBlankOr(loaded.endlessPrestigePrefix, this.endlessPrestigePrefix);
 
                 // Placeholder toggles + auto flags (new fields default to true if missing)
                 this.wiFlowPlaceholdersEnabled   = loaded.wiFlowPlaceholdersEnabled;
@@ -214,6 +223,7 @@ public final class Settings {
                 this.useCoinSystem          = loaded.useCoinSystem;
                 this.usePhysicalCoinEconomy = loaded.usePhysicalCoinEconomy;
                 this.fullPermissionGate     = loaded.fullPermissionGate;
+                this.permissionGate         = loaded.permissionGate;
 
                 // RPG
                 this.rpgLevelingNameplatesEnabled = loaded.rpgLevelingNameplatesEnabled;
@@ -241,7 +251,8 @@ public final class Settings {
         // Clamp/normalize any values (may mark dirty)
         normalizeAndClamp();
 
-        saveIfDirty();
+        saveToDisk();
+        dirty = false;
     }
 
     private void normalizeAndClamp() {
@@ -271,6 +282,10 @@ public final class Settings {
         before = this.defaultTagId;
         this.defaultTagId = (this.defaultTagId == null ? "mystic" : this.defaultTagId.trim());
         if (!safeEquals(before, this.defaultTagId)) dirty = true;
+
+        before = this.endlessPrestigePrefix;
+        this.endlessPrestigePrefix = nonBlankOr(this.endlessPrestigePrefix, "P");
+        if (!safeEquals(before, this.endlessPrestigePrefix)) dirty = true;
 
         // clamps
         int oldDelay = this.tagDelaysecs;
@@ -372,6 +387,8 @@ public final class Settings {
                     "EndlessLeveling integration toggles.");
             copy.accept("endlessLevelingNameplatesEnabled");
             copy.accept("endlessRaceDisplay");
+            copy.accept("endlessPrestigeDisplay");
+            copy.accept("endlessPrestigePrefix");
 
             // ------------------------------------------------------------------
             // 5) Placeholders
@@ -389,11 +406,13 @@ public final class Settings {
             // ------------------------------------------------------------------
             out.addProperty("__economy",
                     "Tag purchasing & permission gating.\n" +
-                            "fullPermissionGate = permission node fully gates tags.");
+                            "fullPermissionGate = permission node fully gates tags (can hide/block access).\n" +
+                            "permissionGate = tag remains visible, but permission node is required to unlock/equip.");
             copy.accept("economySystemEnabled");
             copy.accept("useCoinSystem");
             copy.accept("usePhysicalCoinEconomy");
             copy.accept("fullPermissionGate");
+            copy.accept("permissionGate");
 
             // ------------------------------------------------------------------
             // 7) RPGLeveling
@@ -587,6 +606,10 @@ public final class Settings {
         return fullPermissionGate;
     }
 
+    public boolean isPermissionGateEnabled() {
+        return permissionGate;
+    }
+
     public boolean isRpgLevelingNameplatesEnabled() {
         return rpgLevelingNameplatesEnabled;
     }
@@ -621,6 +644,15 @@ public final class Settings {
 
     public boolean isEndlessRaceDisplayEnabled() {
         return endlessRaceDisplay;
+    }
+
+    public boolean isEndlessPrestigeDisplayEnabled() {
+        return endlessPrestigeDisplay;
+    }
+
+    public String getEndlessPrestigePrefix() {
+        return (endlessPrestigePrefix == null || endlessPrestigePrefix.isBlank())
+                ? "P" : endlessPrestigePrefix.trim();
     }
 
     public String getLanguage() {
