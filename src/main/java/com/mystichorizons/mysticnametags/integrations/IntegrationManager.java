@@ -761,11 +761,11 @@ public class IntegrationManager {
         }
 
         try {
-            return provider.getStatValue(uuid, trimmed);
-        } catch (Throwable t) {
-            LOGGER.at(Level.FINE)
-                    .withCause(t)
-                    .log("[MysticNameTags] StatProvider error for %s (key=%s)", uuid, trimmed);
+            if (key.contains("*")) {
+                return provider.getStatValuePattern(uuid, key);
+            }
+            return provider.getStatValue(uuid, key);
+        } catch (Throwable ignored) {
             return null;
         }
     }
@@ -851,5 +851,64 @@ public class IntegrationManager {
         if (value == null) return null;
         value = value.trim();
         return value.isEmpty() ? null : value;
+    }
+
+    @Nullable
+    public String resolvePlaceholderRequirement(@Nonnull PlayerRef playerRef,
+                                                @Nonnull String placeholder,
+                                                @Nonnull String operator,
+                                                @Nonnull String value) {
+        String input = placeholder.trim();
+        if (input.isEmpty()) {
+            return null;
+        }
+
+        // 1) Try resolving exactly as given first.
+        String direct = resolvePlaceholder(playerRef, input);
+        if (direct != null && !direct.equals(input)) {
+            return direct;
+        }
+
+        String arg = value.trim();
+        if (arg.isEmpty()) {
+            return direct;
+        }
+
+        // 2) If the placeholder looks like %something%, try expanding it
+        // into a parameterized placeholder form using the value.
+        //
+        // Example:
+        //   %luckperms_check_permission%
+        // + mysticnametags.tag.thief
+        // -> %luckperms_check_permission_mysticnametags.tag.thief%
+        //
+        // This allows generic "template-style" placeholders.
+        if (input.startsWith("%") && input.endsWith("%") && input.length() > 2) {
+            String inner = input.substring(1, input.length() - 1);
+
+            // underscore expansion
+            String expandedUnderscore = "%" + inner + "_" + arg + "%";
+            String resolvedUnderscore = resolvePlaceholder(playerRef, expandedUnderscore);
+            if (resolvedUnderscore != null && !resolvedUnderscore.equals(expandedUnderscore)) {
+                return resolvedUnderscore;
+            }
+
+            // colon expansion
+            String expandedColon = "%" + inner + ":" + arg + "%";
+            String resolvedColon = resolvePlaceholder(playerRef, expandedColon);
+            if (resolvedColon != null && !resolvedColon.equals(expandedColon)) {
+                return resolvedColon;
+            }
+
+            // pipe expansion
+            String expandedPipe = "%" + inner + "|" + arg + "%";
+            String resolvedPipe = resolvePlaceholder(playerRef, expandedPipe);
+            if (resolvedPipe != null && !resolvedPipe.equals(expandedPipe)) {
+                return resolvedPipe;
+            }
+        }
+
+        // 3) Fall back to whatever direct resolution gave us.
+        return direct;
     }
 }
