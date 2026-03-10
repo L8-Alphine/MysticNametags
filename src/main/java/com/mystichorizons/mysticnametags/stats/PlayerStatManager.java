@@ -12,6 +12,7 @@ import com.mystichorizons.mysticnametags.tags.StorageBackend;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.File;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -237,6 +238,24 @@ public final class PlayerStatManager implements StatProvider {
         return (int) value;
     }
 
+    @Override
+    public @Nullable Integer getStatValuePattern(@Nonnull UUID uuid, @Nonnull String keyPattern) {
+        if (!keyPattern.contains("*")) {
+            return getStatValue(uuid, keyPattern);
+        }
+
+        PlayerStatsData data = getOrLoad(uuid);
+        long total = sumMatchingStats(data, keyPattern);
+
+        if (total <= 0L) {
+            return null;
+        }
+        if (total > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) total;
+    }
+
     // --------------------------------------------------
     // Public API – generic
     // --------------------------------------------------
@@ -360,5 +379,63 @@ public final class PlayerStatManager implements StatProvider {
         String cat = trimmed.substring(0, dot);
         String stat = trimmed.substring(dot + 1);
         return new ParsedKey(cat, stat);
+    }
+
+    private long sumMatchingStats(@Nonnull PlayerStatsData data, @Nonnull String pattern) {
+        String regex = wildcardToRegex(pattern);
+
+        long total = 0L;
+
+        for (Map.Entry<String, Map<String, Long>> catEntry : data.viewAll().entrySet()) {
+            String category = catEntry.getKey();
+            Map<String, Long> stats = catEntry.getValue();
+            if (stats == null || stats.isEmpty()) continue;
+
+            for (Map.Entry<String, Long> statEntry : stats.entrySet()) {
+                String fullKey = category + "." + statEntry.getKey();
+                if (fullKey.matches(regex)) {
+                    Long value = statEntry.getValue();
+                    if (value != null && value > 0L) {
+                        total += value;
+                    }
+                }
+            }
+        }
+
+        return total;
+    }
+
+    private String wildcardToRegex(@Nonnull String pattern) {
+        StringBuilder sb = new StringBuilder("^");
+        for (char c : pattern.toCharArray()) {
+            switch (c) {
+                case '*':
+                    sb.append(".*");
+                    break;
+                case '.':
+                    sb.append("\\.");
+                    break;
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '(':
+                case ')':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case '+':
+                case '?':
+                case '^':
+                case '$':
+                case '|':
+                    sb.append("\\").append(c);
+                    break;
+                default:
+                    sb.append(c);
+            }
+        }
+        sb.append("$");
+        return sb.toString();
     }
 }
