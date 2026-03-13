@@ -1,46 +1,36 @@
 package com.mystichorizons.mysticnametags.ui;
 
-import com.hypixel.hytale.codec.Codec;
-import com.hypixel.hytale.codec.KeyedCodec;
-import com.hypixel.hytale.codec.builder.BuilderCodec;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
+import com.hypixel.hytale.protocol.packets.interface_.NotificationStyle;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.player.pages.InteractiveCustomUIPage;
+import com.hypixel.hytale.server.core.ui.builder.EventData;
 import com.hypixel.hytale.server.core.ui.builder.UICommandBuilder;
 import com.hypixel.hytale.server.core.ui.builder.UIEventBuilder;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
-import com.mystichorizons.mysticnametags.config.Settings;
-import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
+import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nonnull;
 import java.util.*;
 import java.util.logging.Level;
 
-/**
- * Owned-tags selector UI.
- *
- * Layout file: mysticnametags/OwnedTags.ui
- *
- * Lists ONLY tags the player already owns and lets them equip/unequip.
- */
 public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNameTagsTagsUI.UIEventData> {
 
     public static final String LAYOUT = "mysticnametags/OwnedTags.ui";
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
-
-    private static final int MAX_ROWS  = 10;
+    private static final int MAX_ROWS = 10;
     private static final int PAGE_SIZE = 10;
 
     private final PlayerRef playerRef;
@@ -48,6 +38,7 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
 
     private int currentPage;
     private String filterQuery;
+    private long lastFilterApplyMs = 0L;
 
     public MysticNameTagsOwnedTagsUI(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid) {
         this(playerRef, uuid, 0, null);
@@ -57,7 +48,6 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
                                      @Nonnull UUID uuid,
                                      int page,
                                      String filterQuery) {
-        // Reuse the same UIEventData codec as the main Tags UI
         super(playerRef, CustomPageLifetime.CanDismiss, MysticNameTagsTagsUI.UIEventData.CODEC);
         this.playerRef = playerRef;
         this.uuid = uuid;
@@ -72,24 +62,21 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
     }
 
     @Override
-    public void build(@NotNull Ref<EntityStore> ref, @NotNull UICommandBuilder cmd, @NotNull UIEventBuilder evt, @NotNull Store<EntityStore> store) {
+    public void build(@NotNull Ref<EntityStore> ref,
+                      @NotNull UICommandBuilder cmd,
+                      @NotNull UIEventBuilder evt,
+                      @NotNull Store<EntityStore> store) {
 
-        // Load layout (supports localized overrides)
-        cmd.append(LanguageManager.get().resolveUi(LAYOUT));
+        cmd.append(LAYOUT);
 
-        // Static button bindings
-        evt.addEventBinding(CustomUIEventBindingType.Activating, "#BottomCloseButton",
-                com.hypixel.hytale.server.core.ui.builder.EventData.of("Action", "close"));
-        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevPageButton",
-                com.hypixel.hytale.server.core.ui.builder.EventData.of("Action", "prev_page"));
-        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextPageButton",
-                com.hypixel.hytale.server.core.ui.builder.EventData.of("Action", "next_page"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#BottomCloseButton", EventData.of("Action", "close"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevPageButton", EventData.of("Action", "prev_page"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextPageButton", EventData.of("Action", "next_page"));
 
-        // Filter controls
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ApplyFilterButton",
-                new com.hypixel.hytale.server.core.ui.builder.EventData()
+                new EventData()
                         .append("Action", "set_filter")
                         .append("Filter", "#TagSearchBox.Text")
         );
@@ -97,12 +84,20 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ClearFilterButton",
-                new com.hypixel.hytale.server.core.ui.builder.EventData()
+                new EventData()
                         .append("Action", "set_filter")
                         .append("Filter", "")
         );
 
         rebuildPage(ref, store, cmd, evt);
+    }
+
+    private void refresh(@Nonnull Ref<EntityStore> ref,
+                         @Nonnull Store<EntityStore> store) {
+        UICommandBuilder cmd = new UICommandBuilder();
+        UIEventBuilder evt = new UIEventBuilder();
+        rebuildPage(ref, store, cmd, evt);
+        sendUpdate(cmd, evt, false);
     }
 
     private List<TagDefinition> createOwnedSnapshot() {
@@ -114,16 +109,15 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
 
         for (TagDefinition def : all) {
             if (def == null || def.getId() == null) continue;
-            if (!tagManager.ownsTag(uuid, def.getId())) continue; // ONLY owned tags
+            if (!tagManager.ownsTag(uuid, def.getId())) continue;
 
             if (needle != null) {
-                String id       = def.getId() != null ? def.getId() : "";
-                String display  = def.getDisplay() != null ? def.getDisplay() : "";
-                String descr    = def.getDescription() != null ? def.getDescription() : "";
+                String id = def.getId() != null ? def.getId() : "";
+                String display = def.getDisplay() != null ? def.getDisplay() : "";
+                String descr = def.getDescription() != null ? def.getDescription() : "";
                 String category = def.getCategory() != null ? def.getCategory() : "";
 
                 String plainDisplay = ColorFormatter.stripFormatting(display);
-
                 String haystack = (id + " " + plainDisplay + " " + descr + " " + category)
                         .toLowerCase(Locale.ROOT);
 
@@ -138,100 +132,110 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
 
     private void rebuildPage(@Nonnull Ref<EntityStore> ref,
                              @Nonnull Store<EntityStore> store,
-                             @Nonnull com.hypixel.hytale.server.core.ui.builder.UICommandBuilder cmd,
-                             @Nonnull com.hypixel.hytale.server.core.ui.builder.UIEventBuilder evt) {
+                             @Nonnull UICommandBuilder cmd,
+                             @Nonnull UIEventBuilder evt) {
 
         LanguageManager lang = LanguageManager.get();
         TagManager tagManager = TagManager.get();
 
+        // Localized static labels
+        cmd.set("#TitleLabel.Text", lang.tr("ui.owned.title"));
+        cmd.set("#SubtitleLabel.Text", lang.tr("ui.owned.subtitle"));
+        cmd.set("#CurrentTagPrefix.Text", lang.tr("ui.owned.current_prefix"));
+        cmd.set("#ListSectionTitle.Text", lang.tr("ui.owned.section_title"));
+        cmd.set("#ListHeaderTag.Text", lang.tr("ui.owned.header_tag"));
+        cmd.set("#ListHeaderAction.Text", lang.tr("ui.owned.header_action"));
+        cmd.set("#FooterHint.Text", lang.tr("ui.owned.footer_hint"));
+        cmd.set("#ApplyFilterButton.Text", lang.tr("ui.common.apply"));
+        cmd.set("#ClearFilterButton.Text", lang.tr("ui.common.clear"));
+        cmd.set("#PrevPageButton.Text", lang.tr("ui.common.prev"));
+        cmd.set("#NextPageButton.Text", lang.tr("ui.common.next"));
+        cmd.set("#BottomCloseButton.Text", lang.tr("ui.common.close"));
+
         List<TagDefinition> tags = createOwnedSnapshot();
 
-        int totalTags  = tags.size();
+        int totalTags = tags.size();
         int totalPages = Math.max(1, (int) Math.ceil(totalTags / (double) PAGE_SIZE));
         if (currentPage > totalPages - 1) currentPage = totalPages - 1;
 
         int startIndex = currentPage * PAGE_SIZE;
-        int endIndex   = Math.min(startIndex + PAGE_SIZE, totalTags);
+        int endIndex = Math.min(startIndex + PAGE_SIZE, totalTags);
 
-        // Search box placeholder
         if (filterQuery != null) {
             cmd.set("#TagSearchBox.PlaceholderText",
-                    lang.tr("ui.tags.search_filter_prefix", Map.of("filter", filterQuery)));
+                    lang.tr("ui.owned.search_filter_prefix", Map.of("filter", filterQuery)));
         } else {
-            cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.tags.search_placeholder"));
+            cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.owned.search_placeholder"));
         }
 
-        // Equipped tag id
         TagDefinition active = tagManager.getEquipped(uuid);
         if (active == null) {
             active = tagManager.resolveActiveOrDefaultTag(uuid);
         }
-        String equippedId = (active != null) ? active.getId() : null;
+        String equippedId = active != null ? active.getId() : null;
 
-        // ---- Rows ----
         int row = 0;
         for (int i = startIndex; i < endIndex && row < MAX_ROWS; i++, row++) {
             TagDefinition def = tags.get(i);
 
-            String nameSelector   = "#TagRow" + row + "Name";
-            String descSelector   = "#TagRow" + row + "Description";
+            String cardSelector = "#TagRow" + row + "Card";
+            String nameSelector = "#TagRow" + row + "Name";
+            String descSelector = "#TagRow" + row + "Description";
             String buttonSelector = "#TagRow" + row + "Button";
 
-            String rawDisplay     = def.getDisplay();
+            String rawDisplay = def.getDisplay();
             String rawDescription = def.getDescription();
 
-            String nameText = ColorFormatter.stripFormatting(rawDisplay);
-            String nameHex  = ColorFormatter.extractUiTextColor(rawDisplay);
+            String nameText = ColorFormatter.stripFormatting(rawDisplay != null ? rawDisplay : def.getId());
+            String nameHex = rawDisplay != null ? ColorFormatter.extractUiTextColor(rawDisplay) : null;
 
             String descText = rawDescription != null ? ColorFormatter.stripFormatting(rawDescription) : "";
-            if (descText.length() > 90) descText = descText.substring(0, 87) + "...";
+            if (descText.length() > 110) {
+                descText = descText.substring(0, 107) + "...";
+            }
 
+            cmd.set(cardSelector + ".Visible", true);
             cmd.set(nameSelector + ".Text", nameText);
             cmd.set(descSelector + ".Text", descText);
 
             if (nameHex != null) {
                 cmd.set(nameSelector + ".Style.TextColor", "#" + nameHex);
+            } else {
+                cmd.set(nameSelector + ".Style.TextColor", "#ffffff");
             }
 
             boolean isEquipped = equippedId != null && equippedId.equalsIgnoreCase(def.getId());
-
             String buttonText = isEquipped
                     ? lang.tr("ui.tags.button_unequip")
                     : lang.tr("ui.tags.button_equip");
 
             cmd.set(buttonSelector + ".Text", buttonText);
+            cmd.set(cardSelector + ".OutlineColor", isEquipped ? "#58a6ff" : "#333333");
 
-            cmd.set(nameSelector + ".Visible", true);
-            cmd.set(descSelector + ".Visible", true);
-            cmd.set(buttonSelector + ".Visible", true);
-
-            // Row click event
-            com.hypixel.hytale.server.core.ui.builder.EventData rowEvent =
-                    new com.hypixel.hytale.server.core.ui.builder.EventData()
-                            .append("Action", "tag_click")
-                            .append("TagId", def.getId() != null ? def.getId() : "")
-                            .append("RowIndex", String.valueOf(row));
+            EventData rowEvent = new EventData()
+                    .append("Action", "tag_click")
+                    .append("TagId", def.getId())
+                    .append("RowIndex", String.valueOf(row));
 
             evt.addEventBinding(CustomUIEventBindingType.Activating, buttonSelector, rowEvent, false);
         }
 
-        // Hide unused rows
         for (; row < MAX_ROWS; row++) {
-            String nameSelector   = "#TagRow" + row + "Name";
-            String descSelector   = "#TagRow" + row + "Description";
-            String buttonSelector = "#TagRow" + row + "Button";
-
-            cmd.set(nameSelector + ".Visible", false);
-            cmd.set(descSelector + ".Visible", false);
-            cmd.set(buttonSelector + ".Visible", false);
+            cmd.set("#TagRow" + row + "Card.Visible", false);
         }
 
-        // Page label + nav
+        boolean empty = totalTags <= 0;
+        cmd.set("#EmptyOwnedLabel.Visible", empty);
+        cmd.set("#EmptyOwnedLabel.Text",
+                filterQuery != null
+                        ? lang.tr("ui.owned.none_for_filter", Map.of("filter", filterQuery))
+                        : lang.tr("ui.owned.none"));
+
         String label;
-        if (totalTags == 0) {
-            label = (filterQuery != null)
-                    ? lang.tr("ui.tags.page_none_for_filter", Map.of("filter", filterQuery))
-                    : "You don't own any tags yet.";
+        if (empty) {
+            label = filterQuery != null
+                    ? lang.tr("ui.owned.none_for_filter", Map.of("filter", filterQuery))
+                    : lang.tr("ui.owned.none");
         } else {
             label = lang.tr("ui.tags.page_label", Map.of(
                     "page", String.valueOf(currentPage + 1),
@@ -246,7 +250,6 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
         cmd.set("#PrevPageButton.Visible", totalTags > 0 && currentPage > 0);
         cmd.set("#NextPageButton.Visible", totalTags > 0 && currentPage < totalPages - 1);
 
-        // Current nameplate preview
         String previewText;
         String previewHex = null;
 
@@ -270,6 +273,8 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
         cmd.set("#CurrentNameplateLabel.Text", previewText);
         if (previewHex != null) {
             cmd.set("#CurrentNameplateLabel.Style.TextColor", "#" + previewHex);
+        } else {
+            cmd.set("#CurrentNameplateLabel.Style.TextColor", "#e6edf3");
         }
     }
 
@@ -282,134 +287,105 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
         if (action == null) return;
 
         switch (action) {
-            case "close" -> this.close();
+            case "close" -> close();
 
             case "prev_page" -> {
                 if (currentPage <= 0) return;
                 currentPage--;
-
-                var cmd = new com.hypixel.hytale.server.core.ui.builder.UICommandBuilder();
-                var evt = new com.hypixel.hytale.server.core.ui.builder.UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt);
-                sendUpdate(cmd, evt, false);
+                refresh(ref, store);
             }
 
             case "next_page" -> {
                 List<TagDefinition> tags = createOwnedSnapshot();
                 int totalPages = Math.max(1, (int) Math.ceil(tags.size() / (double) PAGE_SIZE));
                 if (currentPage >= totalPages - 1) return;
-
                 currentPage++;
-
-                var cmd = new com.hypixel.hytale.server.core.ui.builder.UICommandBuilder();
-                var evt = new com.hypixel.hytale.server.core.ui.builder.UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt);
-                sendUpdate(cmd, evt, false);
+                refresh(ref, store);
             }
 
             case "set_filter" -> {
                 long now = System.currentTimeMillis();
-                // simple debounce like main UI
-                // if you want: keep a lastFilterApplyMs here too
-                String requested = data.filter;
-                String newFilter = normalizeFilter(requested);
+                if (now - lastFilterApplyMs < 200L) return;
+                lastFilterApplyMs = now;
 
+                String newFilter = normalizeFilter(data.filter);
                 if (!Objects.equals(this.filterQuery, newFilter)) {
                     this.filterQuery = newFilter;
                     currentPage = 0;
                 }
-
-                var cmd = new com.hypixel.hytale.server.core.ui.builder.UICommandBuilder();
-                var evt = new com.hypixel.hytale.server.core.ui.builder.UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt);
-                sendUpdate(cmd, evt, false);
+                refresh(ref, store);
             }
 
-            case "tag_click" -> {
-                if (uuid == null) return;
-
-                TagManager manager = TagManager.get();
-
-                TagDefinition def = null;
-                String resolvedId = null;
-
-                if (data.tagId != null && !data.tagId.isEmpty()) {
-                    def = manager.getTag(data.tagId);
-                    if (def != null) {
-                        resolvedId = def.getId();
-                    }
-                }
-
-                if (def == null) {
-                    int rowIndex = data.rowIndex;
-                    if (rowIndex < 0 || rowIndex >= MAX_ROWS) return;
-
-                    List<TagDefinition> tags = createOwnedSnapshot();
-                    int startIndex = currentPage * PAGE_SIZE;
-                    int absIndex = startIndex + rowIndex;
-
-                    if (absIndex < 0 || absIndex >= tags.size()) return;
-
-                    def = tags.get(absIndex);
-                    if (def == null || def.getId() == null || def.getId().isEmpty()) return;
-
-                    resolvedId = def.getId();
-                }
-
-                if (resolvedId == null || resolvedId.isEmpty()) return;
-
-                TagManager.TagPurchaseResult result;
-
-                try {
-                    result = manager.toggleTag(playerRef, uuid, resolvedId);
-
-                    Player player = store.getComponent(ref, Player.getComponentType());
-                    if (player != null) {
-                        String baseName = playerRef.getUsername();
-                        try {
-                            switch (result) {
-                                case UNLOCKED_FREE:
-                                case UNLOCKED_PAID:
-                                case EQUIPPED_ALREADY_OWNED: {
-                                    String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
-                                    NameplateManager.get().apply(uuid, store, ref, text);
-                                    break;
-                                }
-                                case UNEQUIPPED: {
-                                    NameplateManager.get().restore(uuid, store, ref, baseName);
-                                    String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
-                                    NameplateManager.get().apply(uuid, store, ref, text);
-                                    break;
-                                }
-                                default:
-                                    break;
-                            }
-                        } catch (Throwable ignored) { }
-                    }
-
-                    // Reuse existing notification flow
-                    handlePurchaseResult(result, def);
-
-                } catch (Throwable t) {
-                    LOGGER.at(Level.WARNING).withCause(t)
-                            .log("[MysticNameTags] Failed to handle owned-tag click for " + resolvedId);
-                }
-
-                // Refresh page (button states)
-                var updateCmd = new com.hypixel.hytale.server.core.ui.builder.UICommandBuilder();
-                var updateEvt = new com.hypixel.hytale.server.core.ui.builder.UIEventBuilder();
-                rebuildPage(ref, store, updateCmd, updateEvt);
-                sendUpdate(updateCmd, updateEvt, false);
-            }
+            case "tag_click" -> handleOwnedTagClick(ref, store, data);
         }
     }
 
-    private void handlePurchaseResult(TagManager.TagPurchaseResult result, TagDefinition def) {
-        // For simplicity we just forward to the same logic used by the main tags UI:
-        // reuse MysticNameTagsTagsUI.handlePurchaseResult via a tiny helper,
-        // OR if you prefer, you can duplicate the method here.
-        // To keep it self-contained, we’ll do a minimal duplicate.
+    private void handleOwnedTagClick(@Nonnull Ref<EntityStore> ref,
+                                     @Nonnull Store<EntityStore> store,
+                                     @Nonnull MysticNameTagsTagsUI.UIEventData data) {
 
+        if (uuid == null) return;
+
+        TagManager manager = TagManager.get();
+
+        TagDefinition def = null;
+        String resolvedId = null;
+
+        if (data.tagId != null && !data.tagId.isEmpty()) {
+            def = manager.getTag(data.tagId);
+            if (def != null) {
+                resolvedId = def.getId();
+            }
+        }
+
+        if (def == null) {
+            int rowIndex = data.rowIndex;
+            if (rowIndex < 0 || rowIndex >= MAX_ROWS) return;
+
+            List<TagDefinition> tags = createOwnedSnapshot();
+            int absIndex = (currentPage * PAGE_SIZE) + rowIndex;
+            if (absIndex < 0 || absIndex >= tags.size()) return;
+
+            def = tags.get(absIndex);
+            if (def == null || def.getId() == null || def.getId().isEmpty()) return;
+            resolvedId = def.getId();
+        }
+
+        if (resolvedId == null || resolvedId.isEmpty()) return;
+
+        try {
+            TagManager.TagPurchaseResult result = manager.toggleTag(playerRef, uuid, resolvedId);
+
+            Player player = store.getComponent(ref, Player.getComponentType());
+            if (player != null) {
+                String baseName = playerRef.getUsername();
+                try {
+                    switch (result) {
+                        case UNLOCKED_FREE, UNLOCKED_PAID, EQUIPPED_ALREADY_OWNED -> {
+                            String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
+                            NameplateManager.get().apply(uuid, store, ref, text);
+                        }
+                        case UNEQUIPPED -> {
+                            NameplateManager.get().restore(uuid, store, ref, baseName);
+                            String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
+                            NameplateManager.get().apply(uuid, store, ref, text);
+                        }
+                        default -> { }
+                    }
+                } catch (Throwable ignored) { }
+            }
+
+            handlePurchaseResult(result, def);
+
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to handle owned-tag click for " + resolvedId);
+        }
+
+        refresh(ref, store);
+    }
+
+    private void handlePurchaseResult(TagManager.TagPurchaseResult result, TagDefinition def) {
         LanguageManager lang = LanguageManager.get();
 
         String title = "&b" + lang.tr("plugin.title");
@@ -467,17 +443,15 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
 
         String msg = lang.tr(msgKey, vars);
 
-        String parsedTitle = com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport.apply(playerRef, title);
-        String parsedMsg   = com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport.apply(playerRef, msg);
-
-        parsedTitle = ColorFormatter.colorize(parsedTitle);
-        parsedMsg   = ColorFormatter.colorize(parsedMsg);
-
-        com.mystichorizons.mysticnametags.util.MysticNotificationUtil.send(
+        MysticNotificationUtil.send(
                 playerRef.getPacketHandler(),
-                parsedTitle,
-                parsedMsg,
-                com.hypixel.hytale.protocol.packets.interface_.NotificationStyle.Default
+                ColorFormatter.colorize(tagOrDefault(title)),
+                ColorFormatter.colorize(tagOrDefault(msg)),
+                NotificationStyle.Default
         );
+    }
+
+    private static String tagOrDefault(String s) {
+        return s == null ? "" : s;
     }
 }
