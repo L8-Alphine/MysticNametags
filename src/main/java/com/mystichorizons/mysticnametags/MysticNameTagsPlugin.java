@@ -11,6 +11,7 @@ import com.mystichorizons.mysticnametags.commands.TagsCommand;
 import com.mystichorizons.mysticnametags.commands.TagsOwnedCommand;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.hstats.HStats;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.LevelNameplateRefreshTask;
@@ -98,6 +99,9 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         this.updateChecker = new UpdateChecker(version);
         // Synchronous is fine here; if you prefer async, wrap in your scheduler.
         this.updateChecker.checkForUpdates();
+
+        // Start HStats
+        new HStats("b2740b4b-b730-4693-9ec4-e39a1ac5b661", version);
 
         // ------------------------------------------------------
         // Playtime service (60s interval; adjust if you add config)
