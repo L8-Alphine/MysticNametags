@@ -29,8 +29,10 @@ import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
@@ -44,8 +46,15 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
-    private static final int MAX_ROWS  = 10;
+    private static final int MAX_ROWS = 10;
     private static final int PAGE_SIZE = 10;
+
+    private static final String COLOR_TEXT_PRIMARY   = "#e6edf3";
+    private static final String COLOR_TEXT_MUTED     = "#6b7280";
+    private static final String COLOR_TEXT_SELECTED  = "#ffffff";
+    private static final String COLOR_TEXT_CATEGORY  = "#cbd5f5";
+    private static final String COLOR_OUTLINE_ROW    = "#3a3a3a";
+    private static final String COLOR_OUTLINE_SELECT = "#58a6ff";
 
     private final PlayerRef playerRef;
     private final UUID uuid;
@@ -58,16 +67,31 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private long lastFilterApplyMs = 0L;
 
+    private String cooldownWarningText;
+
+    /**
+     * Cache of canUseTag per tag id for the current player/session.
+     * Cleared on filter/category changes and after purchase/equip actions.
+     */
     private final Map<String, Boolean> canUseCache = new HashMap<>();
 
-    private boolean ownedOnly = false;
+    private final boolean ownedOnly;
+
+    /**
+     * The currently selected tag in the right-side detail panel.
+     */
+    private String selectedTagId;
+
+    /**
+     * Whether the help/info panel is currently visible.
+     */
+    private boolean detailHelpVisible = false;
 
     /**
      * Last time (ms) a tag was successfully EQUIPPED for each player.
      * Used for enforcing the configurable equip cooldown.
      */
-    private static final Map<UUID, Long> LAST_EQUIP_TIME =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<UUID, Long> LAST_EQUIP_TIME = new ConcurrentHashMap<>();
 
     public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid) {
         this(playerRef, uuid, 0, null, false);
@@ -105,15 +129,17 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                       @Nonnull UIEventBuilder evt,
                       @Nonnull Store<EntityStore> store) {
 
-        // Load layout once (supports localized override)
-        cmd.append(LanguageManager.get().resolveUi(LAYOUT));
+        cmd.append(LAYOUT);
 
-        // Static button bindings
         evt.addEventBinding(CustomUIEventBindingType.Activating, "#BottomCloseButton", EventData.of("Action", "close"));
-        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevPageButton",   EventData.of("Action", "prev_page"));
-        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextPageButton",   EventData.of("Action", "next_page"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevPageButton", EventData.of("Action", "prev_page"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextPageButton", EventData.of("Action", "next_page"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevCategoryButton", EventData.of("Action", "prev_category"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextCategoryButton", EventData.of("Action", "next_category"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#SelectBtn", EventData.of("Action", "activate_selected"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#DetailHelpButton", EventData.of("Action", "toggle_help"));
+        evt.addEventBinding(CustomUIEventBindingType.Activating, "#HowItWorksCloseButton", EventData.of("Action", "toggle_help"));
 
-        // Filter controls
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ApplyFilterButton",
@@ -130,10 +156,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                         .append("Filter", "")
         );
 
-        // Category controls
-        evt.addEventBinding(CustomUIEventBindingType.Activating, "#PrevCategoryButton", EventData.of("Action", "prev_category"));
-        evt.addEventBinding(CustomUIEventBindingType.Activating, "#NextCategoryButton", EventData.of("Action", "next_category"));
-
         rebuildPage(ref, store, cmd, evt, true);
     }
 
@@ -141,19 +163,14 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         TagManager tagManager = TagManager.get();
         Collection<TagDefinition> all = tagManager.getAllTags();
 
-        boolean fullGate        = Settings.get().isFullPermissionGateEnabled();
+        boolean fullGate = Settings.get().isFullPermissionGateEnabled();
         boolean debugShowHidden = tagManager.isShowHiddenTagsForDebug();
 
         List<String> categories = tagManager.getCategories();
-        boolean hasCategories   = !categories.isEmpty();
         String selectedCategory = null;
 
-        if (hasCategories && categoryIndex > 0 && categoryIndex <= categories.size()) {
+        if (!categories.isEmpty() && categoryIndex > 0 && categoryIndex <= categories.size()) {
             selectedCategory = categories.get(categoryIndex - 1);
-        }
-
-        if (!fullGate && filterQuery == null && selectedCategory == null) {
-            return new ArrayList<>(all);
         }
 
         String needle = (filterQuery != null) ? filterQuery.toLowerCase(Locale.ROOT) : null;
@@ -162,7 +179,12 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         for (TagDefinition def : all) {
             if (def == null) continue;
 
-            // 1) Full permission gate
+            if (ownedOnly) {
+                if (uuid == null || def.getId() == null || !tagManager.ownsTag(uuid, def.getId())) {
+                    continue;
+                }
+            }
+
             if (fullGate) {
                 String perm = def.getPermission();
                 if (perm != null && !perm.isEmpty()) {
@@ -171,22 +193,19 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 }
             }
 
-            // 2) Text filter
             if (needle != null) {
-                String id       = def.getId() != null ? def.getId() : "";
-                String display  = def.getDisplay() != null ? def.getDisplay() : "";
-                String descr    = def.getDescription() != null ? def.getDescription() : "";
+                String id = def.getId() != null ? def.getId() : "";
+                String display = def.getDisplay() != null ? def.getDisplay() : "";
+                String descr = def.getDescription() != null ? def.getDescription() : "";
                 String category = def.getCategory() != null ? def.getCategory() : "";
 
                 String plainDisplay = ColorFormatter.stripFormatting(display);
-
                 String haystack = (id + " " + plainDisplay + " " + descr + " " + category)
                         .toLowerCase(Locale.ROOT);
 
                 if (!haystack.contains(needle)) continue;
             }
 
-            // 3) Category filter
             if (selectedCategory != null) {
                 String defCat = def.getCategory();
                 if (defCat == null || !defCat.equalsIgnoreCase(selectedCategory)) continue;
@@ -205,41 +224,62 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                              boolean registerRowEvents) {
 
         LanguageManager lang = LanguageManager.get();
-
         TagManager tagManager = TagManager.get();
         IntegrationManager integrations = tagManager.getIntegrations();
-        // Clear Cache After Loading Integrations
-        canUseCache.clear();
-        boolean fullGate        = Settings.get().isFullPermissionGateEnabled();
+
+        boolean fullGate = Settings.get().isFullPermissionGateEnabled();
         boolean debugShowHidden = tagManager.isShowHiddenTagsForDebug();
 
         List<TagDefinition> tags = createFilteredSnapshot();
 
-        int totalTags  = tags.size();
+        int totalTags = tags.size();
         int totalPages = Math.max(1, (int) Math.ceil(totalTags / (double) PAGE_SIZE));
-
         if (currentPage > totalPages - 1) currentPage = totalPages - 1;
 
-        cmd.set("#RequirementsPanel.Visible", false);
-
         int startIndex = currentPage * PAGE_SIZE;
-        int endIndex   = Math.min(startIndex + PAGE_SIZE, totalTags);
+        int endIndex = Math.min(startIndex + PAGE_SIZE, totalTags);
 
-        // Search box placeholder
+        cmd.set("#TitleLabel.Text", lang.tr("ui.tags.title"));
+        cmd.set("#PlayerSectionTitle.Text", lang.tr("ui.tags.player_section"));
+        cmd.set("#FiltersSectionTitle.Text", lang.tr("ui.tags.filters_section"));
+        cmd.set("#AvailableTagsTitle.Text", lang.tr("ui.tags.list_section"));
+        cmd.set("#DetailSectionTitle.Text", lang.tr("ui.tags.details_section"));
+        cmd.set("#ProgressSectionTitle.Text", lang.tr("ui.tags.progress_section"));
+        cmd.set("#RequirementsTitle.Text", lang.tr("ui.tags.requirements_title"));
+        cmd.set("#HowItWorksTitle.Text", lang.getHowItWorksPanelTitle());
+        cmd.set("#FooterCloseHint.Text", lang.tr("ui.tags.footer_close_hint"));
+
+        cmd.set("#PlayerLabel.Text", lang.tr("ui.tags.label_player"));
+        cmd.set("#BalancePrefixLabel.Text", lang.tr("ui.tags.label_balance"));
+        cmd.set("#CurrentTagPrefixLabel.Text", lang.tr("ui.tags.label_current_tag"));
+        cmd.set("#CategoryPrefixLabel.Text", lang.tr("ui.tags.label_category"));
+
+        cmd.set("#DetailCategoryPrefix.Text", lang.tr("ui.tags.label_category"));
+        cmd.set("#DetailPricePrefix.Text", lang.tr("ui.tags.label_price"));
+        cmd.set("#DetailStatusPrefix.Text", lang.tr("ui.tags.label_status"));
+        cmd.set("#DetailPreviewPrefix.Text", lang.tr("ui.tags.label_preview"));
+
+        cmd.set("#ApplyFilterButton.Text", lang.tr("ui.common.apply"));
+        cmd.set("#ClearFilterButton.Text", lang.tr("ui.common.clear"));
+        cmd.set("#PrevPageButton.Text", lang.tr("ui.common.prev"));
+        cmd.set("#NextPageButton.Text", lang.tr("ui.common.next"));
+        cmd.set("#BottomCloseButton.Text", lang.tr("ui.common.close"));
+        cmd.set("#HowItWorksCloseButton.Text", lang.tr("ui.common.close"));
+        cmd.set("#DetailHelpButton.Text", lang.tr("ui.tags.button_help"));
+
         if (filterQuery != null) {
-            cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.tags.search_filter_prefix", Map.of("filter", filterQuery)));
+            cmd.set("#TagSearchBox.PlaceholderText",
+                    lang.tr("ui.tags.search_filter_prefix", Map.of("filter", filterQuery)));
         } else {
             cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.tags.search_placeholder"));
         }
 
-        // Equipped tag id
         TagDefinition active = tagManager.getEquipped(uuid);
         if (active == null) {
-            active = tagManager.resolveActiveOrDefaultTag(uuid); // expose or replicate logic
+            active = tagManager.resolveActiveOrDefaultTag(uuid);
         }
         String equippedId = (active != null) ? active.getId() : null;
 
-        // ---- Balance ----
         double balance = 0.0;
         boolean econEnabled = false;
         boolean usingCash = false;
@@ -252,106 +292,75 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
                 if (econEnabled) {
                     balance = integrations.getBalance(playerRef, uuid);
-
-                    // "Cash" only applies to your primary ledger economy
                     usingCash = !usingPhysical
                             && Settings.get().isEconomySystemEnabled()
                             && Settings.get().isUseCoinSystem()
                             && integrations.isPrimaryEconomyAvailable();
                 }
             }
-        } catch (Throwable ignored) { }
+        } catch (Throwable ignored) {
+        }
 
         if (!econEnabled) {
             cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_na"));
         } else if (usingPhysical) {
-            cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_coins", Map.of("amount", String.valueOf((long) balance))));
+            cmd.set("#BalanceLabel.Text",
+                    lang.tr("ui.tags.balance_coins", Map.of("amount", String.valueOf((long) balance))));
         } else if (usingCash) {
-            cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_cash", Map.of("amount", String.valueOf((long) balance))));
+            cmd.set("#BalanceLabel.Text",
+                    lang.tr("ui.tags.balance_cash", Map.of("amount", String.valueOf((long) balance))));
         } else {
-            cmd.set("#BalanceLabel.Text", lang.tr("ui.tags.balance_coins", Map.of("amount", String.valueOf(balance))));
+            cmd.set("#BalanceLabel.Text",
+                    lang.tr("ui.tags.balance_coins", Map.of("amount", String.valueOf(balance))));
         }
 
-        // ---- Rows ----
+        applyPlayerDisplay(cmd, active, lang);
+
+        ensureValidSelection(tags, active);
+        TagDefinition selected = resolveSelectedDefinition(tags);
+
         int row = 0;
         for (int i = startIndex; i < endIndex && row < MAX_ROWS; i++, row++) {
             TagDefinition def = tags.get(i);
 
-            String nameSelector         = "#TagRow" + row + "Name";
-            String descSelector         = "#TagRow" + row + "Description";
-            String priceSelector        = "#TagRow" + row + "Price";
-            String buttonSelector       = "#TagRow" + row + "Button";
+            String cardSelector = "#TagRow" + row + "Card";
+            String nameSelector = "#TagRow" + row + "Name";
+            String priceSelector = "#TagRow" + row + "Price";
+            String buttonSelector = "#TagRow" + row + "Button";
             String categoryPillSelector = "#TagRow" + row + "CategoryPill";
-            String categorySelector     = "#TagRow" + row + "Category";
-            String infoSelector         = "#TagRow" + row + "Info";
+            String categorySelector = "#TagRow" + row + "Category";
+            String stateSelector = "#TagRow" + row + "State";
+            String stateBadgeSelector = "#TagRow" + row + "StateBadge";
 
-            String rawDisplay     = def.getDisplay();
-            String rawDescription = def.getDescription();
+            cmd.set(cardSelector + ".Visible", true);
 
-            String nameText = ColorFormatter.stripFormatting(rawDisplay);
-            String nameHex  = ColorFormatter.extractUiTextColor(rawDisplay);
-
-            String descText = rawDescription != null ? ColorFormatter.stripFormatting(rawDescription) : "";
-            if (descText.length() > 90) descText = descText.substring(0, 87) + "...";
-
-            String descHex = (rawDescription != null) ? ColorFormatter.extractFirstHexColor(rawDescription) : null;
-
-            // Price text
-            String priceText;
-            if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
-                priceText = lang.tr("ui.tags.price_free");
-            } else if (!econEnabled) {
-                priceText = lang.tr("ui.tags.price_economy_disabled", Map.of("price", String.valueOf(def.getPrice())));
-            } else if (usingCash) {
-                priceText = lang.tr("ui.tags.price_cash", Map.of("price", String.valueOf(def.getPrice())));
-            } else {
-                priceText = lang.tr("ui.tags.price_coins", Map.of("price", String.valueOf(def.getPrice())));
-            }
+            String rawDisplay = def.getDisplay();
+            String nameText = ColorFormatter.stripFormatting(rawDisplay != null ? rawDisplay : def.getId());
+            String nameHex = rawDisplay != null ? ColorFormatter.extractUiTextColor(rawDisplay) : null;
+            String priceText = buildPriceText(def, econEnabled, usingCash, lang);
 
             cmd.set(nameSelector + ".Text", nameText);
-            cmd.set(descSelector + ".Text", descText);
             cmd.set(priceSelector + ".Text", priceText);
 
-            if (nameHex != null) cmd.set(nameSelector + ".Style.TextColor", "#" + nameHex);
-            if (descHex != null) cmd.set(descSelector + ".Style.TextColor", "#" + descHex);
-
-            // canUse (cached)
-            boolean canUse = tagManager.canUseTag(playerRef, uuid, def);
-
+            boolean canUse = canUseTag(tagManager, def);
             boolean isEquipped = equippedId != null && equippedId.equalsIgnoreCase(def.getId());
-            boolean owns       = uuid != null && tagManager.ownsTag(uuid, def.getId());
-            boolean isFree     = !def.isPurchasable() || def.getPrice() <= 0.0D;
-            boolean hasCost    = def.isPurchasable() && def.getPrice() > 0.0D;
+            boolean owns = uuid != null && def.getId() != null && tagManager.ownsTag(uuid, def.getId());
+            boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
 
             String perm = def.getPermission();
             boolean isLockedByPerm = fullGate && perm != null && !perm.isEmpty() && !canUse;
+            boolean isSelected = selected != null
+                    && selected.getId() != null
+                    && selected.getId().equalsIgnoreCase(def.getId());
 
-            String buttonText;
+            String resolvedNameColor = nameHex != null ? "#" + nameHex : COLOR_TEXT_PRIMARY;
             if (isLockedByPerm && debugShowHidden) {
-                buttonText = lang.tr("ui.tags.button_no_access");
-
-                cmd.set(nameSelector + ".Style.TextColor", "#6b7280");
-                cmd.set(descSelector + ".Style.TextColor", "#6b7280");
-                cmd.set(categorySelector + ".Style.TextColor", "#9ca3af");
-            } else {
-                if (isEquipped) {
-                    buttonText = lang.tr("ui.tags.button_unequip");
-                } else if (isFree) {
-                    buttonText = (!owns) ? lang.tr("ui.tags.button_unlock") : lang.tr("ui.tags.button_equip");
-                } else if (hasCost) {
-                    buttonText = (!owns) ? lang.tr("ui.tags.button_buy") : lang.tr("ui.tags.button_equip");
-                } else {
-                    buttonText = lang.tr("ui.tags.button_equip");
-                }
+                resolvedNameColor = COLOR_TEXT_MUTED;
+            } else if (isSelected) {
+                resolvedNameColor = COLOR_TEXT_SELECTED;
             }
+            cmd.set(nameSelector + ".Style.TextColor", resolvedNameColor);
 
-            cmd.set(buttonSelector + ".Text", buttonText);
-
-            boolean locked = isLocked(def, canUse, owns);
-            cmd.set(infoSelector + ".Visible", locked);
-            cmd.set(infoSelector + ".Text", lang.tr("ui.tags.info_icon"));
-
-            // Category pill
             String category = def.getCategory();
             if (category == null || category.trim().isEmpty()) {
                 cmd.set(categoryPillSelector + ".Visible", false);
@@ -360,50 +369,49 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 cmd.set(categoryPillSelector + ".Visible", true);
                 cmd.set(categorySelector + ".Visible", true);
                 cmd.set(categorySelector + ".Text", category);
-                cmd.set(categorySelector + ".Style.TextColor", "#cbd5f5");
+                cmd.set(categorySelector + ".Style.TextColor", COLOR_TEXT_CATEGORY);
             }
 
+            RowBadge badge = buildRowBadge(def, canUse, owns, isEquipped, hasCost);
+            cmd.set(stateBadgeSelector + ".Visible", true);
+            cmd.set(stateSelector + ".Text", badge.text);
+            cmd.set(stateSelector + ".Style.TextColor", badge.textColor);
+
+            cmd.set(cardSelector + ".OutlineSize", isSelected ? 2 : 1);
+            cmd.set(cardSelector + ".OutlineColor", isSelected ? COLOR_OUTLINE_SELECT : COLOR_OUTLINE_ROW);
+
             cmd.set(nameSelector + ".Visible", true);
-            cmd.set(descSelector + ".Visible", true);
             cmd.set(priceSelector + ".Visible", true);
             cmd.set(buttonSelector + ".Visible", true);
 
             if (registerRowEvents) {
                 EventData rowEvent = new EventData()
-                        .append("Action", "tag_click")
+                        .append("Action", "select_tag")
                         .append("TagId", def.getId() != null ? def.getId() : "")
                         .append("RowIndex", String.valueOf(row));
 
-                EventData showReq = new EventData()
-                        .append("Action", "hover_tag")
-                        .append("TagId", def.getId() != null ? def.getId() : "");
-
-                evt.addEventBinding(CustomUIEventBindingType.Activating, infoSelector, showReq, false);
                 evt.addEventBinding(CustomUIEventBindingType.Activating, buttonSelector, rowEvent, false);
             }
         }
 
-        // Hide unused rows
         for (; row < MAX_ROWS; row++) {
-            String nameSelector         = "#TagRow" + row + "Name";
-            String descSelector         = "#TagRow" + row + "Description";
-            String priceSelector        = "#TagRow" + row + "Price";
-            String buttonSelector       = "#TagRow" + row + "Button";
+            String cardSelector = "#TagRow" + row + "Card";
+            String nameSelector = "#TagRow" + row + "Name";
+            String priceSelector = "#TagRow" + row + "Price";
+            String buttonSelector = "#TagRow" + row + "Button";
             String categoryPillSelector = "#TagRow" + row + "CategoryPill";
-            String categorySelector     = "#TagRow" + row + "Category";
-            String infoSelector         = "#TagRow" + row + "Info";
+            String categorySelector = "#TagRow" + row + "Category";
+            String stateBadgeSelector = "#TagRow" + row + "StateBadge";
 
-            cmd.set(infoSelector + ".Visible", false);
-
+            cmd.set(cardSelector + ".Visible", false);
             cmd.set(nameSelector + ".Visible", false);
-            cmd.set(descSelector + ".Visible", false);
             cmd.set(priceSelector + ".Visible", false);
             cmd.set(buttonSelector + ".Visible", false);
             cmd.set(categoryPillSelector + ".Visible", false);
             cmd.set(categorySelector + ".Visible", false);
+            cmd.set(stateBadgeSelector + ".Visible", false);
         }
 
-        // Page label + nav
         String label;
         if (totalTags == 0) {
             label = (filterQuery != null)
@@ -423,7 +431,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#PrevPageButton.Visible", totalTags > 0 && currentPage > 0);
         cmd.set("#NextPageButton.Visible", totalTags > 0 && currentPage < totalPages - 1);
 
-        // Category label + visibility
         List<String> categories = tagManager.getCategories();
         boolean hasCategories = !categories.isEmpty();
 
@@ -437,29 +444,62 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#PrevCategoryButton.Visible", hasCategories);
         cmd.set("#NextCategoryButton.Visible", hasCategories);
 
-        // Current nameplate preview
-        String previewText;
-        String previewHex = null;
+        populateDetailPanel(cmd, selected, active, econEnabled, usingCash);
+    }
+
+    private void applyPlayerDisplay(@Nonnull UICommandBuilder cmd,
+                                    @Nullable TagDefinition active,
+                                    @Nonnull LanguageManager lang) {
+
+        String username = playerRef.getUsername() != null ? playerRef.getUsername() : "Player";
+
+        String playerDisplayText = username;
+        String playerDisplayHex = null;
 
         try {
-            String baseName = playerRef.getUsername();
-            String coloredNameplate = tagManager.buildNameplate(playerRef, baseName, uuid);
-            previewText = ColorFormatter.stripFormatting(coloredNameplate);
+            String fullNameplate = TagManager.get().buildNameplate(playerRef, username, uuid);
+            String stripped = ColorFormatter.stripFormatting(fullNameplate);
+            if (stripped != null && !stripped.isBlank()) {
+                playerDisplayText = stripped;
+            }
 
-            if (uuid != null) {
-                String rankPrefix = TagManager.get().getIntegrations().getPrimaryPrefix(uuid);
-                previewHex = ColorFormatter.extractFirstHexColor(rankPrefix);
-
-                if (previewHex == null) {
-                    if (active != null) previewHex = ColorFormatter.extractFirstHexColor(active.getDisplay());
-                }
+            String firstHex = ColorFormatter.extractFirstHexColor(fullNameplate);
+            if (firstHex != null && !firstHex.isBlank()) {
+                playerDisplayHex = firstHex;
             }
         } catch (Throwable ignored) {
-            previewText = playerRef.getUsername();
         }
 
-        cmd.set("#CurrentNameplateLabel.Text", previewText);
-        if (previewHex != null) cmd.set("#CurrentNameplateLabel.Style.TextColor", "#" + previewHex);
+        cmd.set("#PlayerNameLabel.Text", playerDisplayText);
+        if (playerDisplayHex != null) {
+            cmd.set("#PlayerNameLabel.Style.TextColor", "#" + playerDisplayHex);
+        } else {
+            cmd.set("#PlayerNameLabel.Style.TextColor", COLOR_TEXT_PRIMARY);
+        }
+
+        String currentTagText = lang.tr("ui.tags.current_tag_none");
+        String currentTagHex = null;
+
+        if (active != null) {
+            String activeDisplay = active.getDisplay();
+            if (activeDisplay != null && !activeDisplay.isBlank()) {
+                currentTagText = ColorFormatter.stripFormatting(activeDisplay);
+                String hex = ColorFormatter.extractUiTextColor(activeDisplay);
+                if (hex == null) {
+                    hex = ColorFormatter.extractFirstHexColor(activeDisplay);
+                }
+                currentTagHex = hex;
+            } else if (active.getId() != null && !active.getId().isBlank()) {
+                currentTagText = prettifyId(active.getId());
+            }
+        }
+
+        cmd.set("#CurrentNameplateLabel.Text", currentTagText);
+        if (currentTagHex != null) {
+            cmd.set("#CurrentNameplateLabel.Style.TextColor", "#" + currentTagHex);
+        } else {
+            cmd.set("#CurrentNameplateLabel.Style.TextColor", COLOR_TEXT_PRIMARY);
+        }
     }
 
     @Override
@@ -476,24 +516,17 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             case "prev_page" -> {
                 if (currentPage <= 0) return;
                 currentPage--;
-
-                UICommandBuilder cmd = new UICommandBuilder();
-                UIEventBuilder evt = new UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, evt, false);
+                detailHelpVisible = false;
+                refresh(ref, store);
             }
 
             case "next_page" -> {
                 List<TagDefinition> tags = createFilteredSnapshot();
                 int totalPages = Math.max(1, (int) Math.ceil(tags.size() / (double) PAGE_SIZE));
                 if (currentPage >= totalPages - 1) return;
-
                 currentPage++;
-
-                UICommandBuilder cmd = new UICommandBuilder();
-                UIEventBuilder evt = new UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, evt, false);
+                detailHelpVisible = false;
+                refresh(ref, store);
             }
 
             case "filter_changed" -> filterQuery = normalizeFilter(data.filter);
@@ -503,19 +536,16 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 if (now - lastFilterApplyMs < 200) return;
                 lastFilterApplyMs = now;
 
-                String requested = data.filter; // now always passed from Apply/Clear
-                String newFilter = normalizeFilter(requested);
-
+                String newFilter = normalizeFilter(data.filter);
                 if (!Objects.equals(this.filterQuery, newFilter)) {
                     this.filterQuery = newFilter;
-                    currentPage = 0;
-                    canUseCache.clear();
+                    this.currentPage = 0;
+                    this.selectedTagId = null;
+                    this.detailHelpVisible = false;
+                    this.canUseCache.clear();
                 }
 
-                UICommandBuilder cmd = new UICommandBuilder();
-                UIEventBuilder evt = new UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, evt, false);
+                refresh(ref, store);
             }
 
             case "prev_category" -> {
@@ -531,12 +561,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 }
 
                 currentPage = 0;
+                selectedTagId = null;
+                detailHelpVisible = false;
                 canUseCache.clear();
-
-                UICommandBuilder cmd = new UICommandBuilder();
-                UIEventBuilder evt = new UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, evt, false);
+                refresh(ref, store);
             }
 
             case "next_category" -> {
@@ -552,177 +580,370 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 }
 
                 currentPage = 0;
+                selectedTagId = null;
+                detailHelpVisible = false;
                 canUseCache.clear();
-
-                UICommandBuilder cmd = new UICommandBuilder();
-                UIEventBuilder evt = new UIEventBuilder();
-                rebuildPage(ref, store, cmd, evt, true);
-                sendUpdate(cmd, evt, false);
+                refresh(ref, store);
             }
 
-            case "hover_tag" -> {
-                try {
-                    if (uuid == null) return;
-
-                    TagManager manager = TagManager.get();
-                    TagDefinition def = (data.tagId != null && !data.tagId.isEmpty()) ? manager.getTag(data.tagId) : null;
-                    if (def == null) return;
-
-                    boolean canUse = manager.canUseTag(playerRef, uuid, def);
-                    boolean owns = manager.ownsTag(uuid, def.getId());
-
-                    boolean econEnabled = manager.getIntegrations().hasAnyEconomy();
-                    boolean usingCash = Settings.get().isEconomySystemEnabled()
-                            && Settings.get().isUseCoinSystem()
-                            && manager.getIntegrations().isPrimaryEconomyAvailable();
-
-                    if (!isLocked(def, canUse, owns)) {
-                        UICommandBuilder cmd = new UICommandBuilder();
-                        cmd.set("#RequirementsPanel.Visible", false);
-                        sendUpdate(cmd, new UIEventBuilder(), false);
-                        return;
-                    }
-
-                    String title = ColorFormatter.stripFormatting(def.getDisplay() != null ? def.getDisplay() : def.getId());
-                    String body = buildRequirementsBody(def, canUse, owns, econEnabled, usingCash);
-
-                    UICommandBuilder cmd = new UICommandBuilder();
-                    cmd.set("#RequirementsPanel.Visible", true);
-                    cmd.set("#ReqTitleLabel.Text", title);
-                    cmd.set("#ReqBodyLabel.Text", body);
-
-                    sendUpdate(cmd, new UIEventBuilder(), false);
-                }
-                catch (Throwable t) {
-                    LOGGER.at(Level.WARNING)
-                            .withCause(t)
-                            .log("[MysticNameTags] Error while handling hover_tag for %s", data.tagId);
-
-                    UICommandBuilder cmd = new UICommandBuilder();
-                    cmd.set("#RequirementsPanel.Visible", false);
-                    sendUpdate(cmd, new UIEventBuilder(), false);
-                }
+            case "select_tag" -> {
+                if (data.tagId == null || data.tagId.isEmpty()) return;
+                selectedTagId = data.tagId;
+                detailHelpVisible = false;
+                refresh(ref, store);
             }
 
-            case "hover_clear" -> {
-                UICommandBuilder cmd = new UICommandBuilder();
-                cmd.set("#RequirementsPanel.Visible", false);
-                sendUpdate(cmd, new UIEventBuilder(), false);
+            case "toggle_help" -> {
+                detailHelpVisible = !detailHelpVisible;
+                refresh(ref, store);
             }
 
-            case "tag_click" -> {
-                if (uuid == null) return;
+            case "activate_selected" -> activateSelectedTag(ref, store);
+        }
+    }
 
-                TagManager manager = TagManager.get();
+    private void activateSelectedTag(@Nonnull Ref<EntityStore> ref,
+                                     @Nonnull Store<EntityStore> store) {
 
-                TagDefinition def = null;
-                String resolvedId = null;
+        if (uuid == null || selectedTagId == null || selectedTagId.isEmpty()) {
+            return;
+        }
 
-                if (data.tagId != null && !data.tagId.isEmpty()) {
-                    def = manager.getTag(data.tagId);
-                    if (def != null) {
-                        resolvedId = def.getId();
-                    }
+        TagManager manager = TagManager.get();
+        TagDefinition def = manager.getTag(selectedTagId);
+        if (def == null || def.getId() == null || def.getId().isEmpty()) {
+            return;
+        }
+
+        String resolvedId = def.getId();
+
+        int delaySeconds = Settings.get().getTagEquipDelaySeconds();
+        boolean ownsBefore = manager.ownsTag(uuid, resolvedId);
+
+        if (delaySeconds > 0 && ownsBefore) {
+            TagDefinition currentlyEquipped = manager.getEquipped(uuid);
+            boolean isCurrentlyEquipped = currentlyEquipped != null
+                    && resolvedId.equalsIgnoreCase(currentlyEquipped.getId());
+
+            if (!isCurrentlyEquipped) {
+                long now = System.currentTimeMillis();
+                Long last = LAST_EQUIP_TIME.get(uuid);
+                long minDelta = delaySeconds * 1000L;
+
+                if (last != null && now - last < minDelta) {
+                    long remainingMs = minDelta - (now - last);
+                    long remainingSec = (remainingMs + 999L) / 1000L;
+
+                    cooldownWarningText = LanguageManager.get().tr(
+                            "tags.equip_cooldown",
+                            Map.of("seconds", String.valueOf(remainingSec))
+                    );
+
+                    sendEquipCooldownNotification(remainingSec);
+                    refresh(ref, store);
+                    return;
                 }
-
-                if (def == null) {
-                    int rowIndex = data.rowIndex;
-                    if (rowIndex < 0 || rowIndex >= MAX_ROWS) return;
-
-                    List<TagDefinition> tags = createFilteredSnapshot();
-                    int startIndex = currentPage * PAGE_SIZE;
-                    int absIndex = startIndex + rowIndex;
-
-                    if (absIndex < 0 || absIndex >= tags.size()) return;
-
-                    def = tags.get(absIndex);
-                    if (def == null || def.getId() == null || def.getId().isEmpty()) return;
-
-                    resolvedId = def.getId();
-                }
-
-                if (resolvedId == null || resolvedId.isEmpty()) return;
-
-                // ----------------------------------------------------------------
-                // EQUIP COOLDOWN CHECK
-                // ----------------------------------------------------------------
-                int delaySeconds = Settings.get().getTagEquipDelaySeconds();
-                if (delaySeconds > 0) {
-                    TagDefinition currentlyEquipped = manager.getEquipped(uuid);
-                    boolean isCurrentlyEquipped = currentlyEquipped != null
-                            && resolvedId.equalsIgnoreCase(currentlyEquipped.getId());
-
-                    // Only throttle *equipping a different tag*, not unequips
-                    if (!isCurrentlyEquipped) {
-                        long now = System.currentTimeMillis();
-                        Long last = LAST_EQUIP_TIME.get(uuid);
-                        long minDelta = delaySeconds * 1000L;
-
-                        if (last != null && now - last < minDelta) {
-                            long remainingMs = minDelta - (now - last);
-                            long remainingSec = (remainingMs + 999L) / 1000L;
-                            sendEquipCooldownNotification(remainingSec);
-                            return;
-                        }
-                    }
-                }
-
-                TagPurchaseResult result;
-
-                try {
-                    result = manager.toggleTag(playerRef, uuid, resolvedId);
-
-                    Player player = store.getComponent(ref, Player.getComponentType());
-                    if (player != null) {
-                        String baseName = playerRef.getUsername();
-                        try {
-                            switch (result) {
-                                case UNLOCKED_FREE,
-                                     UNLOCKED_PAID,
-                                     EQUIPPED_ALREADY_OWNED -> {
-                                    String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
-                                    NameplateManager.get().apply(uuid, store, ref, text);
-                                }
-                                case UNEQUIPPED -> {
-                                    NameplateManager.get().restore(uuid, store, ref, baseName);
-                                    String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
-                                    NameplateManager.get().apply(uuid, store, ref, text);
-                                }
-                                default -> {
-                                    // no-op
-                                }
-                            }
-                        } catch (Throwable ignored) { }
-                    }
-
-                    // If we just EQUIPPED a tag, record cooldown timestamp
-                    switch (result) {
-                        case UNLOCKED_FREE:
-                        case UNLOCKED_PAID:
-                        case EQUIPPED_ALREADY_OWNED:
-                            LAST_EQUIP_TIME.put(uuid, System.currentTimeMillis());
-                            break;
-                        default:
-                            // unequip / errors do not affect cooldown
-                            break;
-                    }
-
-                    handlePurchaseResult(result, def);
-
-                } catch (Throwable t) {
-                    LOGGER.at(Level.WARNING).withCause(t)
-                            .log("[MysticNameTags] Failed to handle tag_click for " + resolvedId);
-                }
-
-                // IMPORTANT: local UI cache of canUseTag is now stale (perms/ownership changed)
-                canUseCache.clear();
-
-                UICommandBuilder updateCmd = new UICommandBuilder();
-                UIEventBuilder updateEvt = new UIEventBuilder();
-                rebuildPage(ref, store, updateCmd, updateEvt, true);
-                sendUpdate(updateCmd, updateEvt, false);
             }
         }
+
+        try {
+            TagPurchaseResult result = manager.toggleTag(playerRef, uuid, resolvedId);
+
+            Player player = store.getComponent(ref, Player.getComponentType());
+            if (player != null) {
+                String baseName = playerRef.getUsername();
+                try {
+                    switch (result) {
+                        case UNLOCKED_FREE,
+                             UNLOCKED_PAID,
+                             EQUIPPED_ALREADY_OWNED -> {
+                            String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
+                            NameplateManager.get().apply(uuid, store, ref, text);
+                        }
+                        case UNEQUIPPED -> {
+                            NameplateManager.get().restore(uuid, store, ref, baseName);
+                            String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
+                            NameplateManager.get().apply(uuid, store, ref, text);
+                        }
+                        default -> {
+                            // no-op
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+
+            switch (result) {
+                case UNLOCKED_FREE:
+                case UNLOCKED_PAID:
+                case EQUIPPED_ALREADY_OWNED:
+                    LAST_EQUIP_TIME.put(uuid, System.currentTimeMillis());
+                    break;
+                default:
+                    break;
+            }
+
+            handlePurchaseResult(result, def);
+            cooldownWarningText = null;
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to handle activate_selected for " + resolvedId);
+        }
+
+        detailHelpVisible = false;
+        canUseCache.clear();
+        refresh(ref, store);
+    }
+
+    private void refresh(@Nonnull Ref<EntityStore> ref,
+                         @Nonnull Store<EntityStore> store) {
+        UICommandBuilder cmd = new UICommandBuilder();
+        UIEventBuilder evt = new UIEventBuilder();
+        rebuildPage(ref, store, cmd, evt, true);
+        sendUpdate(cmd, evt, false);
+    }
+
+    private void ensureValidSelection(@Nonnull List<TagDefinition> tags,
+                                      @Nullable TagDefinition active) {
+        if (!tags.isEmpty()) {
+            if (selectedTagId != null) {
+                for (TagDefinition def : tags) {
+                    if (def != null && def.getId() != null && def.getId().equalsIgnoreCase(selectedTagId)) {
+                        return;
+                    }
+                }
+            }
+
+            if (active != null && active.getId() != null) {
+                for (TagDefinition def : tags) {
+                    if (def != null && def.getId() != null && def.getId().equalsIgnoreCase(active.getId())) {
+                        selectedTagId = active.getId();
+                        return;
+                    }
+                }
+            }
+
+            TagDefinition first = tags.get(0);
+            selectedTagId = first != null ? first.getId() : null;
+            return;
+        }
+
+        selectedTagId = null;
+    }
+
+    @Nullable
+    private TagDefinition resolveSelectedDefinition(@Nonnull List<TagDefinition> tags) {
+        if (selectedTagId == null || selectedTagId.isEmpty()) return null;
+
+        for (TagDefinition def : tags) {
+            if (def != null && def.getId() != null && def.getId().equalsIgnoreCase(selectedTagId)) {
+                return def;
+            }
+        }
+        return null;
+    }
+
+    private String buildPriceText(@Nonnull TagDefinition def,
+                                  boolean econEnabled,
+                                  boolean usingCash,
+                                  @Nonnull LanguageManager lang) {
+        if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
+            return lang.tr("ui.tags.price_free");
+        } else if (!econEnabled) {
+            return lang.tr("ui.tags.price_economy_disabled", Map.of("price", String.valueOf(def.getPrice())));
+        } else if (usingCash) {
+            return lang.tr("ui.tags.price_cash", Map.of("price", String.valueOf(def.getPrice())));
+        } else {
+            return lang.tr("ui.tags.price_coins", Map.of("price", String.valueOf(def.getPrice())));
+        }
+    }
+
+    private void populateDetailPanel(@Nonnull UICommandBuilder cmd,
+                                     @Nullable TagDefinition def,
+                                     @Nullable TagDefinition active,
+                                     boolean econEnabled,
+                                     boolean usingCash) {
+
+        LanguageManager lang = LanguageManager.get();
+        TagManager manager = TagManager.get();
+
+        if (def == null) {
+            cmd.set("#DetailEmpty.Visible", true);
+            cmd.set("#DetailContent.Visible", false);
+            cmd.set("#RequirementsPanel.Visible", false);
+            cmd.set("#HowItWorksPopup.Visible", false);
+            cmd.set("#RequirementsText.Text", "");
+            cmd.set("#HowItWorksText.Text", "");
+            return;
+        }
+
+        boolean canUse = canUseTag(manager, def);
+        boolean owns = uuid != null && def.getId() != null && manager.ownsTag(uuid, def.getId());
+        boolean isEquipped = active != null
+                && active.getId() != null
+                && def.getId() != null
+                && active.getId().equalsIgnoreCase(def.getId());
+
+        boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
+
+        String detailName = ColorFormatter.stripFormatting(def.getDisplay() != null ? def.getDisplay() : def.getId());
+        String detailNameHex = def.getDisplay() != null ? ColorFormatter.extractUiTextColor(def.getDisplay()) : null;
+
+        String detailDesc = def.getDescription() != null
+                ? ColorFormatter.stripFormatting(def.getDescription())
+                : "";
+
+        String category = (def.getCategory() != null && !def.getCategory().isBlank())
+                ? def.getCategory()
+                : lang.tr("ui.tags.category_none");
+
+        String price = buildPriceText(def, econEnabled, usingCash, lang);
+
+        String status;
+        if (isEquipped) {
+            status = lang.tr("ui.tags.detail_status_active");
+        } else if (isLocked(def, canUse, owns)) {
+            if (hasCost && !owns) {
+                status = lang.tr("ui.tags.status_locked_not_purchased");
+            } else {
+                status = lang.tr("ui.tags.status_locked_requirements");
+            }
+        } else if (owns) {
+            status = lang.tr("ui.tags.detail_status_owned");
+        } else if (hasCost) {
+            status = lang.tr("ui.tags.detail_status_purchasable");
+        } else {
+            status = lang.tr("ui.tags.detail_status_free");
+        }
+
+        String preview = detailName;
+        String previewHex = detailNameHex;
+
+        String selectButtonText;
+        if (isEquipped) {
+            selectButtonText = lang.tr("ui.tags.button_unequip");
+        } else if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
+            selectButtonText = owns
+                    ? lang.tr("ui.tags.button_equip")
+                    : lang.tr("ui.tags.button_unlock");
+        } else {
+            selectButtonText = owns
+                    ? lang.tr("ui.tags.button_equip")
+                    : lang.tr("ui.tags.button_buy");
+        }
+
+        cmd.set("#DetailEmpty.Visible", false);
+        cmd.set("#DetailContent.Visible", true);
+
+        cmd.set("#DetailName.Text", detailName);
+        if (detailNameHex != null) {
+            cmd.set("#DetailName.Style.TextColor", "#" + detailNameHex);
+        } else {
+            cmd.set("#DetailName.Style.TextColor", COLOR_TEXT_PRIMARY);
+        }
+
+        cmd.set("#DetailLore.Text", def.getId() != null ? def.getId() : "");
+        cmd.set("#DetailDesc.Text", detailDesc);
+        cmd.set("#DetailCategory.Text", category);
+        cmd.set("#DetailPrice.Text", price);
+        cmd.set("#DetailStatus.Text", status);
+        cmd.set("#DetailPreview.Text", preview);
+        cmd.set("#SelectBtn.Text", selectButtonText);
+
+        if (cooldownWarningText != null && !cooldownWarningText.isBlank()) {
+            cmd.set("#CooldownWarning.Text", cooldownWarningText);
+            cmd.set("#CooldownWarning.Visible", true);
+        } else {
+            cmd.set("#CooldownWarning.Text", "");
+            cmd.set("#CooldownWarning.Visible", false);
+        }
+
+        if (previewHex != null) {
+            cmd.set("#DetailPreview.Style.TextColor", "#" + previewHex);
+        } else {
+            cmd.set("#DetailPreview.Style.TextColor", COLOR_TEXT_PRIMARY);
+        }
+
+        List<String> reqLines = buildRequirementLines(def, canUse, owns, econEnabled, usingCash);
+        boolean showReq = !reqLines.isEmpty();
+
+        cmd.set("#RequirementsPanel.Visible", showReq);
+        cmd.set("#RequirementsText.Text", toLineBlock(reqLines));
+
+        List<String> helpLines = buildHelpLines(def, canUse, owns, isEquipped, hasCost);
+        cmd.set("#HowItWorksTitle.Text", lang.getHowItWorksPanelTitle());
+        cmd.set("#HowItWorksPopup.Visible", detailHelpVisible);
+        cmd.set("#HowItWorksText.Text", toLineBlock(helpLines));
+
+        double progress = calculateProgressFraction(def, canUse, owns);
+        progress = Math.max(0.0D, Math.min(1.0D, progress));
+        cmd.set("#DetailProgressBar.Value", progress);
+        cmd.set("#DetailProgressText.Text", buildProgressText(def, progress, canUse, owns));
+    }
+
+    @Nonnull
+    private String toLineBlock(@Nullable List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+
+        for (String line : lines) {
+            if (line == null) continue;
+            String trimmed = line.trim();
+
+            if (!first) {
+                sb.append("\n");
+            }
+            sb.append(trimmed);
+            first = false;
+        }
+
+        return sb.toString();
+    }
+
+    private boolean canUseTag(@Nonnull TagManager tagManager, @Nonnull TagDefinition def) {
+        if (uuid == null || def.getId() == null) return false;
+        return canUseCache.computeIfAbsent(def.getId(), id -> tagManager.canUseTag(playerRef, uuid, def));
+    }
+
+    private static final class RowBadge {
+        final String text;
+        final String textColor;
+
+        private RowBadge(String text, String textColor) {
+            this.text = text;
+            this.textColor = textColor;
+        }
+    }
+
+    @Nonnull
+    private RowBadge buildRowBadge(@Nonnull TagDefinition def,
+                                   boolean canUse,
+                                   boolean owns,
+                                   boolean isEquipped,
+                                   boolean hasCost) {
+        LanguageManager lang = LanguageManager.get();
+
+        if (isEquipped) {
+            return new RowBadge(lang.tr("ui.tags.badge_active"), "#3fb950");
+        }
+
+        if (isLocked(def, canUse, owns)) {
+            return new RowBadge(lang.tr("ui.tags.badge_locked"), "#f85149");
+        }
+
+        if (owns) {
+            return new RowBadge(lang.tr("ui.tags.badge_owned"), "#58a6ff");
+        }
+
+        if (hasCost) {
+            return new RowBadge(lang.tr("ui.tags.badge_buy"), "#f0b429");
+        }
+
+        return new RowBadge(lang.tr("ui.tags.badge_free"), "#c9d1d9");
     }
 
     private static boolean hasAnyRequirements(TagDefinition def) {
@@ -752,52 +973,43 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         if (def == null) return false;
 
         boolean lockedByReq = hasAnyRequirements(def) && !canUse;
-
         boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
         boolean lockedByPay = hasCost && !owns;
 
         return lockedByReq || lockedByPay;
     }
 
-    private String buildRequirementsBody(TagDefinition def,
-                                         boolean canUse,
-                                         boolean owns,
-                                         boolean econEnabled,
-                                         boolean usingCash) {
+    @Nonnull
+    private List<String> buildRequirementLines(TagDefinition def,
+                                               boolean canUse,
+                                               boolean owns,
+                                               boolean econEnabled,
+                                               boolean usingCash) {
 
         LanguageManager lang = LanguageManager.get();
-        StringBuilder sb = new StringBuilder();
+        List<String> lines = new ArrayList<>();
 
-        // ----- Permission -----
         String perm = def.getPermission();
         boolean permissionGate = Settings.get().isPermissionGateEnabled();
         boolean fullGate = Settings.get().isFullPermissionGateEnabled();
 
-        if (perm != null && !perm.isEmpty()) {
-            sb.append(lang.tr("ui.tags.req_permission_title"))
-                    .append("\n  ").append(perm);
-
+        if (perm != null && !perm.isEmpty() && !canUse) {
+            String gateSuffix = "";
             if (fullGate) {
-                sb.append("\n  ").append(lang.tr("ui.tags.req_permission_gate_full"));
+                gateSuffix = " (" + lang.tr("ui.tags.req_permission_gate_full") + ")";
             } else if (permissionGate) {
-                sb.append("\n  ").append(lang.tr("ui.tags.req_permission_gate_soft"));
+                gateSuffix = " (" + lang.tr("ui.tags.req_permission_gate_soft") + ")";
             }
-
-            sb.append("\n\n");
+            lines.add(lang.tr("ui.tags.req_permission_title") + ": " + perm + gateSuffix);
         }
 
-        // ----- Playtime -----
         Integer mins = def.getRequiredPlaytimeMinutes();
         if (mins != null && mins > 0) {
-            sb.append(lang.tr("ui.tags.req_playtime_title")).append("\n  ");
-
             int currentMinutes = 0;
 
             if (uuid != null) {
                 try {
-                    Integer cur = TagManager.get()
-                            .getIntegrations()
-                            .getPlaytimeMinutes(uuid);
+                    Integer cur = TagManager.get().getIntegrations().getPlaytimeMinutes(uuid);
                     if (cur != null && cur > 0) {
                         currentMinutes = cur;
                     }
@@ -805,144 +1017,353 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 }
             }
 
-            // Try a dedicated i18n key first
-            String key = "ui.tags.req_playtime_progress";
-            String progress = lang.tr(key, Map.of(
-                    "current", String.valueOf(currentMinutes),
-                    "required", String.valueOf(mins)
-            ));
-
-            // If the translation is missing, tr() will return the key itself –
-            // fall back to the old single-value string plus inline progress.
-            if (progress.equals(key)) {
-                String base = lang.tr(
-                        "ui.tags.req_playtime_value",
-                        Map.of("minutes", String.valueOf(mins))
-                );
-                progress = base + " (" + currentMinutes + " / " + mins + " min)";
+            if (currentMinutes < mins) {
+                lines.add(lang.tr("ui.tags.req_playtime_progress", Map.of(
+                        "current", String.valueOf(currentMinutes),
+                        "required", String.valueOf(mins)
+                )));
             }
-
-            sb.append(progress).append("\n\n");
         }
 
-        // ----- Owned Tags -----
         List<String> required = def.getRequiredOwnedTags();
-        if (required != null && !required.isEmpty()) {
-            sb.append(lang.tr("ui.tags.req_owned_title")).append("\n");
+        if (required != null) {
             for (String id : required) {
                 if (id == null || id.isBlank()) continue;
+
                 boolean have = (uuid != null) && TagManager.get().ownsTag(uuid, id);
-
-                String pretty = resolveTagDisplayName(id);
-
-                sb.append("  • ").append(have ? "+ " : "- ").append(pretty).append("\n");
+                if (!have) {
+                    lines.add(lang.tr("ui.tags.req_owned_missing", Map.of(
+                            "tag", resolveTagDisplayName(id)
+                    )));
+                }
             }
-            sb.append("\n");
         }
 
-        // ----- Stat requirements -----
         List<TagDefinition.StatRequirement> statReqs = def.getRequiredStats();
-        if (statReqs != null && !statReqs.isEmpty()) {
-            sb.append(lang.tr("ui.tags.req_stat_title")).append("\n");
-
+        if (statReqs != null) {
             for (TagDefinition.StatRequirement req : statReqs) {
                 if (req == null || !req.isValid()) continue;
 
-                String keyPretty = resolveStatDisplayName(req.getKey());
+                Integer current = null;
+                try {
+                    if (uuid != null) {
+                        current = TagManager.get().getIntegrations().getStatValue(uuid, req.getKey());
+                    }
+                } catch (Throwable ignored) {
+                }
 
-                sb.append("  • ")
-                        .append(lang.tr("ui.tags.req_stat_value", Map.of(
-                                "key", keyPretty,
-                                "value", String.valueOf(req.getMin())
-                        )))
-                        .append("\n");
+                int currentVal = current != null ? current : 0;
+                Integer min = req.getMin();
+                if (min != null && currentVal < min) {
+                    lines.add(lang.tr("ui.tags.req_stat_progress", Map.of(
+                            "stat", resolveStatDisplayName(req.getKey()),
+                            "current", String.valueOf(currentVal),
+                            "required", String.valueOf(min)
+                    )));
+                }
             }
-
-            sb.append("\n");
         }
 
-        // ----- Item requirements -----
         List<TagDefinition.ItemRequirement> items = def.getRequiredItems();
-        if (items != null && !items.isEmpty()) {
-            sb.append(lang.tr("ui.tags.req_items_title")).append("\n");
+        if (items != null) {
             for (TagDefinition.ItemRequirement req : items) {
                 if (req == null || req.getItemId() == null || req.getItemId().isBlank()) continue;
-
-                String prettyItem = resolveItemDisplayName(req.getItemId());
-
-                sb.append("  • ")
-                        .append(req.getAmount())
-                        .append("+ ")
-                        .append(prettyItem)
-                        .append("\n");
+                lines.add(lang.tr("ui.tags.req_item_line", Map.of(
+                        "amount", String.valueOf(req.getAmount()),
+                        "item", resolveItemDisplayName(req.getItemId())
+                )));
             }
-            sb.append("\n");
         }
 
-        // ----- Placeholder requirements -----
         List<TagDefinition.PlaceholderRequirement> phReqs = def.getPlaceholderRequirements();
-        if (phReqs != null && !phReqs.isEmpty()) {
-            sb.append(lang.tr("ui.tags.req_placeholders_title")).append("\n");
+        if (phReqs != null) {
             for (TagDefinition.PlaceholderRequirement req : phReqs) {
                 if (req == null) continue;
+
                 String ph = req.getPlaceholder();
                 String op = req.getOperator();
                 String val = req.getValue();
+
                 if (ph == null || op == null || val == null) continue;
 
-                sb.append("  • ").append(ph)
-                        .append(" ").append(op).append(" ")
-                        .append(val)
-                        .append("\n");
+                String actual = null;
+                try {
+                    actual = TagManager.get().getIntegrations().resolvePlaceholderRequirement(playerRef, ph, op, val);
+                } catch (Throwable ignored) {
+                }
+
+                boolean matched = false;
+                if (actual != null) {
+                    matched = evaluatePlaceholderRequirement(actual, op, val);
+                }
+
+                if (!matched) {
+                    lines.add(lang.tr("ui.tags.req_placeholder_line", Map.of(
+                            "placeholder", ph,
+                            "operator", op,
+                            "value", val
+                    )));
+                }
             }
-            sb.append("\n");
         }
 
-        // ----- Purchase cost -----
         boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
         if (hasCost && !owns) {
-            sb.append(lang.tr("ui.tags.req_purchase_title"))
-                    .append("\n  ")
-                    .append(lang.tr(usingCash ? "ui.tags.req_purchase_value_cash" : "ui.tags.req_purchase_value_coins",
-                            Map.of("price", String.valueOf(def.getPrice()))));
-
+            String priceText = lang.tr(
+                    usingCash ? "ui.tags.req_purchase_value_cash" : "ui.tags.req_purchase_value_coins",
+                    Map.of("price", String.valueOf(def.getPrice()))
+            );
             if (!econEnabled) {
-                sb.append(" ").append(lang.tr("ui.tags.req_purchase_missing_econ_suffix"));
+                priceText += " " + lang.tr("ui.tags.req_purchase_missing_econ_suffix");
             }
-            sb.append("\n\n");
+            lines.add(lang.tr("ui.tags.req_purchase_title") + ": " + priceText);
         }
 
-        // ----- Status line -----
-        if (!canUse && hasAnyRequirements(def)) {
-            sb.append(lang.tr("ui.tags.status_locked_requirements"));
-        } else if (hasCost && !owns) {
-            sb.append(lang.tr("ui.tags.status_locked_not_purchased"));
-        } else {
-            sb.append(lang.tr("ui.tags.status_available"));
-        }
-
-        return sb.toString().trim();
+        return lines;
     }
 
-    // =====================================================================
-    // Pretty-name helpers for Requirements panel
-    // =====================================================================
+    @Nonnull
+    private List<String> buildHelpLines(@Nonnull TagDefinition def,
+                                        boolean canUse,
+                                        boolean owns,
+                                        boolean isEquipped,
+                                        boolean hasCost) {
+
+        LanguageManager lang = LanguageManager.get();
+
+        List<String> customLines = lang.getHowItWorksPanelLines();
+        if (!customLines.isEmpty()) {
+            return customLines;
+        }
+
+        List<String> lines = new ArrayList<>();
+
+        lines.add(lang.tr("ui.tags.howitworks.inspect"));
+        lines.add(lang.tr("ui.tags.howitworks.preview"));
+        lines.add(lang.tr("ui.tags.howitworks.progress"));
+
+        if (isEquipped) {
+            lines.add("");
+            lines.add(lang.tr("ui.tags.howitworks.active"));
+            lines.add(lang.tr("ui.tags.howitworks.unequip"));
+        } else if (owns) {
+            lines.add("");
+            lines.add(lang.tr("ui.tags.howitworks.owned"));
+            lines.add(lang.tr("ui.tags.howitworks.equip"));
+        } else if (hasCost) {
+            lines.add("");
+            lines.add(lang.tr("ui.tags.howitworks.purchase_required"));
+            lines.add(lang.tr("ui.tags.howitworks.purchase_requirements"));
+        } else {
+            lines.add("");
+            lines.add(lang.tr("ui.tags.howitworks.free_unlock"));
+            lines.add(lang.tr("ui.tags.howitworks.unlock_when_met"));
+        }
+
+        if (!canUse && hasAnyRequirements(def)) {
+            lines.add("");
+            lines.add(lang.tr("ui.tags.howitworks.check_requirements"));
+        } else {
+            lines.add("");
+            lines.add(lang.tr("ui.tags.howitworks.requirements_met"));
+        }
+
+        String category = def.getCategory();
+        if (category != null && !category.isBlank()) {
+            lines.add("");
+            lines.add(lang.tr("ui.tags.howitworks.category_line", Map.of(
+                    "category", category
+            )));
+        }
+
+        String rawDesc = def.getDescription();
+        if (rawDesc != null && !rawDesc.isBlank()) {
+            String clean = ColorFormatter.stripFormatting(rawDesc).trim();
+            if (!clean.isEmpty()) {
+                lines.add(lang.tr("ui.tags.howitworks.description_line", Map.of(
+                        "description", clean
+                )));
+            }
+        }
+
+        return lines;
+    }
+
+    private double calculateProgressFraction(@Nonnull TagDefinition def,
+                                             boolean canUse,
+                                             boolean owns) {
+
+        int totalChecks = 0;
+        int completed = 0;
+
+        String perm = def.getPermission();
+        if (perm != null && !perm.isEmpty()) {
+            totalChecks++;
+            if (canUse || !Settings.get().isFullPermissionGateEnabled()) {
+                completed++;
+            }
+        }
+
+        Integer mins = def.getRequiredPlaytimeMinutes();
+        if (mins != null && mins > 0) {
+            totalChecks++;
+
+            int currentMinutes = 0;
+            if (uuid != null) {
+                try {
+                    Integer cur = TagManager.get().getIntegrations().getPlaytimeMinutes(uuid);
+                    if (cur != null) currentMinutes = cur;
+                } catch (Throwable ignored) {
+                }
+            }
+
+            if (currentMinutes >= mins) {
+                completed++;
+            }
+        }
+
+        List<String> required = def.getRequiredOwnedTags();
+        if (required != null && !required.isEmpty()) {
+            for (String id : required) {
+                if (id == null || id.isBlank()) continue;
+
+                totalChecks++;
+                if (uuid != null && TagManager.get().ownsTag(uuid, id)) {
+                    completed++;
+                }
+            }
+        }
+
+        List<TagDefinition.StatRequirement> statReqs = def.getRequiredStats();
+        if (statReqs != null) {
+            for (TagDefinition.StatRequirement req : statReqs) {
+                if (req == null || !req.isValid()) continue;
+
+                totalChecks++;
+
+                try {
+                    Integer val = null;
+                    if (uuid != null) {
+                        val = TagManager.get().getIntegrations().getStatValue(uuid, req.getKey());
+                    }
+
+                    Integer min = req.getMin();
+                    if (val != null && min != null && val >= min) {
+                        completed++;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+
+        List<TagDefinition.ItemRequirement> items = def.getRequiredItems();
+        if (items != null) {
+            for (TagDefinition.ItemRequirement req : items) {
+                if (req == null || req.getItemId() == null || req.getItemId().isBlank()) continue;
+                totalChecks++;
+            }
+        }
+
+        List<TagDefinition.PlaceholderRequirement> phReqs = def.getPlaceholderRequirements();
+        if (phReqs != null) {
+            for (TagDefinition.PlaceholderRequirement req : phReqs) {
+                if (req == null) continue;
+                totalChecks++;
+            }
+        }
+
+        if (def.isPurchasable() && def.getPrice() > 0.0D) {
+            totalChecks++;
+            if (owns) {
+                completed++;
+            }
+        }
+
+        if (totalChecks <= 0) {
+            return owns || canUse ? 1.0D : 0.0D;
+        }
+
+        return completed / (double) totalChecks;
+    }
+
+    @Nonnull
+    private String buildProgressText(@Nonnull TagDefinition def,
+                                     double progress,
+                                     boolean canUse,
+                                     boolean owns) {
+        LanguageManager lang = LanguageManager.get();
+        int percent = (int) Math.round(progress * 100.0D);
+
+        if (isLocked(def, canUse, owns)) {
+            return lang.tr("ui.tags.progress_percent", Map.of("percent", String.valueOf(percent)));
+        }
+
+        if (owns) {
+            return lang.tr("ui.tags.progress_ready");
+        }
+
+        return lang.tr("ui.tags.progress_percent", Map.of("percent", String.valueOf(percent)));
+    }
+
+    private boolean evaluatePlaceholderRequirement(@Nonnull String actual,
+                                                   @Nonnull String operator,
+                                                   @Nonnull String expected) {
+        String a = actual.trim();
+        String op = operator.trim();
+        String exp = expected.trim();
+
+        if (op.equalsIgnoreCase("true")) {
+            return "true".equalsIgnoreCase(a);
+        }
+        if (op.equalsIgnoreCase("false")) {
+            return "false".equalsIgnoreCase(a);
+        }
+
+        Double aNum = tryParseDouble(a);
+        Double eNum = tryParseDouble(exp);
+
+        if (aNum != null && eNum != null) {
+            return switch (op) {
+                case "==" -> Double.compare(aNum, eNum) == 0;
+                case "!=" -> Double.compare(aNum, eNum) != 0;
+                case ">" -> aNum > eNum;
+                case ">=" -> aNum >= eNum;
+                case "<" -> aNum < eNum;
+                case "<=" -> aNum <= eNum;
+                default -> false;
+            };
+        }
+
+        return switch (op) {
+            case "==" -> a.equalsIgnoreCase(exp);
+            case "!=" -> !a.equalsIgnoreCase(exp);
+            case "contains" -> a.toLowerCase(Locale.ROOT).contains(exp.toLowerCase(Locale.ROOT));
+            default -> false;
+        };
+    }
+
+    @Nullable
+    private static Double tryParseDouble(@Nullable String s) {
+        if (s == null) return null;
+        try {
+            return Double.parseDouble(s.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
 
     @Nonnull
     private static String prettifyId(@Nonnull String rawId) {
         String id = rawId.trim();
         if (id.isEmpty()) return rawId;
 
-        // strip namespace (hytale:goblin -> goblin)
         int colon = id.indexOf(':');
         if (colon >= 0 && colon < id.length() - 1) {
             id = id.substring(colon + 1);
         }
 
-        // normalize separators
         id = id.replace('_', ' ').replace('-', ' ');
 
-        // title-case words
         String[] parts = id.split("\\s+");
         StringBuilder out = new StringBuilder();
         for (String p : parts) {
@@ -970,13 +1391,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     @Nonnull
     private static String resolveItemDisplayName(@Nonnull String itemId) {
-        // Try to get a real item name via API (reflection-safe),
-        // fall back to prettified id.
         try {
             ItemStack probe = new ItemStack(itemId, 1);
             Object item = probe.getItem();
             if (item != null) {
-                // Common patterns: getDisplayName(), getName(), getTitle(), etc.
                 for (String mName : new String[]{"getDisplayName", "getName", "getTitle"}) {
                     try {
                         Method m = item.getClass().getMethod(mName);
@@ -984,11 +1402,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                             String s = (String) m.invoke(item);
                             if (s != null && !s.isBlank()) return s;
                         }
-                    } catch (NoSuchMethodException ignored) { }
+                    } catch (NoSuchMethodException ignored) {
+                    }
                 }
             }
         } catch (Throwable ignored) {
-            // invalid id / asset load issue / api mismatch
         }
         return prettifyId(itemId);
     }
@@ -1028,58 +1446,48 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         if (key.isEmpty()) return statKey;
 
         boolean wildcard = key.contains("*");
-
         LanguageManager lang = LanguageManager.get();
 
-        // ---------------- EndlessLeveling.* stats ----------------
         if (key.startsWith("endlessleveling.")) {
             String tail = key.substring("endlessleveling.".length());
 
-            // Level
             if (tail.equalsIgnoreCase("level")) {
                 return lang.tr("ui.stats.endlessleveling.level");
             }
 
-            // XP
             if (tail.equalsIgnoreCase("xp")) {
                 return lang.tr("ui.stats.endlessleveling.xp");
             }
 
-            // Skill attributes: endlessleveling.skill.<ATTR>
             String lowerTail = tail.toLowerCase(Locale.ROOT);
             if (lowerTail.startsWith("skill.")) {
                 String rawAttr = tail.substring("skill.".length());
-                String pretty  = prettifyId(rawAttr);
+                String pretty = prettifyId(rawAttr);
 
                 String label = lang.tr(
                         "ui.stats.endlessleveling.skill_prefix",
                         Map.of("name", pretty)
                 );
 
-                // tr() returns the key itself if missing – detect and fallback
                 if (!label.equals("ui.stats.endlessleveling.skill_prefix")) {
                     return label;
                 }
                 return "Skill Level: " + pretty;
             }
 
-            // Unknown EndlessLeveling stat – just prettify the tail
             return prettifyId(tail);
         }
 
-        // ---------------- custom.<stat> (directly localized) ----------------
         if (key.startsWith("custom.")) {
-            String statPart = key.substring("custom.".length()); // e.g. "kills_total"
-            String langKey  = "ui.stats.custom." + statPart;
+            String statPart = key.substring("custom.".length());
+            String langKey = "ui.stats.custom." + statPart;
 
             String translated = lang.tr(langKey);
-            // tr() returns the key itself if missing – detect that
             if (!translated.equals(langKey)) {
                 return translated;
             }
         }
 
-        // ---------------- killed.* (per-entity kills) ----------------
         if (key.startsWith("killed.")) {
             String entityName = resolveKillEntityDisplayNameFromStatKey(key);
 
@@ -1095,42 +1503,36 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 }
             }
 
-            String translated = lang.tr("ui.stats.prefix.kills",
-                    Map.of("name", entityName));
+            String translated = lang.tr("ui.stats.prefix.kills", Map.of("name", entityName));
             if (!translated.equals("ui.stats.prefix.kills")) {
                 return translated;
             }
             return "Kills: " + entityName;
         }
 
-        // ---------------- mined.* (blocks broken) ----------------
         if (key.startsWith("mined.")) {
-            String blockId   = key.substring("mined.".length());
-            String pretty    = prettifyId(blockId);
-            String translated = lang.tr("ui.stats.prefix.mined",
-                    Map.of("name", pretty));
+            String blockId = key.substring("mined.".length());
+            String pretty = prettifyId(blockId);
+            String translated = lang.tr("ui.stats.prefix.mined", Map.of("name", pretty));
             if (!translated.equals("ui.stats.prefix.mined")) {
                 return translated;
             }
             return "Blocks Mined: " + pretty;
         }
 
-        // ---------------- placed.* (blocks placed) ----------------
         if (key.startsWith("placed.")) {
-            String blockId   = key.substring("placed.".length());
-            String pretty    = prettifyId(blockId);
-            String translated = lang.tr("ui.stats.prefix.placed",
-                    Map.of("name", pretty));
+            String blockId = key.substring("placed.".length());
+            String pretty = prettifyId(blockId);
+            String translated = lang.tr("ui.stats.prefix.placed", Map.of("name", pretty));
             if (!translated.equals("ui.stats.prefix.placed")) {
                 return translated;
             }
             return "Blocks Placed: " + pretty;
         }
 
-        // ---------------- generic fallback ----------------
         int dot = key.indexOf('.');
         if (dot >= 0 && dot < key.length() - 1) {
-            String statPart = key.substring(dot + 1); // after category
+            String statPart = key.substring(dot + 1);
             return prettifyId(statPart);
         }
 
@@ -1140,9 +1542,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     private void handlePurchaseResult(TagPurchaseResult result, TagDefinition def) {
         LanguageManager lang = LanguageManager.get();
 
-        // Keep this colorized title, but make the text localizable
         String title = "&b" + lang.tr("plugin.title");
-
         String tagDisplay = def != null ? def.getDisplay() : "";
 
         String msgKey;
@@ -1198,10 +1598,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String msg = lang.tr(msgKey, vars);
 
         String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
-        String parsedMsg   = WiFlowPlaceholderSupport.apply(playerRef, msg);
+        String parsedMsg = WiFlowPlaceholderSupport.apply(playerRef, msg);
 
         parsedTitle = ColorFormatter.colorize(parsedTitle);
-        parsedMsg   = ColorFormatter.colorize(parsedMsg);
+        parsedMsg = ColorFormatter.colorize(parsedMsg);
 
         MysticNotificationUtil.send(
                 playerRef.getPacketHandler(),
@@ -1219,10 +1619,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 Map.of("seconds", String.valueOf(secondsLeft)));
 
         String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
-        String parsedMsg   = WiFlowPlaceholderSupport.apply(playerRef, msg);
+        String parsedMsg = WiFlowPlaceholderSupport.apply(playerRef, msg);
 
         parsedTitle = ColorFormatter.colorize(parsedTitle);
-        parsedMsg   = ColorFormatter.colorize(parsedMsg);
+        parsedMsg = ColorFormatter.colorize(parsedMsg);
 
         MysticNotificationUtil.send(
                 playerRef.getPacketHandler(),
@@ -1231,8 +1631,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 NotificationStyle.Default
         );
     }
-
-    // ---------------- Event data ----------------
 
     public static class UIEventData {
 
@@ -1261,7 +1659,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         public String filter;
         public int rowIndex = -1;
 
-        public UIEventData() {}
+        public UIEventData() {
+        }
 
         private static int parseRowIndex(String value) {
             if (value == null || value.isEmpty()) return -1;
