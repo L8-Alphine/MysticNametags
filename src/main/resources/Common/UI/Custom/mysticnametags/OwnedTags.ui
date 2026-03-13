@@ -3,489 +3,403 @@
 
 $C = "../Common.ui";
 
+// ==================== STYLES ====================
+@TitleStyle = LabelStyle(
+  FontSize: 20,
+  RenderUppercase: true,
+  RenderBold: true,
+  TextColor: #f0b429,
+  HorizontalAlignment: Center,
+  VerticalAlignment: Center
+);
+
+@SectionTitle = LabelStyle(
+  FontSize: 12,
+  RenderBold: true,
+  RenderUppercase: true,
+  TextColor: #b0b8c0
+);
+
+@StatLabel = LabelStyle(
+  FontSize: 11,
+  TextColor: #8b949e,
+  VerticalAlignment: Center
+);
+
+@StatValue = LabelStyle(
+  FontSize: 12,
+  TextColor: #e6edf3,
+  RenderBold: true,
+  VerticalAlignment: Center
+);
+
+@RowNameStyle = LabelStyle(
+  FontSize: 14,
+  TextColor: #ffffff,
+  RenderBold: true,
+  VerticalAlignment: Center
+);
+
+@RowDescStyle = LabelStyle(
+  FontSize: 11,
+  TextColor: #94a3b8,
+  VerticalAlignment: Center
+);
+
+@EmptyStyle = LabelStyle(
+  FontSize: 14,
+  TextColor: #6e7681,
+  HorizontalAlignment: Center,
+  VerticalAlignment: Center
+);
+
+@EquipBtnStyle = TextButtonStyle(
+  Default: (
+    Background: (Color: #2b3542),
+    LabelStyle: (
+      FontSize: 11,
+      TextColor: #dce6f2,
+      RenderBold: true,
+      RenderUppercase: true,
+      HorizontalAlignment: Center,
+      VerticalAlignment: Center
+    )
+  ),
+  Hovered: (
+    Background: (Color: #3b4552),
+    LabelStyle: (
+      FontSize: 11,
+      TextColor: #ffffff,
+      RenderBold: true,
+      RenderUppercase: true,
+      HorizontalAlignment: Center,
+      VerticalAlignment: Center
+    )
+  ),
+  Pressed: (
+    Background: (Color: #1b2532),
+    LabelStyle: (
+      FontSize: 11,
+      TextColor: #dce6f2,
+      RenderBold: true,
+      RenderUppercase: true,
+      HorizontalAlignment: Center,
+      VerticalAlignment: Center
+    )
+  )
+);
+
+// ==================== PAGE ====================
 $C.@PageOverlay {
+  LayoutMode: Top;
+
+  SceneBlur #SceneBlur1 {}
+  SceneBlur #SceneBlur2 {}
+
   Group {
-    LayoutMode: Center;
-    Anchor: (Full: 1);
+    LayoutMode: Middle;
+    FlexWeight: 1;
 
-    $C.@DecoratedContainer #OwnedTagsRoot {
-      @ContentPadding = Padding(Full: 14);
-      @CloseButton = false;
+    Group #OwnedTagsRoot {
+      Anchor: (Width: 1180, Height: 720);
+      Background: (Color: #101010(0.80));
+      OutlineColor: #2f2f2f;
+      OutlineSize: 3;
+      LayoutMode: Top;
+      Padding: (Top: 18, Bottom: 18, Left: 20, Right: 20);
 
-      Anchor: (Width: 1100, Height: 640);
+      // ==================== TITLE ====================
+      Group {
+        Anchor: (Height: 52, Bottom: 14);
+        LayoutMode: Middle;
 
-      Group #RootContent {
-        LayoutMode: Top;
-        Padding: @ContentPadding;
-        Background: #020617(0.94);
+        Group {
+          Anchor: (Width: 260, Height: 34);
+          Background: (TexturePath: "../Common/PopupTitle.png", HorizontalBorder: 50, VerticalBorder: 0);
+          LayoutMode: Center;
+          Padding: (Top: 4);
 
-        Label #TitleLabel {
-          Text: "Owned Tags";
-          Anchor: (Height: 24);
-          Style: (
-            FontSize: 22,
-            TextColor: #ffffff,
-            RenderBold: true,
-            HorizontalAlignment: Center
-          );
-        }
-
-        Label #Subtitle {
-          Text: "View and equip tags you already own.";
-          Anchor: (Height: 18);
-          Style: (
-            FontSize: 13,
-            TextColor: #cbd5f5,
-            HorizontalAlignment: Center
-          );
-        }
-
-        // Current nameplate preview
-        Label #CurrentNameplateLabel {
-          Text: "Current: (loading...)";
-          Anchor: (Height: 20);
-          Style: (FontSize: 14, TextColor: #cbd5f5);
-        }
-
-        // Search row
-        Group #SearchRow {
-          LayoutMode: Left;
-          Anchor: (Height: 30);
-          Padding: (Top: 4, Bottom: 4);
-
-          Label {
-            Text: "Search:";
-            Anchor: (Width: 70, Height: 22);
-            Style: (FontSize: 12, TextColor: #96a9be);
+          Label #TitleLabel {
+            Style: @TitleStyle;
+            Text: "OWNED TAGS";
           }
+        }
+      }
+
+      // ==================== TOP INFO ====================
+      Group {
+        Anchor: (Height: 132, Bottom: 14);
+        Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
+        Padding: (Full: 12);
+        LayoutMode: Top;
+
+        Group {
+          Anchor: (Height: 8, Bottom: 10);
+          Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png");
+        }
+
+        Label #SubtitleLabel {
+          Text: "View and equip tags you already own.";
+          Anchor: (Height: 18, Bottom: 10);
+          Style: (FontSize: 13, TextColor: #cbd5f5, HorizontalAlignment: Center);
+        }
+
+        Group {
+          LayoutMode: Left;
+          Anchor: (Height: 20, Bottom: 10);
+          Label #CurrentTagPrefix {
+            Text: "Current:";
+            Style: @StatLabel;
+            Anchor: (Width: 86, Vertical: 0);
+          }
+          Label #CurrentNameplateLabel {
+            Text: "(loading...)";
+            Style: @StatValue;
+            FlexWeight: 1;
+          }
+        }
+
+        Group {
+          LayoutMode: Left;
+          Anchor: (Height: 38);
 
           $C.@TextField #TagSearchBox {
-            FlexWeight: 0;
-            Anchor: (Width: 420, Height: 24);
+            FlexWeight: 1;
+            Anchor: (Height: 38);
             PlaceholderText: "Search owned tags...";
-          }
-
-          Group { Anchor: (Width: 8); }
-
-          $C.@SmallSecondaryTextButton #ApplyFilterButton {
-            @Anchor = (Width: 84, Height: 24);
-            Text: "APPLY";
           }
 
           Group { Anchor: (Width: 6); }
 
+          $C.@SmallSecondaryTextButton #ApplyFilterButton {
+            Text: "APPLY";
+            Anchor: (Width: 86, Height: 32);
+          }
+
+          Group { Anchor: (Width: 4); }
+
           $C.@SmallSecondaryTextButton #ClearFilterButton {
-            @Anchor = (Width: 84, Height: 24);
             Text: "CLEAR";
+            Anchor: (Width: 86, Height: 32);
           }
+        }
+      }
 
-          Group { FlexWeight: 1; }
+      // ==================== LIST PANEL ====================
+      Group {
+        FlexWeight: 1;
+        Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
+        Padding: (Full: 12);
+        LayoutMode: Top;
+
+        Group {
+          Anchor: (Height: 8, Bottom: 10);
+          Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png");
         }
 
-        Group { Anchor: (Height: 4); }
-        $C.@ContentSeparator { }
-        Group { Anchor: (Height: 4); }
+        Label #ListSectionTitle {
+          Text: "YOUR TAGS";
+          Style: @SectionTitle;
+          Anchor: (Height: 18, Bottom: 8);
+        }
 
-        // List header
-        Group #ListHeader {
+        Group {
           LayoutMode: Left;
-          Anchor: (Height: 20);
-          Padding: (Bottom: 4);
+          Anchor: (Height: 22, Bottom: 6);
 
-          Label {
+          Label #ListHeaderTag {
             Text: "Tag";
-            Anchor: (Width: 520, Height: 20);
+            Anchor: (Width: 650, Height: 18);
             Style: (FontSize: 12, TextColor: #64748b);
           }
 
           Group { FlexWeight: 1; }
 
-          Label {
+          Label #ListHeaderAction {
             Text: "Action";
-            Anchor: (Width: 120, Height: 20);
-            Style: (FontSize: 12, TextColor: #64748b);
+            Anchor: (Width: 140, Height: 18);
+            Style: (FontSize: 12, TextColor: #64748b, HorizontalAlignment: Center);
           }
         }
 
-        Group { Anchor: (Height: 4); }
+        Label #EmptyOwnedLabel {
+          Text: "You do not own any tags yet.";
+          Style: @EmptyStyle;
+          Anchor: (Height: 30, Bottom: 8);
+          Visible: false;
+        }
 
-        // Tag rows
-        Group #TagList {
-          Anchor: (Full: 1);
-          LayoutMode: Top;
-          Padding: (Right: 4);
+        Group {
+          FlexWeight: 1;
+          LayoutMode: TopScrolling;
+          ScrollbarStyle: $C.@DefaultScrollbarStyle;
 
-          // Rows 0-9
-          // (pattern repeated, same as main UI but simplified)
-
-          // Row 0
           Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
+            LayoutMode: Top;
 
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
+            Group #TagRow0Card {
+              Anchor: (Height: 52, Bottom: 8);
+              Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8);
+              Background: (Color: #171717);
+              OutlineColor: #333333;
+              OutlineSize: 2;
+              Visible: false;
+              LayoutMode: Left;
 
-              Label #TagRow0Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+              Group {
+                LayoutMode: Top;
+                Anchor: (Width: 650, Height: 34, Vertical: 0);
+
+                Label #TagRow0Name {
+                  Text: "Tag Name";
+                  Style: @RowNameStyle;
+                  Anchor: (Height: 18, Bottom: 2);
+                }
+
+                Label #TagRow0Description {
+                  Text: "Short description";
+                  Style: @RowDescStyle;
+                  Anchor: (Height: 14);
+                }
               }
 
-              Label #TagRow0Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
-            }
+              Group { FlexWeight: 1; }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow0Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 1
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow1Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
-              }
-
-              Label #TagRow1Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
+              TextButton #TagRow0Button {
+                Text: "EQUIP";
+                Anchor: (Width: 140, Height: 28, Vertical: 0);
+                Style: @EquipBtnStyle;
               }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow1Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 2
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow2Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow1Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow1Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow1Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow2Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow1Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow2Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 3
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow3Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow2Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow2Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow2Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow3Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow2Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow3Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 4
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow4Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow3Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow3Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow3Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow4Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow3Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow4Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 5
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow5Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow4Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow4Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow4Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow5Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow4Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow5Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 6
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow6Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow5Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow5Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow5Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow6Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow5Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow6Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 7
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow7Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow6Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow6Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow6Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow7Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow6Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow7Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 8
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow8Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow7Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow7Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow7Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow8Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow7Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow8Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
-            }
-          }
-
-          // Row 9
-          Group {
-            LayoutMode: Left;
-            Anchor: (Height: 42);
-            Padding: (Left: 12, Right: 12, Bottom: 4);
-            Background: #020617(0.86);
-
-            Group {
-              LayoutMode: Top;
-              Anchor: (Width: 520, Height: 32);
-
-              Label #TagRow9Name {
-                Text: "Tag Name";
-                Anchor: (Height: 18);
-                Style: (FontSize: 15, TextColor: #ffffff);
+            Group #TagRow8Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow8Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow8Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
               }
-
-              Label #TagRow9Description {
-                Text: "Short description of this tag.";
-                Anchor: (Height: 14);
-                Style: (FontSize: 12, TextColor: #94a3b8);
-              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow8Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
 
-            Group { FlexWeight: 1; }
-
-            $C.@SmallSecondaryTextButton #TagRow9Button {
-              @Anchor = (Width: 130, Height: 22);
-              Text: "Equip";
+            Group #TagRow9Card { Anchor: (Height: 52, Bottom: 8); Padding: (Left: 12, Right: 12, Top: 8, Bottom: 8); Background: (Color: #171717); OutlineColor: #333333; OutlineSize: 2; Visible: false; LayoutMode: Left;
+              Group { LayoutMode: Top; Anchor: (Width: 650, Height: 34, Vertical: 0);
+                Label #TagRow9Name { Text: "Tag Name"; Style: @RowNameStyle; Anchor: (Height: 18, Bottom: 2); }
+                Label #TagRow9Description { Text: "Short description"; Style: @RowDescStyle; Anchor: (Height: 14); }
+              }
+              Group { FlexWeight: 1; }
+              TextButton #TagRow9Button { Text: "EQUIP"; Anchor: (Width: 140, Height: 28, Vertical: 0); Style: @EquipBtnStyle; }
             }
           }
         }
 
-        Group { Anchor: (Height: 6); }
+        Group { Anchor: (Height: 10); }
 
-        // Page controls
-        Group #PageControls {
+        Group {
           LayoutMode: Left;
-          Anchor: (Height: 24);
+          Anchor: (Height: 32);
 
           $C.@SmallSecondaryTextButton #PrevPageButton {
-            @Anchor = (Width: 110, Height: 22);
-            Text: "Prev";
+            Text: "PREV";
+            Anchor: (Width: 96, Height: 32);
           }
 
           Group { FlexWeight: 1; }
 
           Label #PageLabel {
             Text: "Page 1/1";
-            Anchor: (Width: 220, Height: 20);
-            Style: (FontSize: 12, TextColor: #96a9be, HorizontalAlignment: Center);
+            Anchor: (Width: 200, Height: 22);
+            Style: (FontSize: 12, TextColor: #96a9be, HorizontalAlignment: Center, VerticalAlignment: Center);
           }
 
           Group { FlexWeight: 1; }
 
           $C.@SmallSecondaryTextButton #NextPageButton {
-            @Anchor = (Width: 110, Height: 22);
-            Text: "Next";
+            Text: "NEXT";
+            Anchor: (Width: 96, Height: 32);
           }
         }
+      }
 
-        Group { Anchor: (Height: 16); }
+      Group { Anchor: (Height: 10); }
 
-        // Footer
-        Group {
-          LayoutMode: Left;
-          Anchor: (Height: 26);
+      Group {
+        LayoutMode: Left;
+        Anchor: (Height: 30);
 
-          Label {
-            Text: "Click a tag to equip or unequip it.";
-            Anchor: (Height: 20);
-            Style: (FontSize: 12, TextColor: #64748b);
-          }
+        Label #FooterHint {
+          Text: "Click a tag to equip or unequip it.";
+          Anchor: (Height: 20);
+          Style: (FontSize: 12, TextColor: #64748b);
+        }
 
-          Group { FlexWeight: 1; }
+        Group { FlexWeight: 1; }
 
-          $C.@SmallSecondaryTextButton #BottomCloseButton {
-            @Anchor = (Width: 110, Height: 26);
-            Text: "CLOSE";
-          }
+        $C.@SmallSecondaryTextButton #BottomCloseButton {
+          Text: "CLOSE";
+          Anchor: (Width: 120, Height: 32);
         }
       }
     }
