@@ -20,25 +20,35 @@ import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
-import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
+import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.RuntimeMXBean;
+import java.lang.reflect.Method;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNameTagsDashboardUI.UIEventData> {
 
+    private static final String LAYOUT = "mysticnametags/Dashboard.ui";
+
     private static final String CURSEFORGE_URL =
             "https://www.curseforge.com/hytale/mods/mysticnametags";
     private static final String BUGREPORT_URL =
             "https://github.com/L8-Alphine/MysticNametags/issues";
+
+    private static final String TAB_OVERVIEW = "Overview";
+    private static final String TAB_INTEGRATIONS = "Integrations";
+    private static final String TAB_DEBUG = "Debug";
+    private static final String TAB_SUPPORT = "Support";
 
     public static final BuilderCodec<UIEventData> CODEC = BuilderCodec.builder(
                     UIEventData.class,
@@ -50,6 +60,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             .build();
 
     private final PlayerRef playerRef;
+    private String activeTab = TAB_OVERVIEW;
 
     public MysticNameTagsDashboardUI(@Nonnull PlayerRef playerRef) {
         super(playerRef, CustomPageLifetime.CanDismissOrCloseThroughInteraction, CODEC);
@@ -65,16 +76,14 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         LanguageManager lang = LanguageManager.get();
         MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
 
-        // Load the dashboard UI layout (supports localized override)
-        commands.append(lang.resolveUi("mysticnametags/Dashboard.ui"));
+        commands.append(LAYOUT);
 
-        // Initial text
+        applyStaticText(commands);
+        populateDynamicFields(commands);
+        populateIntegrationDetails(commands);
+        applyTabSelection(commands, activeTab);
         commands.set("#StatusText.Text", lang.tr("dashboard.welcome"));
 
-        // Populate dynamic labels (version, integrations, storage, resources...)
-        populateDynamicFields(commands);
-
-        // Update notifier for admins
         UpdateChecker checker = plugin.getUpdateChecker();
         if (checker != null && checker.hasVersionInfo()) {
             IntegrationManager integrations = TagManager.get().getIntegrations();
@@ -108,18 +117,15 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             }
         }
 
-        // Default tab selection
-        applyTabSelection(commands, "overview");
-
-        // Sidebar/tab buttons
         events.addEventBinding(CustomUIEventBindingType.Activating, "#OverviewTabButton",
                 EventData.of("Action", "tab_overview"));
         events.addEventBinding(CustomUIEventBindingType.Activating, "#IntegrationsTabButton",
                 EventData.of("Action", "tab_integrations"));
         events.addEventBinding(CustomUIEventBindingType.Activating, "#DebugTabButton",
                 EventData.of("Action", "tab_debug"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#SupportTabButton",
+                EventData.of("Action", "tab_support"));
 
-        // Main footer buttons
         events.addEventBinding(CustomUIEventBindingType.Activating, "#RefreshButton",
                 EventData.of("Action", "refresh"));
         events.addEventBinding(CustomUIEventBindingType.Activating, "#ReloadButton",
@@ -131,7 +137,6 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         events.addEventBinding(CustomUIEventBindingType.Activating, "#CloseButton",
                 EventData.of("Action", "close"));
 
-        // Quick Actions
         events.addEventBinding(CustomUIEventBindingType.Activating, "#OpenTagsButton",
                 EventData.of("Action", "open_tag_ui"));
         events.addEventBinding(CustomUIEventBindingType.Activating, "#ClearCacheButton",
@@ -155,7 +160,6 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
         try {
             switch (action) {
-
                 case "refresh" -> {
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
@@ -163,11 +167,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                             lang.tr("dashboard.refreshed_toast"),
                             NotificationStyle.Success
                     );
-
-                    UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", lang.tr("dashboard.refreshed_status"));
-                    populateDynamicFields(update);
-                    sendUpdate(update, null, false);
+                    refreshDashboard(lang.tr("dashboard.refreshed_status"));
                 }
 
                 case "reload" -> {
@@ -179,46 +179,40 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                             lang.tr("dashboard.reloaded_toast"),
                             NotificationStyle.Success
                     );
-
-                    UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", lang.tr("dashboard.reloaded_status"));
-                    populateDynamicFields(update);
-                    sendUpdate(update, null, false);
+                    refreshDashboard(lang.tr("dashboard.reloaded_status"));
                 }
 
-                case "open_mod_page" -> MysticNotificationUtil.send(
-                        playerRef.getPacketHandler(),
+                case "open_mod_page" -> sendLinkToChatOrFallback(
                         "&b" + lang.tr("plugin.title") + " " + lang.tr("dashboard.modpage_title_suffix"),
-                        lang.tr("dashboard.modpage_open", Map.of("url", CURSEFORGE_URL)),
-                        NotificationStyle.Default
+                        "MysticNameTags Mod Page",
+                        CURSEFORGE_URL
                 );
 
-                case "report_bug" -> MysticNotificationUtil.send(
-                        playerRef.getPacketHandler(),
+                case "report_bug" -> sendLinkToChatOrFallback(
                         "&c" + lang.tr("plugin.title") + " " + lang.tr("dashboard.bugreport_title_suffix"),
-                        lang.tr("dashboard.bugreport_open", Map.of("url", BUGREPORT_URL)),
-                        NotificationStyle.Default
+                        "MysticNameTags Bug Reports",
+                        BUGREPORT_URL
                 );
 
                 case "tab_overview" -> {
-                    UICommandBuilder update = new UICommandBuilder();
-                    applyTabSelection(update, "overview");
-                    sendUpdate(update, null, false);
+                    activeTab = TAB_OVERVIEW;
+                    refreshDashboard(null);
                 }
 
                 case "tab_integrations" -> {
-                    UICommandBuilder update = new UICommandBuilder();
-                    applyTabSelection(update, "integrations");
-                    sendUpdate(update, null, false);
+                    activeTab = TAB_INTEGRATIONS;
+                    refreshDashboard(null);
                 }
 
                 case "tab_debug" -> {
-                    UICommandBuilder update = new UICommandBuilder();
-                    applyTabSelection(update, "debug");
-                    sendUpdate(update, null, false);
+                    activeTab = TAB_DEBUG;
+                    refreshDashboard(null);
                 }
 
-                // --- Quick Actions ---
+                case "tab_support" -> {
+                    activeTab = TAB_SUPPORT;
+                    refreshDashboard(null);
+                }
 
                 case "open_tag_ui" -> {
                     Player player = store.getComponent(ref, Player.getComponentType());
@@ -257,10 +251,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                             NotificationStyle.Success
                     );
 
-                    UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", lang.tr("dashboard.cleared_cache_status"));
-                    populateDynamicFields(update);
-                    sendUpdate(update, null, false);
+                    refreshDashboard(lang.tr("dashboard.cleared_cache_status"));
                 }
 
                 case "refresh_nameplate" -> {
@@ -286,10 +277,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                             NotificationStyle.Success
                     );
 
-                    UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", lang.tr("dashboard.refresh_nameplate_status"));
-                    populateDynamicFields(update);
-                    sendUpdate(update, null, false);
+                    refreshDashboard(lang.tr("dashboard.refresh_nameplate_status"));
                 }
 
                 case "debug_snapshot" -> {
@@ -297,24 +285,23 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     IntegrationManager integrations = manager.getIntegrations();
 
                     String coloredTag = manager.getColoredActiveTag(uuid);
-                    String plainTag   = manager.getPlainActiveTag(uuid);
+                    String plainTag = manager.getPlainActiveTag(uuid);
 
-                    boolean lp         = integrations.isLuckPermsAvailable();
+                    boolean lp = integrations.isLuckPermsAvailable();
                     boolean hyperPerms = integrations.isHyperPermsAvailable();
-                    boolean permsPlus  = integrations.isPermissionsPlusActive();
+                    boolean permsPlus = integrations.isPermissionsPlusActive();
 
                     String permBackend = resolvePermissionBackendName(integrations);
 
                     boolean econPrimary = integrations.isPrimaryEconomyAvailable();
                     boolean econEcoTale = integrations.isEcoTaleAvailable();
-                    boolean econVault   = integrations.isVaultAvailable();
-                    boolean econElite   = integrations.isEliteEconomyAvailable();
+                    boolean econVault = integrations.isVaultAvailable();
+                    boolean econElite = integrations.isEliteEconomyAvailable();
 
                     Settings settings = Settings.get();
                     boolean wiFlowPlaceholders = settings.isWiFlowPlaceholdersEnabled();
                     boolean helpchPlaceholders = settings.isHelpchPlaceholderApiEnabled();
 
-                    // Storage info
                     StorageBackend backend = StorageBackend.fromString(settings.getStorageBackendRaw());
                     String storageDetails = buildStorageDetailsForDebug(settings, backend);
 
@@ -330,7 +317,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                             .append("  Version: ").append(version).append('\n')
                             .append("  Tags Loaded: ").append(manager.getTagCount()).append('\n')
                             .append("  Active Tag (colored): ").append(coloredTag).append('\n')
-                            .append("  Active Tag (plain):   ").append(plainTag).append('\n')
+                            .append("  Active Tag (plain): ").append(plainTag).append('\n')
                             .append("  Permission Backend: ").append(permBackend).append('\n')
                             .append("  LuckPerms: ").append(lp).append('\n')
                             .append("  HyperPerms: ").append(hyperPerms).append('\n')
@@ -353,14 +340,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                             NotificationStyle.Default
                     );
 
-                    UICommandBuilder update = new UICommandBuilder();
-                    update.set("#StatusText.Text", lang.tr("dashboard.debug_snapshot_status"));
-                    populateDynamicFields(update);
-                    sendUpdate(update, null, false);
+                    refreshDashboard(lang.tr("dashboard.debug_snapshot_status"));
                 }
 
                 case "close" -> close();
-
                 default -> close();
             }
 
@@ -377,6 +360,81 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         }
     }
 
+    private void refreshDashboard(String statusOverride) {
+        LanguageManager lang = LanguageManager.get();
+
+        UICommandBuilder update = new UICommandBuilder();
+        applyStaticText(update);
+        populateDynamicFields(update);
+        populateIntegrationDetails(update);
+        applyTabSelection(update, activeTab);
+        update.set("#StatusText.Text", statusOverride != null ? statusOverride : lang.tr("dashboard.welcome"));
+        sendUpdate(update, null, false);
+    }
+
+    private void applyStaticText(@Nonnull UICommandBuilder commands) {
+        LanguageManager lang = LanguageManager.get();
+
+        commands.set("#TitleLabel.Text", lang.tr("ui.dashboard.title"));
+        commands.set("#FooterCloseHint.Text", lang.tr("ui.dashboard.close_hint"));
+        commands.set("#MainCloseHint.Text", lang.tr("ui.dashboard.close_hint"));
+
+        commands.set("#QuickActionsHeader.Text", lang.tr("ui.dashboard.quick_actions"));
+
+        commands.set("#OpenTagsButton.Text", lang.tr("ui.dashboard.action_open_tags"));
+        commands.set("#ClearCacheButton.Text", lang.tr("ui.dashboard.action_clear_cache"));
+        commands.set("#RefreshNameplateButton.Text", lang.tr("ui.dashboard.action_refresh_nameplate"));
+        commands.set("#DebugSnapshotButton.Text", lang.tr("ui.dashboard.action_debug_snapshot"));
+
+        commands.set("#RefreshButton.Text", lang.tr("ui.dashboard.button_refresh"));
+        commands.set("#ReloadButton.Text", lang.tr("ui.dashboard.button_reload"));
+        commands.set("#ModPageButton.Text", lang.tr("ui.dashboard.button_mod_page"));
+        commands.set("#BugReportButton.Text", lang.tr("ui.dashboard.button_bug_report"));
+        commands.set("#CloseButton.Text", lang.tr("ui.common.close"));
+
+        commands.set("#OverviewHeader.Text", lang.tr("ui.dashboard.tab_overview").toUpperCase(Locale.ROOT));
+        commands.set("#OverviewHintsHeader.Text", lang.tr("ui.dashboard.hints_header").toUpperCase(Locale.ROOT));
+
+        commands.set("#IntegrationsHeader.Text", lang.tr("ui.dashboard.tab_integrations").toUpperCase(Locale.ROOT));
+        commands.set("#PermissionsSectionHeader.Text", "PERMISSION BACKENDS");
+        commands.set("#PrefixSectionHeader.Text", "PREFIX PROVIDERS");
+        commands.set("#EconomySectionHeader.Text", "ECONOMY BACKENDS");
+        commands.set("#PlaytimeSectionHeader.Text", "PLAYTIME / STATS / ITEMS");
+        commands.set("#PlaceholderSectionHeader.Text", lang.tr("ui.dashboard.placeholders_header").toUpperCase(Locale.ROOT));
+        commands.set("#NameplateSectionHeader.Text", "NAMEPLATE EXTENSIONS");
+        commands.set("#NotesSectionHeader.Text", "NOTES");
+
+        commands.set("#PermissionsCardTitle.Text", "PERMISSIONS");
+        commands.set("#PrefixesCardTitle.Text", "PREFIXES");
+        commands.set("#EconomyCardTitle.Text", "ECONOMY");
+        commands.set("#PlaytimeCardTitle.Text", "PLAYTIME");
+        commands.set("#PlaceholdersCardTitle.Text", "PLACEHOLDERS");
+        commands.set("#NameplateCardTitle.Text", "NAMEPLATES");
+
+        commands.set("#DebugHeader.Text", lang.tr("ui.dashboard.tab_debug_support").toUpperCase(Locale.ROOT));
+        commands.set("#SupportHeader.Text", lang.tr("ui.dashboard.tab_support").toUpperCase(Locale.ROOT));
+
+        commands.set("#OverviewLine0.Text", lang.tr("ui.dashboard.overview.line0"));
+        commands.set("#OverviewLine1.Text", lang.tr("ui.dashboard.overview.line1"));
+        commands.set("#OverviewLine2.Text", lang.tr("ui.dashboard.overview.line2"));
+        commands.set("#OverviewLine3.Text", lang.tr("ui.dashboard.overview.line3"));
+
+        commands.set("#OverviewHint0.Text", lang.tr("ui.dashboard.overview.hint0"));
+        commands.set("#OverviewHint1.Text", lang.tr("ui.dashboard.overview.hint1"));
+        commands.set("#OverviewHint2.Text", lang.tr("ui.dashboard.overview.hint2"));
+
+        commands.set("#DebugLine0.Text", lang.tr("ui.dashboard.debug.line0"));
+        commands.set("#DebugLine1.Text", lang.tr("ui.dashboard.debug.line1"));
+        commands.set("#DebugLine2.Text", lang.tr("ui.dashboard.debug.line2"));
+        commands.set("#DebugLine3.Text", lang.tr("ui.dashboard.debug.line3"));
+        commands.set("#DebugLine4.Text", lang.tr("ui.dashboard.debug.line4"));
+        commands.set("#DebugLine5.Text", lang.tr("ui.dashboard.debug.line5"));
+        commands.set("#DebugLine6.Text", lang.tr("ui.dashboard.debug.line6"));
+
+        commands.set("#SupportLine0.Text", lang.tr("ui.dashboard.support.line0"));
+        commands.set("#SupportLine1.Text", lang.tr("ui.dashboard.support.line1"));
+    }
+
     private void populateDynamicFields(@Nonnull UICommandBuilder commands) {
         LanguageManager lang = LanguageManager.get();
 
@@ -384,7 +442,6 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         UpdateChecker checker = plugin.getUpdateChecker();
 
         String version = plugin.getResolvedVersion();
-
         String versionLabel = lang.tr("dashboard.version_label", Map.of("version", version));
 
         if (checker != null && checker.hasVersionInfo()) {
@@ -406,86 +463,55 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         TagManager tagManager = TagManager.get();
         IntegrationManager integrations = tagManager.getIntegrations();
 
-        boolean lp         = integrations.isLuckPermsAvailable();
-        boolean hyperPerms = integrations.isHyperPermsAvailable();
-        boolean permsPlus  = integrations.isPermissionsPlusActive();
-
         boolean econPrimary = integrations.isPrimaryEconomyAvailable();
         boolean econEcoTale = integrations.isEcoTaleAvailable();
-        boolean econVault   = integrations.isVaultAvailable();
-        boolean econElite   = integrations.isEliteEconomyAvailable();
+        boolean econVault = integrations.isVaultAvailable();
+        boolean econElite = integrations.isEliteEconomyAvailable();
 
         Settings settings = Settings.get();
         boolean wiFlowPlaceholders = settings.isWiFlowPlaceholdersEnabled();
         boolean helpchPlaceholders = settings.isHelpchPlaceholderApiEnabled();
 
-        // --- Integrations summary (Permissions + Economy) ---
         StringBuilder integrationsText = new StringBuilder();
         integrationsText.append(lang.tr("dashboard.integrations_prefix")).append(" ");
 
         String permBackendName = resolvePermissionBackendName(integrations);
-
-        // If backend name is known, show it as the "truth" (active backend).
         if (permBackendName != null && !permBackendName.isBlank() && !"None".equalsIgnoreCase(permBackendName)) {
             integrationsText.append(permBackendName);
         } else {
-            // Fallback: show detections
-            boolean any = false;
-
-            if (hyperPerms) {
-                integrationsText.append("HyperPerms");
-                any = true;
-            }
-            if (lp) {
-                if (any) integrationsText.append(" + ");
-                integrationsText.append(lang.tr("dashboard.integration_luckperms"));
-                any = true;
-            }
-            if (permsPlus) {
-                if (any) integrationsText.append(" + ");
-                integrationsText.append("PermissionsPlus");
-                any = true;
-            }
-            if (!any) {
-                // No lang key required
-                integrationsText.append("None");
-            }
+            integrationsText.append("None");
         }
 
-        integrationsText.append(" | ").append(lang.tr("dashboard.integrations_economy_prefix")).append(" ");
+        integrationsText.append(" ").append(lang.tr("dashboard.integrations_economy_prefix")).append(" ");
 
         if (econPrimary) {
             integrationsText.append(lang.tr("dashboard.economy_primary"));
             if (econEcoTale || econVault || econElite) {
-                integrationsText.append(" ").append(lang.tr("dashboard.economy_fallback_prefix")).append(" ");
+                integrationsText.append(" ").append(lang.tr("dashboard.economy_fallback_prefix"));
                 boolean first = true;
                 if (econEcoTale) { integrationsText.append("EcoTale"); first = false; }
-                if (econVault)   { if (!first) integrationsText.append(", "); integrationsText.append("VaultUnlocked"); first = false; }
-                if (econElite)   { if (!first) integrationsText.append(", "); integrationsText.append("EliteEssentials"); }
+                if (econVault) { if (!first) integrationsText.append(", "); integrationsText.append("VaultUnlocked"); first = false; }
+                if (econElite) { if (!first) integrationsText.append(", "); integrationsText.append("EliteEssentials"); }
                 integrationsText.append(")");
             }
         } else if (econEcoTale || econVault || econElite) {
             boolean first = true;
             if (econEcoTale) { integrationsText.append("EcoTale"); first = false; }
-            if (econVault)   { if (!first) integrationsText.append(" + "); integrationsText.append("VaultUnlocked"); first = false; }
-            if (econElite)   { if (!first) integrationsText.append(" + "); integrationsText.append("EliteEssentials"); }
+            if (econVault) { if (!first) integrationsText.append(" + "); integrationsText.append("VaultUnlocked"); first = false; }
+            if (econElite) { if (!first) integrationsText.append(" + "); integrationsText.append("EliteEssentials"); }
         } else {
             integrationsText.append(lang.tr("dashboard.economy_none"));
         }
 
         commands.set("#IntegrationsLabel.Text", integrationsText.toString().trim());
 
-        // Tags loaded
         commands.set("#TagCountLabel.Text", lang.tr("dashboard.loaded_tags_label", Map.of(
                 "count", String.valueOf(tagManager.getTagCount())
         )));
 
-        // --- Storage summary ---
         StorageBackend backend = StorageBackend.fromString(settings.getStorageBackendRaw());
-        String storageLabel = buildStorageLabel(lang, settings, backend);
-        commands.set("#StorageLabel.Text", storageLabel);
+        commands.set("#StorageLabel.Text", buildStorageLabel(lang, settings, backend));
 
-        // --- Placeholders ---
         StringBuilder placeholderText = new StringBuilder();
         placeholderText.append(lang.tr("dashboard.placeholders_prefix")).append(" ");
 
@@ -508,6 +534,162 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         populateResourceStats(commands);
     }
 
+    private void applyTabSelection(@Nonnull UICommandBuilder commands,
+                                   @Nonnull String tabKey) {
+
+        boolean overview = TAB_OVERVIEW.equalsIgnoreCase(tabKey);
+        boolean integrations = TAB_INTEGRATIONS.equalsIgnoreCase(tabKey);
+        boolean debug = TAB_DEBUG.equalsIgnoreCase(tabKey);
+        boolean support = TAB_SUPPORT.equalsIgnoreCase(tabKey);
+
+        commands.set("#DashboardTabs.SelectedTab", overview ? TAB_OVERVIEW
+                : integrations ? TAB_INTEGRATIONS
+                : debug ? TAB_DEBUG
+                : TAB_SUPPORT);
+
+        commands.set("#TabOverviewPanel.Visible", overview);
+        commands.set("#TabIntegrationsPanel.Visible", integrations);
+        commands.set("#TabDebugPanel.Visible", debug);
+        commands.set("#TabSupportPanel.Visible", support);
+
+        LanguageManager lang = LanguageManager.get();
+        String activeTitle;
+        if (overview) {
+            activeTitle = lang.tr("ui.dashboard.tab_overview");
+        } else if (integrations) {
+            activeTitle = lang.tr("ui.dashboard.tab_integrations");
+        } else if (debug) {
+            activeTitle = lang.tr("ui.dashboard.tab_debug_support");
+        } else {
+            activeTitle = lang.tr("ui.dashboard.tab_support");
+        }
+
+        commands.set("#ActiveTabTitle.Text", activeTitle);
+    }
+
+    private void populateIntegrationDetails(@Nonnull UICommandBuilder commands) {
+        IntegrationManager integrations = TagManager.get().getIntegrations();
+        Settings settings = Settings.get();
+
+        boolean luckPerms = integrations.isLuckPermsAvailable();
+        boolean hyperPerms = integrations.isHyperPermsAvailable();
+        boolean permsPlus = integrations.isPermissionsPlusActive();
+
+        boolean prefixesPlus = invokeBooleanMethodIfPresent(integrations, "isPrefixesPlusAvailable");
+        boolean anyPrefixProvider = prefixesPlus || hyperPerms || luckPerms
+                || invokeBooleanMethodIfPresent(integrations, "isAnyPrefixProviderAvailable");
+
+        boolean economyEnabled = settings.isEconomySystemEnabled();
+        boolean physicalCoinsConfigured = settings.isUsePhysicalCoinEconomy();
+        boolean useCoinSystem = settings.isUseCoinSystem();
+
+        boolean economyPrimary = integrations.isPrimaryEconomyAvailable();
+        boolean hyEssentialsX = integrations.isHyEssentialsXAvailable();
+        boolean ecoTale = integrations.isEcoTaleAvailable();
+        boolean vault = integrations.isVaultAvailable();
+        boolean elite = integrations.isEliteEconomyAvailable();
+        boolean coinsAndMarkets = invokeBooleanMethodIfPresent(integrations, "isCoinsAndMarketsAvailable");
+
+        boolean wiflow = settings.isWiFlowPlaceholdersEnabled();
+        boolean helpch = settings.isHelpchPlaceholderApiEnabled();
+
+        boolean statProvider = integrations.getStatProvider() != null
+                || invokeBooleanMethodIfPresent(integrations, "isStatProviderAvailable");
+        boolean itemHandler = invokeBooleanMethodIfPresent(integrations, "isItemRequirementHandlerAvailable");
+        boolean endlessNameplate = invokeBooleanMethodIfPresent(integrations, "isEndlessLevelingNameplateAttached");
+
+        String playtimeProviderName = getPlaytimeProviderName(integrations);
+        String activePermissionBackend = getActivePermissionBackendName(integrations);
+
+        commands.set("#IntegrationsIntro0.Text",
+                "This panel shows the currently detected backends and which integration paths MysticNameTags is using.");
+        commands.set("#IntegrationsIntro1.Text",
+                "Use this page to verify permission, economy, placeholder, playtime, and extended nameplate support.");
+
+        commands.set("#PermissionsCardStatus.Text", "Active: " + activePermissionBackend);
+        commands.set("#PermissionsCardMeta.Text",
+                "LuckPerms: " + yesNo(luckPerms) + " | HyperPerms: " + yesNo(hyperPerms));
+
+        String prefixProvider;
+        if (prefixesPlus) {
+            prefixProvider = "PrefixesPlus";
+        } else if (hyperPerms) {
+            prefixProvider = "HyperPerms";
+        } else if (luckPerms) {
+            prefixProvider = "LuckPerms";
+        } else {
+            prefixProvider = "None";
+        }
+        commands.set("#PrefixesCardStatus.Text", "Provider: " + prefixProvider);
+        commands.set("#PrefixesCardMeta.Text", "Available: " + yesNo(anyPrefixProvider));
+
+        commands.set("#EconomyCardStatus.Text", "Mode: " + integrations.getEconomyMode().name());
+        commands.set("#EconomyCardMeta.Text", "Available: " + yesNo(integrations.hasAnyEconomy()));
+
+        commands.set("#PlaytimeCardStatus.Text", "Provider: " + playtimeProviderName);
+        commands.set("#PlaytimeCardMeta.Text",
+                "Stats: " + yesNo(statProvider) + " | Items: " + yesNo(itemHandler));
+
+        commands.set("#PlaceholdersCardStatus.Text", "WiFlow: " + yesNo(wiflow));
+        commands.set("#PlaceholdersCardMeta.Text", "Helpch: " + yesNo(helpch));
+
+        commands.set("#NameplateCardStatus.Text", "EndlessLeveling: " + yesNo(endlessNameplate));
+        commands.set("#NameplateCardMeta.Text",
+                endlessNameplate ? "Extended rendering active" : "Standard rendering active");
+
+        commands.set("#PermissionsLine0.Text", "Active backend: " + activePermissionBackend);
+        commands.set("#PermissionsLine1.Text", "LuckPerms detected: " + yesNo(luckPerms)
+                + " | HyperPerms detected: " + yesNo(hyperPerms));
+        commands.set("#PermissionsLine2.Text", "PermissionsPlus active: " + yesNo(permsPlus));
+        commands.set("#PermissionsLine3.Text",
+                "If no external permissions plugin is available, MysticNameTags falls back to native Hytale permissions.");
+
+        commands.set("#PrefixLine0.Text", "PrefixesPlus detected: " + yesNo(prefixesPlus));
+        commands.set("#PrefixLine1.Text", "Fallback prefix sources: HyperPerms ChatAPI -> LuckPerms meta");
+        commands.set("#PrefixLine2.Text", "Prefix provider available: " + yesNo(anyPrefixProvider));
+
+        commands.set("#EconomyLine0.Text", "Economy system enabled in settings: " + yesNo(economyEnabled));
+        commands.set("#EconomyLine1.Text",
+                "Economy mode: " + integrations.getEconomyMode().name()
+                        + " | Physical coins configured: " + yesNo(physicalCoinsConfigured)
+                        + " | Coin system ledger enabled: " + yesNo(useCoinSystem));
+        commands.set("#EconomyLine2.Text",
+                "Detected backends: EconomySystem=" + yesNo(economyPrimary)
+                        + ", HyEssentialsX=" + yesNo(hyEssentialsX)
+                        + ", EcoTale=" + yesNo(ecoTale)
+                        + ", VaultUnlocked=" + yesNo(vault)
+                        + ", EliteEssentials=" + yesNo(elite));
+        commands.set("#EconomyLine3.Text", "CoinsAndMarkets physical backend: " + yesNo(coinsAndMarkets));
+        commands.set("#EconomyLine4.Text", "Any economy available: " + yesNo(integrations.hasAnyEconomy()));
+
+        commands.set("#PlaytimeLine0.Text", "Playtime provider: " + playtimeProviderName);
+        commands.set("#PlaytimeLine1.Text", "Stat provider attached: " + yesNo(statProvider));
+        commands.set("#PlaytimeLine2.Text", "Item requirement handler attached: " + yesNo(itemHandler));
+        commands.set("#PlaytimeLine3.Text", "Configured playtime mode: " + settings.getPlaytimeProviderMode());
+
+        commands.set("#PlaceholderLine0.Text", "WiFlow placeholders enabled: " + yesNo(wiflow));
+        commands.set("#PlaceholderLine1.Text", "at.helpch PlaceholderAPI enabled: " + yesNo(helpch));
+        commands.set("#PlaceholderLine2.Text", "Placeholder resolution order: WiFlow -> at.helpch");
+
+        commands.set("#NameplateLine0.Text",
+                "EndlessLeveling nameplate system attached: " + yesNo(endlessNameplate));
+        commands.set("#NameplateLine1.Text",
+                "EndlessLeveling stat bridge support is used for keys beginning with 'endlessleveling.'");
+        commands.set("#NameplateLine2.Text",
+                "If no extension is attached, standard tag + player name rendering remains active.");
+
+        commands.set("#NotesLine0.Text",
+                "Permission priority: LuckPerms -> HyperPerms -> PermissionsPlus -> Native");
+        commands.set("#NotesLine1.Text",
+                "Prefix priority: PrefixesPlus -> HyperPerms -> LuckPerms");
+        commands.set("#NotesLine2.Text",
+                "Economy priority depends on settings and detected backends.");
+        commands.set("#NotesLine3.Text",
+                "Physical coin mode uses CoinsAndMarkets inventory/coin handling instead of ledger balance withdrawal.");
+        commands.set("#NotesLine4.Text",
+                "This page is informational only; use Debug Snapshot for a log-oriented integration dump.");
+    }
+
     private static String resolvePermissionBackendName(@Nonnull IntegrationManager integrations) {
         try {
             var backend = integrations.getPermissionsBackend();
@@ -515,30 +697,63 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             try {
                 String name = backend.getBackendName();
                 if (name != null && !name.isBlank()) return name;
-            } catch (Throwable ignored) { }
+            } catch (Throwable ignored) {
+            }
             return backend.getClass().getSimpleName();
         } catch (Throwable t) {
             return "None";
         }
     }
 
+    private static String getActivePermissionBackendName(@Nonnull IntegrationManager integrations) {
+        try {
+            Method m = integrations.getClass().getMethod("getActivePermissionBackendName");
+            Object result = m.invoke(integrations);
+            if (result instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        } catch (Throwable ignored) {
+        }
+        return resolvePermissionBackendName(integrations);
+    }
+
+    private static String getPlaytimeProviderName(@Nonnull IntegrationManager integrations) {
+        try {
+            Method m = integrations.getClass().getMethod("getPlaytimeProviderName");
+            Object result = m.invoke(integrations);
+            if (result instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Object provider = integrations.getPlaytimeProvider();
+            return provider != null ? provider.getClass().getSimpleName() : "None";
+        } catch (Throwable ignored) {
+            return "None";
+        }
+    }
+
+    private static boolean invokeBooleanMethodIfPresent(@Nonnull Object target, @Nonnull String methodName) {
+        try {
+            Method m = target.getClass().getMethod(methodName);
+            Object result = m.invoke(target);
+            return result instanceof Boolean b && b;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private String buildStorageLabel(LanguageManager lang, Settings settings, StorageBackend backend) {
         return switch (backend) {
             case FILE -> lang.tr("dashboard.storage_file", Map.of());
-            case SQLITE -> {
-                String file = settings.getSqliteFile();
-                yield lang.tr("dashboard.storage_sqlite", Map.of("file", file));
-            }
-            case MYSQL -> {
-                String host = settings.getMysqlHost();
-                int port    = settings.getMysqlPort();
-                String db   = settings.getMysqlDatabase();
-                yield lang.tr("dashboard.storage_mysql", Map.of(
-                        "host", host,
-                        "port", String.valueOf(port),
-                        "database", db
-                ));
-            }
+            case SQLITE -> lang.tr("dashboard.storage_sqlite", Map.of("file", settings.getSqliteFile()));
+            case MYSQL -> lang.tr("dashboard.storage_mysql", Map.of(
+                    "host", settings.getMysqlHost(),
+                    "port", String.valueOf(settings.getMysqlPort()),
+                    "database", settings.getMysqlDatabase()
+            ));
         };
     }
 
@@ -553,7 +768,6 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
     private void populateResourceStats(@Nonnull UICommandBuilder commands) {
         LanguageManager lang = LanguageManager.get();
-
         ResourceSnapshot rs = captureResourceSnapshot();
 
         commands.set("#RamLabel.Text",
@@ -564,37 +778,15 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
         String cpuText = (rs.cpuPercent >= 0.0)
                 ? lang.tr("dashboard.cpu_label", Map.of(
-                "percent", String.format(java.util.Locale.ROOT, "%.1f", rs.cpuPercent),
+                "percent", String.format(Locale.ROOT, "%.1f", rs.cpuPercent),
                 "cores", String.valueOf(rs.availableProcessors)
         ))
                 : lang.tr("dashboard.cpu_na");
 
         commands.set("#CpuLabel.Text", cpuText);
-
         commands.set("#UptimeLabel.Text", lang.tr("dashboard.uptime_label", Map.of(
                 "uptime", formatUptime(rs.uptimeMillis)
         )));
-    }
-
-    private void applyTabSelection(@Nonnull UICommandBuilder commands,
-                                   @Nonnull String tabKey) {
-
-        boolean overview     = "overview".equalsIgnoreCase(tabKey);
-        boolean integrations = "integrations".equalsIgnoreCase(tabKey);
-        boolean debug        = "debug".equalsIgnoreCase(tabKey);
-
-        commands.set("#TabOverviewPanel.Visible", overview);
-        commands.set("#TabIntegrationsPanel.Visible", integrations);
-        commands.set("#TabDebugPanel.Visible", debug);
-
-        commands.set("#OverviewTabButtonSelected.Visible", overview);
-        commands.set("#OverviewTabButton.Visible", !overview);
-
-        commands.set("#IntegrationsTabButtonSelected.Visible", integrations);
-        commands.set("#IntegrationsTabButton.Visible", !integrations);
-
-        commands.set("#DebugTabButtonSelected.Visible", debug);
-        commands.set("#DebugTabButton.Visible", !debug);
     }
 
     private static ResourceSnapshot captureResourceSnapshot() {
@@ -611,8 +803,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 var method = osBean.getClass().getMethod("getProcessCpuLoad");
                 Object value = method.invoke(osBean);
                 if (value instanceof Double d && d >= 0.0) cpu = d * 100.0;
-            } catch (Throwable ignored) { }
-        } catch (Throwable ignored) { }
+            } catch (Throwable ignored) {
+            }
+        } catch (Throwable ignored) {
+        }
         rs.cpuPercent = cpu;
 
         rs.availableProcessors = rt.availableProcessors();
@@ -626,12 +820,12 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
     private static String formatUptime(long millis) {
         long seconds = millis / 1000L;
         long minutes = seconds / 60L;
-        long hours   = minutes / 60L;
-        long days    = hours / 24L;
+        long hours = minutes / 60L;
+        long days = hours / 24L;
 
         seconds %= 60L;
         minutes %= 60L;
-        hours   %= 24L;
+        hours %= 24L;
 
         StringBuilder sb = new StringBuilder();
         if (days > 0) sb.append(days).append("d ");
@@ -639,6 +833,66 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         if (minutes > 0 || hours > 0 || days > 0) sb.append(minutes).append("m ");
         sb.append(seconds).append("s");
         return sb.toString().trim();
+    }
+
+    private void sendLinkToChatOrFallback(@Nonnull String title,
+                                          @Nonnull String label,
+                                          @Nonnull String url) {
+        String plainMessage = label + ": " + url;
+
+        if (trySendChatLine(plainMessage)) {
+            MysticNotificationUtil.send(
+                    playerRef.getPacketHandler(),
+                    title,
+                    "Link sent to chat.",
+                    NotificationStyle.Success
+            );
+            return;
+        }
+
+        MysticNotificationUtil.send(
+                playerRef.getPacketHandler(),
+                title,
+                plainMessage,
+                NotificationStyle.Default
+        );
+    }
+
+    private boolean trySendChatLine(@Nonnull String message) {
+        Object packetHandler = null;
+        try {
+            packetHandler = playerRef.getPacketHandler();
+        } catch (Throwable ignored) {
+        }
+
+        if (invokeSingleStringMethod(packetHandler, "sendChatMessage", message)) return true;
+        if (invokeSingleStringMethod(packetHandler, "sendSystemMessage", message)) return true;
+        if (invokeSingleStringMethod(packetHandler, "sendMessage", message)) return true;
+        if (invokeSingleStringMethod(packetHandler, "sendRawChatMessage", message)) return true;
+
+        if (invokeSingleStringMethod(playerRef, "sendChatMessage", message)) return true;
+        if (invokeSingleStringMethod(playerRef, "sendSystemMessage", message)) return true;
+        if (invokeSingleStringMethod(playerRef, "sendMessage", message)) return true;
+
+        return false;
+    }
+
+    private boolean invokeSingleStringMethod(@Nullable Object target,
+                                             @Nonnull String methodName,
+                                             @Nonnull String value) {
+        if (target == null) return false;
+        try {
+            Method m = target.getClass().getMethod(methodName, String.class);
+            m.invoke(target, value);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    @Nonnull
+    private static String yesNo(boolean value) {
+        return value ? "Yes" : "No";
     }
 
     private static final class ResourceSnapshot {
@@ -652,7 +906,8 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
     public static class UIEventData {
         private String action;
 
-        public UIEventData() { }
+        public UIEventData() {
+        }
 
         public String getAction() {
             return action;
