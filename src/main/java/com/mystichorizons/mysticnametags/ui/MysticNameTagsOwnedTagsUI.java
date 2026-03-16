@@ -61,6 +61,10 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private static String tagOrDefault(String s) {
+        return s == null ? "" : s;
+    }
+
     @Override
     public void build(@NotNull Ref<EntityStore> ref,
                       @NotNull UICommandBuilder cmd,
@@ -370,9 +374,11 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
                             String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
                             NameplateManager.get().apply(uuid, store, ref, text);
                         }
-                        default -> { }
+                        default -> {
+                        }
                     }
-                } catch (Throwable ignored) { }
+                } catch (Throwable ignored) {
+                }
             }
 
             handlePurchaseResult(result, def);
@@ -449,9 +455,5 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
                 ColorFormatter.colorize(tagOrDefault(msg)),
                 NotificationStyle.Default
         );
-    }
-
-    private static String tagOrDefault(String s) {
-        return s == null ? "" : s;
     }
 }

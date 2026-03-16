@@ -38,18 +38,6 @@ import java.util.UUID;
 
 public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNameTagsDashboardUI.UIEventData> {
 
-    private static final String LAYOUT = "mysticnametags/Dashboard.ui";
-
-    private static final String CURSEFORGE_URL =
-            "https://www.curseforge.com/hytale/mods/mysticnametags";
-    private static final String BUGREPORT_URL =
-            "https://github.com/L8-Alphine/MysticNametags/issues";
-
-    private static final String TAB_OVERVIEW = "Overview";
-    private static final String TAB_INTEGRATIONS = "Integrations";
-    private static final String TAB_DEBUG = "Debug";
-    private static final String TAB_SUPPORT = "Support";
-
     public static final BuilderCodec<UIEventData> CODEC = BuilderCodec.builder(
                     UIEventData.class,
                     UIEventData::new)
@@ -58,13 +46,127 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     e -> e.action)
             .add()
             .build();
-
+    private static final String LAYOUT = "mysticnametags/Dashboard.ui";
+    private static final String CURSEFORGE_URL =
+            "https://www.curseforge.com/hytale/mods/mysticnametags";
+    private static final String BUGREPORT_URL =
+            "https://github.com/L8-Alphine/MysticNametags/issues";
+    private static final String TAB_OVERVIEW = "Overview";
+    private static final String TAB_INTEGRATIONS = "Integrations";
+    private static final String TAB_DEBUG = "Debug";
+    private static final String TAB_SUPPORT = "Support";
     private final PlayerRef playerRef;
     private String activeTab = TAB_OVERVIEW;
 
     public MysticNameTagsDashboardUI(@Nonnull PlayerRef playerRef) {
         super(playerRef, CustomPageLifetime.CanDismissOrCloseThroughInteraction, CODEC);
         this.playerRef = playerRef;
+    }
+
+    private static String resolvePermissionBackendName(@Nonnull IntegrationManager integrations) {
+        try {
+            var backend = integrations.getPermissionsBackend();
+            if (backend == null) return "None";
+            try {
+                String name = backend.getBackendName();
+                if (name != null && !name.isBlank()) return name;
+            } catch (Throwable ignored) {
+            }
+            return backend.getClass().getSimpleName();
+        } catch (Throwable t) {
+            return "None";
+        }
+    }
+
+    private static String getActivePermissionBackendName(@Nonnull IntegrationManager integrations) {
+        try {
+            Method m = integrations.getClass().getMethod("getActivePermissionBackendName");
+            Object result = m.invoke(integrations);
+            if (result instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        } catch (Throwable ignored) {
+        }
+        return resolvePermissionBackendName(integrations);
+    }
+
+    private static String getPlaytimeProviderName(@Nonnull IntegrationManager integrations) {
+        try {
+            Method m = integrations.getClass().getMethod("getPlaytimeProviderName");
+            Object result = m.invoke(integrations);
+            if (result instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Object provider = integrations.getPlaytimeProvider();
+            return provider != null ? provider.getClass().getSimpleName() : "None";
+        } catch (Throwable ignored) {
+            return "None";
+        }
+    }
+
+    private static boolean invokeBooleanMethodIfPresent(@Nonnull Object target, @Nonnull String methodName) {
+        try {
+            Method m = target.getClass().getMethod(methodName);
+            Object result = m.invoke(target);
+            return result instanceof Boolean b && b;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static ResourceSnapshot captureResourceSnapshot() {
+        ResourceSnapshot rs = new ResourceSnapshot();
+
+        Runtime rt = Runtime.getRuntime();
+        rs.usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024L * 1024L);
+        rs.maxMb = rt.maxMemory() / (1024L * 1024L);
+
+        double cpu = -1.0;
+        try {
+            OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
+            try {
+                var method = osBean.getClass().getMethod("getProcessCpuLoad");
+                Object value = method.invoke(osBean);
+                if (value instanceof Double d && d >= 0.0) cpu = d * 100.0;
+            } catch (Throwable ignored) {
+            }
+        } catch (Throwable ignored) {
+        }
+        rs.cpuPercent = cpu;
+
+        rs.availableProcessors = rt.availableProcessors();
+
+        RuntimeMXBean runtimeMx = ManagementFactory.getRuntimeMXBean();
+        rs.uptimeMillis = runtimeMx.getUptime();
+
+        return rs;
+    }
+
+    private static String formatUptime(long millis) {
+        long seconds = millis / 1000L;
+        long minutes = seconds / 60L;
+        long hours = minutes / 60L;
+        long days = hours / 24L;
+
+        seconds %= 60L;
+        minutes %= 60L;
+        hours %= 24L;
+
+        StringBuilder sb = new StringBuilder();
+        if (days > 0) sb.append(days).append("d ");
+        if (hours > 0 || days > 0) sb.append(hours).append("h ");
+        if (minutes > 0 || hours > 0 || days > 0) sb.append(minutes).append("m ");
+        sb.append(seconds).append("s");
+        return sb.toString().trim();
+    }
+
+    @Nonnull
+    private static String yesNo(boolean value) {
+        return value ? "Yes" : "No";
     }
 
     @Override
@@ -489,16 +591,36 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             if (econEcoTale || econVault || econElite) {
                 integrationsText.append(" ").append(lang.tr("dashboard.economy_fallback_prefix"));
                 boolean first = true;
-                if (econEcoTale) { integrationsText.append("EcoTale"); first = false; }
-                if (econVault) { if (!first) integrationsText.append(", "); integrationsText.append("VaultUnlocked"); first = false; }
-                if (econElite) { if (!first) integrationsText.append(", "); integrationsText.append("EliteEssentials"); }
+                if (econEcoTale) {
+                    integrationsText.append("EcoTale");
+                    first = false;
+                }
+                if (econVault) {
+                    if (!first) integrationsText.append(", ");
+                    integrationsText.append("VaultUnlocked");
+                    first = false;
+                }
+                if (econElite) {
+                    if (!first) integrationsText.append(", ");
+                    integrationsText.append("EliteEssentials");
+                }
                 integrationsText.append(")");
             }
         } else if (econEcoTale || econVault || econElite) {
             boolean first = true;
-            if (econEcoTale) { integrationsText.append("EcoTale"); first = false; }
-            if (econVault) { if (!first) integrationsText.append(" + "); integrationsText.append("VaultUnlocked"); first = false; }
-            if (econElite) { if (!first) integrationsText.append(" + "); integrationsText.append("EliteEssentials"); }
+            if (econEcoTale) {
+                integrationsText.append("EcoTale");
+                first = false;
+            }
+            if (econVault) {
+                if (!first) integrationsText.append(" + ");
+                integrationsText.append("VaultUnlocked");
+                first = false;
+            }
+            if (econElite) {
+                if (!first) integrationsText.append(" + ");
+                integrationsText.append("EliteEssentials");
+            }
         } else {
             integrationsText.append(lang.tr("dashboard.economy_none"));
         }
@@ -690,61 +812,6 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 "This page is informational only; use Debug Snapshot for a log-oriented integration dump.");
     }
 
-    private static String resolvePermissionBackendName(@Nonnull IntegrationManager integrations) {
-        try {
-            var backend = integrations.getPermissionsBackend();
-            if (backend == null) return "None";
-            try {
-                String name = backend.getBackendName();
-                if (name != null && !name.isBlank()) return name;
-            } catch (Throwable ignored) {
-            }
-            return backend.getClass().getSimpleName();
-        } catch (Throwable t) {
-            return "None";
-        }
-    }
-
-    private static String getActivePermissionBackendName(@Nonnull IntegrationManager integrations) {
-        try {
-            Method m = integrations.getClass().getMethod("getActivePermissionBackendName");
-            Object result = m.invoke(integrations);
-            if (result instanceof String s && !s.isBlank()) {
-                return s;
-            }
-        } catch (Throwable ignored) {
-        }
-        return resolvePermissionBackendName(integrations);
-    }
-
-    private static String getPlaytimeProviderName(@Nonnull IntegrationManager integrations) {
-        try {
-            Method m = integrations.getClass().getMethod("getPlaytimeProviderName");
-            Object result = m.invoke(integrations);
-            if (result instanceof String s && !s.isBlank()) {
-                return s;
-            }
-        } catch (Throwable ignored) {
-        }
-
-        try {
-            Object provider = integrations.getPlaytimeProvider();
-            return provider != null ? provider.getClass().getSimpleName() : "None";
-        } catch (Throwable ignored) {
-            return "None";
-        }
-    }
-
-    private static boolean invokeBooleanMethodIfPresent(@Nonnull Object target, @Nonnull String methodName) {
-        try {
-            Method m = target.getClass().getMethod(methodName);
-            Object result = m.invoke(target);
-            return result instanceof Boolean b && b;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
     private String buildStorageLabel(LanguageManager lang, Settings settings, StorageBackend backend) {
         return switch (backend) {
             case FILE -> lang.tr("dashboard.storage_file", Map.of());
@@ -787,52 +854,6 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#UptimeLabel.Text", lang.tr("dashboard.uptime_label", Map.of(
                 "uptime", formatUptime(rs.uptimeMillis)
         )));
-    }
-
-    private static ResourceSnapshot captureResourceSnapshot() {
-        ResourceSnapshot rs = new ResourceSnapshot();
-
-        Runtime rt = Runtime.getRuntime();
-        rs.usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024L * 1024L);
-        rs.maxMb = rt.maxMemory() / (1024L * 1024L);
-
-        double cpu = -1.0;
-        try {
-            OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
-            try {
-                var method = osBean.getClass().getMethod("getProcessCpuLoad");
-                Object value = method.invoke(osBean);
-                if (value instanceof Double d && d >= 0.0) cpu = d * 100.0;
-            } catch (Throwable ignored) {
-            }
-        } catch (Throwable ignored) {
-        }
-        rs.cpuPercent = cpu;
-
-        rs.availableProcessors = rt.availableProcessors();
-
-        RuntimeMXBean runtimeMx = ManagementFactory.getRuntimeMXBean();
-        rs.uptimeMillis = runtimeMx.getUptime();
-
-        return rs;
-    }
-
-    private static String formatUptime(long millis) {
-        long seconds = millis / 1000L;
-        long minutes = seconds / 60L;
-        long hours = minutes / 60L;
-        long days = hours / 24L;
-
-        seconds %= 60L;
-        minutes %= 60L;
-        hours %= 24L;
-
-        StringBuilder sb = new StringBuilder();
-        if (days > 0) sb.append(days).append("d ");
-        if (hours > 0 || days > 0) sb.append(hours).append("h ");
-        if (minutes > 0 || hours > 0 || days > 0) sb.append(minutes).append("m ");
-        sb.append(seconds).append("s");
-        return sb.toString().trim();
     }
 
     private void sendLinkToChatOrFallback(@Nonnull String title,
@@ -888,11 +909,6 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         } catch (Throwable ignored) {
             return false;
         }
-    }
-
-    @Nonnull
-    private static String yesNo(boolean value) {
-        return value ? "Yes" : "No";
     }
 
     private static final class ResourceSnapshot {

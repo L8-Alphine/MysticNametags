@@ -37,7 +37,7 @@ import java.util.logging.Level;
 
 /**
  * Tag selection / purchase UI.
- *
+ * <p>
  * Layout file: mysticnametags/Tags.ui
  */
 public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTagsTagsUI.UIEventData> {
@@ -49,50 +49,40 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     private static final int MAX_ROWS = 10;
     private static final int PAGE_SIZE = 10;
 
-    private static final String COLOR_TEXT_PRIMARY   = "#e6edf3";
-    private static final String COLOR_TEXT_MUTED     = "#6b7280";
-    private static final String COLOR_TEXT_SELECTED  = "#ffffff";
-    private static final String COLOR_TEXT_CATEGORY  = "#cbd5f5";
-    private static final String COLOR_OUTLINE_ROW    = "#3a3a3a";
+    private static final String COLOR_TEXT_PRIMARY = "#e6edf3";
+    private static final String COLOR_TEXT_MUTED = "#6b7280";
+    private static final String COLOR_TEXT_SELECTED = "#ffffff";
+    private static final String COLOR_TEXT_CATEGORY = "#cbd5f5";
+    private static final String COLOR_OUTLINE_ROW = "#3a3a3a";
     private static final String COLOR_OUTLINE_SELECT = "#58a6ff";
-
-    private final PlayerRef playerRef;
-    private final UUID uuid;
-
-    private int currentPage;
-    private String filterQuery;
-    private String pendingFilterQuery;
-
-    // 0 = All, 1..N = categories
-    private int categoryIndex = 0;
-
-    private long lastFilterApplyMs = 0L;
-
-    private String cooldownWarningText;
-
-    /**
-     * Cache of canUseTag per tag id for the current player/session.
-     * Cleared on filter/category changes and after purchase/equip actions.
-     */
-    private final Map<String, Boolean> canUseCache = new HashMap<>();
-
-    private final boolean ownedOnly;
-
-    /**
-     * The currently selected tag in the right-side detail panel.
-     */
-    private String selectedTagId;
-
-    /**
-     * Whether the help/info panel is currently visible.
-     */
-    private boolean detailHelpVisible = false;
-
     /**
      * Last time (ms) a tag was successfully EQUIPPED for each player.
      * Used for enforcing the configurable equip cooldown.
      */
     private static final Map<UUID, Long> LAST_EQUIP_TIME = new ConcurrentHashMap<>();
+    private final PlayerRef playerRef;
+    private final UUID uuid;
+    /**
+     * Cache of canUseTag per tag id for the current player/session.
+     * Cleared on filter/category changes and after purchase/equip actions.
+     */
+    private final Map<String, Boolean> canUseCache = new HashMap<>();
+    private final boolean ownedOnly;
+    private int currentPage;
+    private String filterQuery;
+    private String pendingFilterQuery;
+    // 0 = All, 1..N = categories
+    private int categoryIndex = 0;
+    private long lastFilterApplyMs = 0L;
+    private String cooldownWarningText;
+    /**
+     * The currently selected tag in the right-side detail panel.
+     */
+    private String selectedTagId;
+    /**
+     * Whether the help/info panel is currently visible.
+     */
+    private boolean detailHelpVisible = false;
 
     public MysticNameTagsTagsUI(@Nonnull PlayerRef playerRef, @Nonnull UUID uuid) {
         this(playerRef, uuid, 0, null, false);
@@ -123,6 +113,135 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         if (filter == null) return null;
         String trimmed = filter.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static void addTerm(@Nonnull List<String> terms, @Nullable String value) {
+        if (value == null) return;
+
+        String stripped = ColorFormatter.stripFormatting(value);
+        if (stripped != null) {
+            stripped = stripped.trim();
+            if (!stripped.isEmpty()) {
+                terms.add(stripped);
+            }
+        }
+
+        value = value.trim();
+        if (!value.isEmpty() && (stripped == null || !value.equals(stripped))) {
+            terms.add(value);
+        }
+    }
+
+    @Nonnull
+    private static String safe(@Nullable String value) {
+        return value == null ? "" : value;
+    }
+
+    private static boolean hasAnyRequirements(TagDefinition def) {
+        if (def == null) return false;
+
+        String perm = def.getPermission();
+        boolean hasPerm = perm != null && !perm.isEmpty();
+
+        boolean hasPlaytime = def.getRequiredPlaytimeMinutes() != null
+                && def.getRequiredPlaytimeMinutes() > 0;
+
+        List<String> required = def.getRequiredOwnedTags();
+        boolean hasOwnedTags = required != null && !required.isEmpty();
+
+        List<TagDefinition.StatRequirement> statReqs = def.getRequiredStats();
+        boolean hasStats = statReqs != null && !statReqs.isEmpty();
+
+        boolean hasItems = def.getRequiredItems() != null && !def.getRequiredItems().isEmpty();
+
+        List<TagDefinition.PlaceholderRequirement> placeholderReqs = def.getPlaceholderRequirements();
+        boolean hasPlaceholders = placeholderReqs != null && !placeholderReqs.isEmpty();
+
+        return hasPerm || hasPlaytime || hasOwnedTags || hasStats || hasItems || hasPlaceholders;
+    }
+
+    @Nullable
+    private static Double tryParseDouble(@Nullable String s) {
+        if (s == null) return null;
+        try {
+            return Double.parseDouble(s.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    @Nonnull
+    private static String prettifyId(@Nonnull String rawId) {
+        String id = rawId.trim();
+        if (id.isEmpty()) return rawId;
+
+        int colon = id.indexOf(':');
+        if (colon >= 0 && colon < id.length() - 1) {
+            id = id.substring(colon + 1);
+        }
+
+        id = id.replace('_', ' ').replace('-', ' ');
+
+        String[] parts = id.split("\\s+");
+        StringBuilder out = new StringBuilder();
+        for (String p : parts) {
+            if (p.isEmpty()) continue;
+            if (!out.isEmpty()) out.append(' ');
+            out.append(Character.toUpperCase(p.charAt(0)));
+            if (p.length() > 1) out.append(p.substring(1).toLowerCase(Locale.ROOT));
+        }
+        return out.length() > 0 ? out.toString() : rawId;
+    }
+
+    @Nonnull
+    private static String resolveItemDisplayName(@Nonnull String itemId) {
+        try {
+            ItemStack probe = new ItemStack(itemId, 1);
+            Object item = probe.getItem();
+            if (item != null) {
+                for (String mName : new String[]{"getDisplayName", "getName", "getTitle"}) {
+                    try {
+                        Method m = item.getClass().getMethod(mName);
+                        if (m.getReturnType() == String.class) {
+                            String s = (String) m.invoke(item);
+                            if (s != null && !s.isBlank()) return s;
+                        }
+                    } catch (NoSuchMethodException ignored) {
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return prettifyId(itemId);
+    }
+
+    @Nonnull
+    private static String resolveKillEntityDisplayNameFromStatKey(@Nonnull String statKey) {
+        String key = statKey.trim();
+        if (key.isEmpty()) return statKey;
+
+        String entityPart = key;
+        int dot = key.indexOf('.');
+        if (dot >= 0 && dot < key.length() - 1) {
+            entityPart = key.substring(dot + 1);
+        }
+
+        if ("Player".equalsIgnoreCase(entityPart)) {
+            return "Player";
+        }
+
+        boolean wildcard = entityPart.contains("*");
+        String pretty = prettifyId(entityPart.replace("*", "").trim());
+
+        if (!wildcard) {
+            return pretty;
+        }
+
+        if (pretty.isBlank()) {
+            return "Matching Entities";
+        }
+
+        return pretty + " (any)";
     }
 
     @Override
@@ -335,28 +454,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         String haystack = String.join(" ", terms).toLowerCase(Locale.ROOT);
         return haystack.contains(needle.toLowerCase(Locale.ROOT));
-    }
-
-    private static void addTerm(@Nonnull List<String> terms, @Nullable String value) {
-        if (value == null) return;
-
-        String stripped = ColorFormatter.stripFormatting(value);
-        if (stripped != null) {
-            stripped = stripped.trim();
-            if (!stripped.isEmpty()) {
-                terms.add(stripped);
-            }
-        }
-
-        value = value.trim();
-        if (!value.isEmpty() && (stripped == null || !value.equals(stripped))) {
-            terms.add(value);
-        }
-    }
-
-    @Nonnull
-    private static String safe(@Nullable String value) {
-        return value == null ? "" : value;
     }
 
     private void rebuildPage(@Nonnull Ref<EntityStore> ref,
@@ -1079,16 +1176,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         return canUseCache.computeIfAbsent(def.getId(), id -> tagManager.canUseTag(playerRef, uuid, def));
     }
 
-    private static final class RowBadge {
-        final String text;
-        final String textColor;
-
-        private RowBadge(String text, String textColor) {
-            this.text = text;
-            this.textColor = textColor;
-        }
-    }
-
     @Nonnull
     private RowBadge buildRowBadge(@Nonnull TagDefinition def,
                                    boolean canUse,
@@ -1114,29 +1201,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         return new RowBadge(lang.tr("ui.tags.badge_free"), "#c9d1d9");
-    }
-
-    private static boolean hasAnyRequirements(TagDefinition def) {
-        if (def == null) return false;
-
-        String perm = def.getPermission();
-        boolean hasPerm = perm != null && !perm.isEmpty();
-
-        boolean hasPlaytime = def.getRequiredPlaytimeMinutes() != null
-                && def.getRequiredPlaytimeMinutes() > 0;
-
-        List<String> required = def.getRequiredOwnedTags();
-        boolean hasOwnedTags = required != null && !required.isEmpty();
-
-        List<TagDefinition.StatRequirement> statReqs = def.getRequiredStats();
-        boolean hasStats = statReqs != null && !statReqs.isEmpty();
-
-        boolean hasItems = def.getRequiredItems() != null && !def.getRequiredItems().isEmpty();
-
-        List<TagDefinition.PlaceholderRequirement> placeholderReqs = def.getPlaceholderRequirements();
-        boolean hasPlaceholders = placeholderReqs != null && !placeholderReqs.isEmpty();
-
-        return hasPerm || hasPlaytime || hasOwnedTags || hasStats || hasItems || hasPlaceholders;
     }
 
     private boolean isLocked(TagDefinition def, boolean canUse, boolean owns) {
@@ -1512,39 +1576,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         };
     }
 
-    @Nullable
-    private static Double tryParseDouble(@Nullable String s) {
-        if (s == null) return null;
-        try {
-            return Double.parseDouble(s.trim());
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    @Nonnull
-    private static String prettifyId(@Nonnull String rawId) {
-        String id = rawId.trim();
-        if (id.isEmpty()) return rawId;
-
-        int colon = id.indexOf(':');
-        if (colon >= 0 && colon < id.length() - 1) {
-            id = id.substring(colon + 1);
-        }
-
-        id = id.replace('_', ' ').replace('-', ' ');
-
-        String[] parts = id.split("\\s+");
-        StringBuilder out = new StringBuilder();
-        for (String p : parts) {
-            if (p.isEmpty()) continue;
-            if (!out.isEmpty()) out.append(' ');
-            out.append(Character.toUpperCase(p.charAt(0)));
-            if (p.length() > 1) out.append(p.substring(1).toLowerCase(Locale.ROOT));
-        }
-        return out.length() > 0 ? out.toString() : rawId;
-    }
-
     @Nonnull
     private String resolveTagDisplayName(@Nonnull String tagId) {
         TagDefinition def = TagManager.get().getTag(tagId);
@@ -1557,57 +1588,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             if (id != null && !id.isBlank()) return prettifyId(id);
         }
         return prettifyId(tagId);
-    }
-
-    @Nonnull
-    private static String resolveItemDisplayName(@Nonnull String itemId) {
-        try {
-            ItemStack probe = new ItemStack(itemId, 1);
-            Object item = probe.getItem();
-            if (item != null) {
-                for (String mName : new String[]{"getDisplayName", "getName", "getTitle"}) {
-                    try {
-                        Method m = item.getClass().getMethod(mName);
-                        if (m.getReturnType() == String.class) {
-                            String s = (String) m.invoke(item);
-                            if (s != null && !s.isBlank()) return s;
-                        }
-                    } catch (NoSuchMethodException ignored) {
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return prettifyId(itemId);
-    }
-
-    @Nonnull
-    private static String resolveKillEntityDisplayNameFromStatKey(@Nonnull String statKey) {
-        String key = statKey.trim();
-        if (key.isEmpty()) return statKey;
-
-        String entityPart = key;
-        int dot = key.indexOf('.');
-        if (dot >= 0 && dot < key.length() - 1) {
-            entityPart = key.substring(dot + 1);
-        }
-
-        if ("Player".equalsIgnoreCase(entityPart)) {
-            return "Player";
-        }
-
-        boolean wildcard = entityPart.contains("*");
-        String pretty = prettifyId(entityPart.replace("*", "").trim());
-
-        if (!wildcard) {
-            return pretty;
-        }
-
-        if (pretty.isBlank()) {
-            return "Matching Entities";
-        }
-
-        return pretty + " (any)";
     }
 
     @Nonnull
@@ -1800,6 +1780,16 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 parsedMsg,
                 NotificationStyle.Default
         );
+    }
+
+    private static final class RowBadge {
+        final String text;
+        final String textColor;
+
+        private RowBadge(String text, String textColor) {
+            this.text = text;
+            this.textColor = textColor;
+        }
     }
 
     public static class UIEventData {
