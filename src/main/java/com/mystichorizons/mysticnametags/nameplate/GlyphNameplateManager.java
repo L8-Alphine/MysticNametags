@@ -29,10 +29,11 @@ import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.awt.Color;
+import java.awt.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
@@ -61,14 +62,159 @@ public final class GlyphNameplateManager {
     private static final boolean FORCE_ANCHOR_POSITION_SYNC = true;
 
     private static final Map<Integer, String> RESOLVED_EFFECT_IDS = new ConcurrentHashMap<>();
+    private final Map<UUID, RenderState> states = new ConcurrentHashMap<>();
+
+    private GlyphNameplateManager() {
+    }
 
     public static GlyphNameplateManager get() {
         return INSTANCE;
     }
 
-    private final Map<UUID, RenderState> states = new ConcurrentHashMap<>();
+    private static boolean hasLiveRender(@Nullable RenderState state) {
+        if (state == null) return false;
 
-    private GlyphNameplateManager() {}
+        for (LineRenderState line : state.lines) {
+            if (line == null) continue;
+
+            if (line.anchorRef != null && line.anchorRef.isValid()) {
+                return true;
+            }
+
+            for (Ref<EntityStore> glyphRef : line.glyphRefs) {
+                if (glyphRef != null && glyphRef.isValid()) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static List<String> splitLines(String text, int maxLines) {
+        List<String> out = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
+            out.add("");
+            return out;
+        }
+
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        String[] raw = normalized.split("\n", -1);
+
+        for (String line : raw) {
+            out.add(line == null ? "" : line);
+            if (out.size() >= Math.max(1, maxLines)) {
+                break;
+            }
+        }
+
+        if (out.isEmpty()) {
+            out.add("");
+        }
+
+        return out;
+    }
+
+    private static String clampMultilineVisibleLength(String text, int maxLines, int maxVisiblePerLine) {
+        if (text == null || text.isEmpty()) return "";
+        text = ColorFormatter.miniToLegacy(text);
+
+        List<String> lines = splitLines(text, maxLines);
+        List<String> out = new ArrayList<>(lines.size());
+
+        for (String line : lines) {
+            out.add(clampSingleLineVisibleLength(line, maxVisiblePerLine));
+        }
+
+        return String.join("\n", out);
+    }
+
+    private static String clampSingleLineVisibleLength(String text, int maxVisible) {
+        if (text == null || text.isEmpty()) return "";
+
+        StringBuilder out = new StringBuilder(text.length());
+        int visible = 0;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+
+            if ((c == '&' || c == '§') && i + 7 < text.length() && text.charAt(i + 1) == '#') {
+                out.append(text, i, i + 8);
+                i += 7;
+                continue;
+            }
+
+            if ((c == '&' || c == '§') && i + 13 < text.length() && (text.charAt(i + 1) == 'x' || text.charAt(i + 1) == 'X')) {
+                out.append(text, i, i + 14);
+                i += 13;
+                continue;
+            }
+
+            if ((c == '&' || c == '§') && i + 1 < text.length()) {
+                char code = text.charAt(i + 1);
+                if ("0123456789abcdefABCDEFklmnorKLMNORxX".indexOf(code) >= 0) {
+                    out.append(c).append(code);
+                    i += 1;
+                    continue;
+                }
+            }
+
+            if (c == '<') {
+                int end = text.indexOf('>', i);
+                if (end > i) {
+                    out.append(text, i, end + 1);
+                    i = end;
+                    continue;
+                }
+            }
+
+            if (c == '\n' || c == '\r') {
+                continue;
+            }
+
+            out.append(c);
+            visible++;
+            if (visible >= maxVisible) break;
+        }
+
+        return out.toString();
+    }
+
+    private static double getGlyphAdvance(double scale) {
+        double glyphWidth = GlyphInfoCompat.CHAR_WIDTH * scale;
+        double extraSpacing = (GLYPH_EXTRA_SPACING_PX / GLYPH_SOURCE_WIDTH_PX) * glyphWidth;
+        return glyphWidth + extraSpacing;
+    }
+
+    private static double square(double d) {
+        return d * d;
+    }
+
+    private static float normalizeDegrees(float yaw) {
+        float out = yaw % 360f;
+        if (out < 0f) out += 360f;
+        return out;
+    }
+
+    private static float normalizeRadians(float yaw) {
+        float twoPi = (float) (Math.PI * 2.0);
+        float out = yaw % twoPi;
+        if (out < 0f) out += twoPi;
+        return out;
+    }
+
+    private static boolean nearlyEqualYaw(float a, float b, boolean looksDegrees) {
+        if (looksDegrees) {
+            float diff = Math.abs(normalizeDegrees(a) - normalizeDegrees(b));
+            diff = Math.min(diff, 360f - diff);
+            return diff < YAW_EPSILON;
+        } else {
+            float twoPi = (float) (Math.PI * 2.0);
+            float diff = Math.abs(normalizeRadians(a) - normalizeRadians(b));
+            diff = Math.min(diff, twoPi - diff);
+            return diff < YAW_EPSILON;
+        }
+    }
 
     public void apply(@Nonnull UUID uuid,
                       @Nonnull World world,
@@ -91,19 +237,27 @@ public final class GlyphNameplateManager {
         );
 
         RenderState state = states.computeIfAbsent(uuid, ignored -> new RenderState());
-        state.worldName = world.getName();
 
-        boolean needsRebuild = !Objects.equals(state.lastText, clamped) || !hasLiveRender(state);
+        String previousWorldName = state.worldName;
+        boolean worldChanged = previousWorldName != null && !Objects.equals(previousWorldName, world.getName());
+
+        boolean needsRebuild =
+                worldChanged
+                        || !Objects.equals(state.lastText, clamped)
+                        || !hasLiveRender(state);
 
         if (needsRebuild) {
             boolean rebuilt = rebuild(world, store, playerRef, state, clamped, settings);
             if (!rebuilt) {
                 state.lastText = null;
+                state.worldName = world.getName();
                 return;
             }
+
             state.lastText = clamped;
         }
 
+        state.worldName = world.getName();
         follow(uuid, world, store, playerRef, state);
     }
 
@@ -555,7 +709,8 @@ public final class GlyphNameplateManager {
                         double nearestDistSq = currentDistSq;
 
                         for (PlayerRef other : world.getPlayerRefs()) {
-                            if (other == null || other.getUuid() == null || other.getUuid().equals(targetUuid)) continue;
+                            if (other == null || other.getUuid() == null || other.getUuid().equals(targetUuid))
+                                continue;
 
                             Ref<EntityStore> otherRef = other.getReference();
                             if (otherRef == null || !otherRef.isValid()) continue;
@@ -601,7 +756,8 @@ public final class GlyphNameplateManager {
             if (line.anchorRef != null && line.anchorRef.isValid()) {
                 try {
                     EntityRemoveCompat.remove(store, entityStore, line.anchorRef);
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                }
                 line.anchorRef = null;
             }
 
@@ -609,7 +765,8 @@ public final class GlyphNameplateManager {
                 if (ref == null || !ref.isValid()) continue;
                 try {
                     EntityRemoveCompat.remove(store, entityStore, ref);
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                }
             }
 
             line.glyphRefs.clear();
@@ -642,7 +799,8 @@ public final class GlyphNameplateManager {
                     minDistSq = distSq;
                     nearest = other;
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
         }
 
         return nearest;
@@ -711,14 +869,21 @@ public final class GlyphNameplateManager {
                         com.hypixel.hytale.server.core.modules.entity.component.EntityScaleComponent.getComponentType(),
                         new com.hypixel.hytale.server.core.modules.entity.component.EntityScaleComponent(scale)
                 );
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
 
             holder.putComponent(NetworkId.getComponentType(), new NetworkId(entityStore.takeNextNetworkId()));
             holder.putComponent(UUIDComponent.getComponentType(), UUIDComponent.randomUUID());
             holder.putComponent(Intangible.getComponentType(), Intangible.INSTANCE);
 
-            try { holder.ensureComponent(EntityModule.get().getVisibleComponentType()); } catch (Throwable ignored) {}
-            try { holder.ensureComponent(EntityStore.REGISTRY.getNonSerializedComponentType()); } catch (Throwable ignored) {}
+            try {
+                holder.ensureComponent(EntityModule.get().getVisibleComponentType());
+            } catch (Throwable ignored) {
+            }
+            try {
+                holder.ensureComponent(EntityStore.REGISTRY.getNonSerializedComponentType());
+            } catch (Throwable ignored) {
+            }
 
             holder.putComponent(EffectControllerComponent.getComponentType(), new EffectControllerComponent());
 
@@ -764,7 +929,8 @@ public final class GlyphNameplateManager {
                 if (tint != null && spawnedEffects != null) {
                     spawnedEffects.addEffect(spawned, tint, (float) Integer.MAX_VALUE, OverlapBehavior.OVERWRITE, store);
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
 
             return spawned;
         } catch (Throwable t) {
@@ -773,178 +939,29 @@ public final class GlyphNameplateManager {
         }
     }
 
-    private static boolean hasLiveRender(@Nullable RenderState state) {
-        if (state == null) return false;
-
-        for (LineRenderState line : state.lines) {
-            if (line == null) continue;
-
-            if (line.anchorRef != null && line.anchorRef.isValid()) {
-                return true;
-            }
-
-            for (Ref<EntityStore> glyphRef : line.glyphRefs) {
-                if (glyphRef != null && glyphRef.isValid()) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static List<String> splitLines(String text, int maxLines) {
-        List<String> out = new ArrayList<>();
-        if (text == null || text.isEmpty()) {
-            out.add("");
-            return out;
-        }
-
-        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
-        String[] raw = normalized.split("\n", -1);
-
-        for (String line : raw) {
-            out.add(line == null ? "" : line);
-            if (out.size() >= Math.max(1, maxLines)) {
-                break;
-            }
-        }
-
-        if (out.isEmpty()) {
-            out.add("");
-        }
-
-        return out;
-    }
-
-    private static String clampMultilineVisibleLength(String text, int maxLines, int maxVisiblePerLine) {
-        if (text == null || text.isEmpty()) return "";
-        text = ColorFormatter.miniToLegacy(text);
-
-        List<String> lines = splitLines(text, maxLines);
-        List<String> out = new ArrayList<>(lines.size());
-
-        for (String line : lines) {
-            out.add(clampSingleLineVisibleLength(line, maxVisiblePerLine));
-        }
-
-        return String.join("\n", out);
-    }
-
-    private static String clampSingleLineVisibleLength(String text, int maxVisible) {
-        if (text == null || text.isEmpty()) return "";
-
-        StringBuilder out = new StringBuilder(text.length());
-        int visible = 0;
-
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-
-            if ((c == '&' || c == '§') && i + 7 < text.length() && text.charAt(i + 1) == '#') {
-                out.append(text, i, i + 8);
-                i += 7;
-                continue;
-            }
-
-            if ((c == '&' || c == '§') && i + 13 < text.length() && (text.charAt(i + 1) == 'x' || text.charAt(i + 1) == 'X')) {
-                out.append(text, i, i + 14);
-                i += 13;
-                continue;
-            }
-
-            if ((c == '&' || c == '§') && i + 1 < text.length()) {
-                char code = text.charAt(i + 1);
-                if ("0123456789abcdefABCDEFklmnorKLMNORxX".indexOf(code) >= 0) {
-                    out.append(c).append(code);
-                    i += 1;
-                    continue;
-                }
-            }
-
-            if (c == '<') {
-                int end = text.indexOf('>', i);
-                if (end > i) {
-                    out.append(text, i, end + 1);
-                    i = end;
-                    continue;
-                }
-            }
-
-            if (c == '\n' || c == '\r') {
-                continue;
-            }
-
-            out.append(c);
-            visible++;
-            if (visible >= maxVisible) break;
-        }
-
-        return out.toString();
-    }
-
-    private static double getGlyphAdvance(double scale) {
-        double glyphWidth = GlyphInfoCompat.CHAR_WIDTH * scale;
-        double extraSpacing = (GLYPH_EXTRA_SPACING_PX / GLYPH_SOURCE_WIDTH_PX) * glyphWidth;
-        return glyphWidth + extraSpacing;
-    }
-
-    private static double square(double d) {
-        return d * d;
-    }
-
-    private static float normalizeDegrees(float yaw) {
-        float out = yaw % 360f;
-        if (out < 0f) out += 360f;
-        return out;
-    }
-
-    private static float normalizeRadians(float yaw) {
-        float twoPi = (float) (Math.PI * 2.0);
-        float out = yaw % twoPi;
-        if (out < 0f) out += twoPi;
-        return out;
-    }
-
-    private static boolean nearlyEqualYaw(float a, float b, boolean looksDegrees) {
-        if (looksDegrees) {
-            float diff = Math.abs(normalizeDegrees(a) - normalizeDegrees(b));
-            diff = Math.min(diff, 360f - diff);
-            return diff < YAW_EPSILON;
-        } else {
-            float twoPi = (float) (Math.PI * 2.0);
-            float diff = Math.abs(normalizeRadians(a) - normalizeRadians(b));
-            diff = Math.min(diff, twoPi - diff);
-            return diff < YAW_EPSILON;
-        }
-    }
-
     private static final class RenderState {
+        final List<LineRenderState> lines = new ArrayList<>();
         String lastText = null;
         double scale = 1.0d;
         String worldName = null;
         Boolean yawNativeLooksLikeDegrees = null;
-
         double lastAnchorX = Double.NaN;
         double lastAnchorY = Double.NaN;
         double lastAnchorZ = Double.NaN;
         float lastFaceYaw = Float.NaN;
-
         PlayerRef preferredViewer = null;
         boolean hasNearbyViewer = false;
-
         long nextViewerRefreshAtMs = 0L;
         long nextIdleFollowAtMs = 0L;
         long nextGlyphRotationSyncAtMs = 0L;
-
-        final List<LineRenderState> lines = new ArrayList<>();
     }
 
     private static final class LineRenderState {
+        final List<Ref<EntityStore>> glyphRefs = new ArrayList<>();
+        final List<Double> glyphOffsets = new ArrayList<>();
         String text = "";
         double yOffset = 0.0d;
         Ref<EntityStore> anchorRef = null;
-        final List<Ref<EntityStore>> glyphRefs = new ArrayList<>();
-        final List<Double> glyphOffsets = new ArrayList<>();
     }
 
     private static final class ColoredChar {
@@ -1099,7 +1116,8 @@ public final class GlyphNameplateManager {
                         break;
                     }
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
         }
 
         static boolean isSupported() {
@@ -1133,7 +1151,8 @@ public final class GlyphNameplateManager {
 
                 if (tryInvoke(store, "removeEntity", new Class[]{Ref.class, rr}, ref, remove)) return;
                 if (tryInvoke(entityStore, "removeEntity", new Class[]{Ref.class, rr}, ref, remove)) return;
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
 
             if (tryInvoke(store, "removeEntity", new Class[]{Ref.class, Object.class}, ref, null)) return;
             if (tryInvoke(store, "removeEntity", new Class[]{Ref.class}, ref)) return;
@@ -1166,7 +1185,8 @@ public final class GlyphNameplateManager {
                 if (mUpdateComponent3 != null) mUpdateComponent3.invoke(store, ref, type, tx);
                 else if (mSetComponent3 != null) mSetComponent3.invoke(store, ref, type, tx);
                 else if (mPutComponent3 != null) mPutComponent3.invoke(store, ref, type, tx);
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
         }
 
         private static void tryInit(Store<EntityStore> store) {
