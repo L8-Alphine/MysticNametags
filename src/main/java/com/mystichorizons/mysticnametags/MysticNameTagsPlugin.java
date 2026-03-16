@@ -254,6 +254,9 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
         // Glyph nameplate follow refresher
         startGlyphFollowSchedulerIfNeeded();
+
+        // EcoQuests Nameplate
+        tryRegisterEcoQuestsIntegration();
     }
 
     @Override
@@ -307,6 +310,15 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             // Safe probe of the API
             org.zuxaw.plugin.api.RPGLevelingAPI api = org.zuxaw.plugin.api.RPGLevelingAPI.get();
             return api != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+
+    public static boolean isEcoQuestsAvailable() {
+        try {
+            return com.mystichorizons.mysticnametags.integrations.ecoquests.EcoQuestsCompat.isAvailable();
         } catch (Throwable t) {
             return false;
         }
@@ -438,6 +450,20 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING).withCause(t)
                     .log("[MysticNameTags] Failed to register EndlessLeveling integration.");
+        }
+    }
+
+    private void tryRegisterEcoQuestsIntegration() {
+        try {
+            if (!com.mystichorizons.mysticnametags.integrations.ecoquests.EcoQuestsCompat.isAvailable()) {
+                LOGGER.at(Level.INFO).log("[MysticNameTags] EcoQuests not detected; skipping Adventurer Rank integration.");
+                return;
+            }
+
+            LOGGER.at(Level.INFO).log("[MysticNameTags] EcoQuests integration enabled: Adventurer Rank token available.");
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize EcoQuests integration.");
         }
     }
 
