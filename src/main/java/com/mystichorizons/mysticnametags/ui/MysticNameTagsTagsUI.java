@@ -61,6 +61,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private int currentPage;
     private String filterQuery;
+    private String pendingFilterQuery;
 
     // 0 = All, 1..N = categories
     private int categoryIndex = 0;
@@ -114,6 +115,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         this.uuid = uuid;
         this.currentPage = Math.max(page, 0);
         this.filterQuery = normalizeFilter(filterQuery);
+        this.pendingFilterQuery = this.filterQuery;
         this.ownedOnly = ownedOnly;
     }
 
@@ -143,17 +145,13 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ApplyFilterButton",
-                new EventData()
-                        .append("Action", "set_filter")
-                        .append("Filter", "#TagSearchBox.Text")
+                EventData.of("Action", "apply_filter")
         );
 
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ClearFilterButton",
-                new EventData()
-                        .append("Action", "set_filter")
-                        .append("Filter", "")
+                EventData.of("Action", "clear_filter")
         );
 
         rebuildPage(ref, store, cmd, evt, true);
@@ -193,17 +191,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 }
             }
 
-            if (needle != null) {
-                String id = def.getId() != null ? def.getId() : "";
-                String display = def.getDisplay() != null ? def.getDisplay() : "";
-                String descr = def.getDescription() != null ? def.getDescription() : "";
-                String category = def.getCategory() != null ? def.getCategory() : "";
-
-                String plainDisplay = ColorFormatter.stripFormatting(display);
-                String haystack = (id + " " + plainDisplay + " " + descr + " " + category)
-                        .toLowerCase(Locale.ROOT);
-
-                if (!haystack.contains(needle)) continue;
+            if (needle != null && !matchesFilter(def, needle, tagManager, fullGate)) {
+                continue;
             }
 
             if (selectedCategory != null) {
@@ -215,6 +204,159 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         return filtered;
+    }
+
+    private boolean matchesFilter(@Nonnull TagDefinition def,
+                                  @Nonnull String needle,
+                                  @Nonnull TagManager tagManager,
+                                  boolean fullGate) {
+
+        String id = safe(def.getId());
+        String display = safe(def.getDisplay());
+        String description = safe(def.getDescription());
+        String category = safe(def.getCategory());
+        String permission = safe(def.getPermission());
+
+        String plainDisplay = safe(ColorFormatter.stripFormatting(display));
+        String prettyId = prettifyId(id);
+
+        boolean owns = uuid != null && id != null && !id.isBlank() && tagManager.ownsTag(uuid, id);
+        boolean canUse = canUseTag(tagManager, def);
+
+        TagDefinition equipped = tagManager.getEquipped(uuid);
+        if (equipped == null) {
+            equipped = tagManager.resolveActiveOrDefaultTag(uuid);
+        }
+
+        boolean isEquipped = equipped != null
+                && equipped.getId() != null
+                && id != null
+                && equipped.getId().equalsIgnoreCase(id);
+
+        boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
+        boolean hasRequirements = hasAnyRequirements(def);
+        boolean lockedByReq = hasRequirements && !canUse;
+        boolean lockedByPerm = fullGate && permission != null && !permission.isBlank() && !canUse;
+        boolean lockedByPay = hasCost && !owns;
+        boolean locked = lockedByReq || lockedByPerm || lockedByPay;
+
+        List<String> terms = new ArrayList<>();
+
+        // Core textual fields
+        addTerm(terms, id);
+        addTerm(terms, prettyId);
+        addTerm(terms, display);
+        addTerm(terms, plainDisplay);
+        addTerm(terms, description);
+        addTerm(terms, ColorFormatter.stripFormatting(description));
+        addTerm(terms, category);
+        addTerm(terms, permission);
+
+        // Searchable state words
+        if (owns) {
+            addTerm(terms, "owned");
+            addTerm(terms, "unlocked");
+        } else {
+            addTerm(terms, "not owned");
+            addTerm(terms, "locked");
+        }
+
+        if (isEquipped) {
+            addTerm(terms, "equipped");
+            addTerm(terms, "active");
+            addTerm(terms, "selected");
+        }
+
+        if (hasCost) {
+            addTerm(terms, "buy");
+            addTerm(terms, "purchase");
+            addTerm(terms, "purchasable");
+            addTerm(terms, "paid");
+            addTerm(terms, String.valueOf(def.getPrice()));
+        } else {
+            addTerm(terms, "free");
+        }
+
+        if (locked) {
+            addTerm(terms, "locked");
+        }
+
+        if (lockedByReq || hasRequirements) {
+            addTerm(terms, "requirements");
+            addTerm(terms, "requirement");
+        }
+
+        if (def.getRequiredOwnedTags() != null && !def.getRequiredOwnedTags().isEmpty()) {
+            addTerm(terms, "owned tag");
+            addTerm(terms, "prerequisite");
+            for (String reqTag : def.getRequiredOwnedTags()) {
+                addTerm(terms, reqTag);
+                addTerm(terms, resolveTagDisplayName(reqTag));
+            }
+        }
+
+        if (def.getRequiredStats() != null && !def.getRequiredStats().isEmpty()) {
+            addTerm(terms, "stat");
+            addTerm(terms, "stats");
+            for (TagDefinition.StatRequirement req : def.getRequiredStats()) {
+                if (req == null || req.getKey() == null) continue;
+                addTerm(terms, req.getKey());
+                addTerm(terms, resolveStatDisplayName(req.getKey()));
+            }
+        }
+
+        if (def.getRequiredItems() != null && !def.getRequiredItems().isEmpty()) {
+            addTerm(terms, "item");
+            addTerm(terms, "items");
+            for (TagDefinition.ItemRequirement req : def.getRequiredItems()) {
+                if (req == null || req.getItemId() == null) continue;
+                addTerm(terms, req.getItemId());
+                addTerm(terms, resolveItemDisplayName(req.getItemId()));
+            }
+        }
+
+        if (def.getPlaceholderRequirements() != null && !def.getPlaceholderRequirements().isEmpty()) {
+            addTerm(terms, "placeholder");
+            addTerm(terms, "placeholders");
+            for (TagDefinition.PlaceholderRequirement req : def.getPlaceholderRequirements()) {
+                if (req == null) continue;
+                addTerm(terms, req.getPlaceholder());
+                addTerm(terms, req.getOperator());
+                addTerm(terms, req.getValue());
+            }
+        }
+
+        Integer mins = def.getRequiredPlaytimeMinutes();
+        if (mins != null && mins > 0) {
+            addTerm(terms, "playtime");
+            addTerm(terms, "time");
+            addTerm(terms, String.valueOf(mins));
+        }
+
+        String haystack = String.join(" ", terms).toLowerCase(Locale.ROOT);
+        return haystack.contains(needle.toLowerCase(Locale.ROOT));
+    }
+
+    private static void addTerm(@Nonnull List<String> terms, @Nullable String value) {
+        if (value == null) return;
+
+        String stripped = ColorFormatter.stripFormatting(value);
+        if (stripped != null) {
+            stripped = stripped.trim();
+            if (!stripped.isEmpty()) {
+                terms.add(stripped);
+            }
+        }
+
+        value = value.trim();
+        if (!value.isEmpty() && (stripped == null || !value.equals(stripped))) {
+            terms.add(value);
+        }
+    }
+
+    @Nonnull
+    private static String safe(@Nullable String value) {
+        return value == null ? "" : value;
     }
 
     private void rebuildPage(@Nonnull Ref<EntityStore> ref,
@@ -273,6 +415,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         } else {
             cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.tags.search_placeholder"));
         }
+        String fieldValue = pendingFilterQuery;
+        if (fieldValue != null && fieldValue.startsWith("#")) {
+            fieldValue = "";
+        }
+        cmd.set("#TagSearchBox.Value", fieldValue != null ? fieldValue : "");
 
         TagDefinition active = tagManager.getEquipped(uuid);
         if (active == null) {
@@ -529,21 +676,44 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 refresh(ref, store);
             }
 
-            case "filter_changed" -> filterQuery = normalizeFilter(data.filter);
+            case "filter_changed" -> {
+                pendingFilterQuery = normalizeFilter(data.filter);
+            }
 
-            case "set_filter" -> {
+            case "apply_filter" -> {
                 long now = System.currentTimeMillis();
                 if (now - lastFilterApplyMs < 200) return;
                 lastFilterApplyMs = now;
 
-                String newFilter = normalizeFilter(data.filter);
+                String incoming = normalizeFilter(data.filter);
+                if (incoming != null && incoming.startsWith("#")) {
+                    incoming = null;
+                }
+
+                String newFilter = incoming;
                 if (!Objects.equals(this.filterQuery, newFilter)) {
                     this.filterQuery = newFilter;
+                    this.pendingFilterQuery = newFilter;
                     this.currentPage = 0;
                     this.selectedTagId = null;
                     this.detailHelpVisible = false;
                     this.canUseCache.clear();
                 }
+
+                refresh(ref, store);
+            }
+
+            case "clear_filter" -> {
+                long now = System.currentTimeMillis();
+                if (now - lastFilterApplyMs < 200) return;
+                lastFilterApplyMs = now;
+
+                this.pendingFilterQuery = null;
+                this.filterQuery = null;
+                this.currentPage = 0;
+                this.selectedTagId = null;
+                this.detailHelpVisible = false;
+                this.canUseCache.clear();
 
                 refresh(ref, store);
             }
