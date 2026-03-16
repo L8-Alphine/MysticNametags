@@ -1,11 +1,14 @@
 package com.mystichorizons.mysticnametags.listeners;
 
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.event.EventRegistry;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
 import com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent;
-import com.hypixel.hytale.event.EventRegistry;
+import com.hypixel.hytale.server.core.event.events.player.PlayerReadyEvent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.nameplate.GlyphNameplateManager;
@@ -39,6 +42,14 @@ public class PlayerListener {
         }
 
         try {
+            eventBus.registerGlobal(PlayerReadyEvent.class, this::onPlayerReady);
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Registered PlayerReadyEvent listener");
+        } catch (Exception e) {
+            LOGGER.at(Level.WARNING).withCause(e)
+                    .log("[MysticNameTags] Failed to register PlayerReadyEvent");
+        }
+
+        try {
             eventBus.register(PlayerDisconnectEvent.class, this::onPlayerDisconnect);
             LOGGER.at(Level.INFO).log("[MysticNameTags] Registered PlayerDisconnectEvent listener");
         } catch (Exception e) {
@@ -62,9 +73,6 @@ public class PlayerListener {
 
         UUID uuid = playerRef.getUuid();
 
-        // ─────────────────────────────────────────────
-        // Stats: initialize session stats for this player
-        // ─────────────────────────────────────────────
         try {
             PlayerStatManager mgr = PlayerStatManager.get();
             if (mgr != null) {
@@ -75,9 +83,6 @@ public class PlayerListener {
                     .log("[MysticNameTags] Failed to initialize PlayerStatManager session on join for %s", uuid);
         }
 
-        // ─────────────────────────────────────────────
-        // Playtime: mark player as online for ticking
-        // ─────────────────────────────────────────────
         try {
             playtimeService.markOnline(uuid);
         } catch (Throwable t) {
@@ -85,27 +90,22 @@ public class PlayerListener {
                     .log("[MysticNameTags] Failed to mark player online for playtime tracking: %s", uuid);
         }
 
-        // Track + refresh nameplate
-        TagManager tagManager = TagManager.get();
-        tagManager.trackOnlinePlayer(playerRef, world);
-        tagManager.refreshNameplate(playerRef, world);
+        // Do not do the real glyph/nameplate apply here.
+        // PlayerReadyEvent is the better lifecycle point.
 
-        // ─────────────────────────────────────────────
-        // Update notification for admins
-        // ─────────────────────────────────────────────
         try {
             MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
             if (plugin != null) {
                 UpdateChecker checker = plugin.getUpdateChecker();
                 if (checker != null && checker.hasVersionInfo() && checker.isUpdateAvailable()) {
 
-                    // Permission: mysticnametags.admin.update
+                    TagManager tagManager = TagManager.get();
                     IntegrationManager integrations = tagManager.getIntegrations();
                     if (integrations != null &&
                             integrations.hasPermission(playerRef, "mysticnametags.admin.update")) {
 
                         String current = checker.getCurrentVersion();
-                        String latest  = checker.getLatestVersion();
+                        String latest = checker.getLatestVersion();
 
                         playerRef.sendMessage(
                                 ColorFormatter.toMessage(
@@ -124,6 +124,52 @@ public class PlayerListener {
         } catch (Exception ex) {
             LOGGER.at(Level.FINE).withCause(ex)
                     .log("[MysticNameTags] Failed to send update notice on join.");
+        }
+    }
+
+    private void onPlayerReady(PlayerReadyEvent event) {
+        Ref<EntityStore> ref = event.getPlayerRef();
+        if (ref == null || !ref.isValid()) {
+            return;
+        }
+
+        PlayerRef playerRef = ref.getStore().getComponent(ref, PlayerRef.getComponentType());
+        if (playerRef == null) {
+            return;
+        }
+
+        World world = event.getPlayer().getWorld();
+        if (world == null) {
+            return;
+        }
+
+        UUID uuid = playerRef.getUuid();
+        TagManager tagManager = TagManager.get();
+
+        tagManager.trackOnlinePlayer(playerRef, world);
+
+        try {
+            tagManager.refreshNameplate(playerRef, world);
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] PlayerReady nameplate refresh failed for %s", uuid);
+        }
+
+        try {
+            for (UUID onlineUuid : tagManager.getTrackedOnlinePlayerIds()) {
+                PlayerRef onlineRef = tagManager.getOnlinePlayer(onlineUuid);
+                World onlineWorld = tagManager.getOnlineWorld(onlineUuid);
+                if (onlineRef == null || onlineWorld == null) continue;
+                if (!world.getName().equals(onlineWorld.getName())) continue;
+
+                try {
+                    tagManager.refreshNameplate(onlineRef, onlineWorld);
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed global refresh pass after PlayerReady for %s", uuid);
         }
     }
 
