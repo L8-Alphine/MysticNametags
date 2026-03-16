@@ -80,6 +80,12 @@ public final class Settings {
     /** EndlessLeveling prestige display toggle. */
     private boolean endlessPrestigeDisplay = false;
 
+    /** EndlessLeveling primary class display toggle. */
+    private boolean endlessPrimaryClassDisplay = false;
+
+    /** EndlessLeveling secondary class display toggle. */
+    private boolean endlessSecondaryClassDisplay = false;
+
     /** Prefix used before prestige number in EL nameplates. Example: "P" -> "P3". */
     private String endlessPrestigePrefix = "P";
 
@@ -205,6 +211,8 @@ public final class Settings {
                 this.endlessLevelingNameplatesEnabled = loaded.endlessLevelingNameplatesEnabled;
                 this.endlessRaceDisplay = loaded.endlessRaceDisplay;
                 this.endlessPrestigeDisplay = loaded.endlessPrestigeDisplay;
+                this.endlessPrimaryClassDisplay = loaded.endlessPrimaryClassDisplay;
+                this.endlessSecondaryClassDisplay = loaded.endlessSecondaryClassDisplay;
                 this.endlessPrestigePrefix = nonBlankOr(loaded.endlessPrestigePrefix, this.endlessPrestigePrefix);
 
                 // Placeholder toggles + auto flags
@@ -394,7 +402,7 @@ public final class Settings {
 
             addInfoBlock(out, "__core",
                     "Core nameplate settings.",
-                    "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {rpg_level}, {ecoquests_rank}",
+                    "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {endless_primary_class}, {endless_secondary_class}, {rpg_level}, {ecoquests_rank}",
                     "stripExtraSpaces = condense multiple spaces",
                     "language = locale bundle (e.g. en_US)",
                     "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = off)"
@@ -432,6 +440,8 @@ public final class Settings {
             copy.accept("endlessLevelingNameplatesEnabled");
             copy.accept("endlessRaceDisplay");
             copy.accept("endlessPrestigeDisplay");
+            copy.accept("endlessPrimaryClassDisplay");
+            copy.accept("endlessSecondaryClassDisplay");
             copy.accept("endlessPrestigePrefix");
 
             addInfoBlock(out, "__placeholders",
@@ -680,6 +690,14 @@ public final class Settings {
 
     public boolean isEndlessRaceDisplayEnabled() {
         return endlessRaceDisplay;
+    }
+
+    public boolean isEndlessPrimaryClassDisplayEnabled() {
+        return endlessPrimaryClassDisplay;
+    }
+
+    public boolean isEndlessSecondaryClassDisplayEnabled() {
+        return endlessSecondaryClassDisplay;
     }
 
     public boolean isEndlessPrestigeDisplayEnabled() {

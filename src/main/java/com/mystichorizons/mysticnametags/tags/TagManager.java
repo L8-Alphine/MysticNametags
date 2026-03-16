@@ -1452,6 +1452,8 @@ public class TagManager {
         String endlessLevel = "";
         String endlessPrestige = "";
         String endlessRace = "";
+        String endlessPrimaryClass = "";
+        String endlessSecondaryClass = "";
         String rpgLevel = "";
         String ecoquestsRank = "";
 
@@ -1469,6 +1471,8 @@ public class TagManager {
             endlessLevel = resolveEndlessLevel(playerRef);
             endlessPrestige = resolveEndlessPrestige(playerRef);
             endlessRace = resolveEndlessRace(playerRef);
+            endlessPrimaryClass = resolveEndlessPrimaryClass(playerRef);
+            endlessSecondaryClass = resolveEndlessSecondaryClass(playerRef);
             rpgLevel = resolveRpgLevel(playerRef);
             ecoquestsRank = resolveEcoQuestsRank(playerRef);
         }
@@ -1481,15 +1485,13 @@ public class TagManager {
                 .endlessLevel(endlessLevel)
                 .endlessPrestige(endlessPrestige)
                 .endlessRace(endlessRace)
+                .endlessPrimaryClass(endlessPrimaryClass)
+                .endlessSecondaryClass(endlessSecondaryClass)
                 .rpgLevel(rpgLevel)
                 .ecoquestsRank(ecoquestsRank)
                 .build();
     }
 
-    /**
-     * Placeholder names here are examples.
-     * Replace them if your actual placeholder provider uses different IDs.
-     */
     @Nonnull
     private String resolveEndlessLevel(@Nonnull PlayerRef playerRef) {
         UUID uuid = playerRef.getUuid();
@@ -1515,6 +1517,24 @@ public class TagManager {
             return "";
         }
         return integrations.getEndlessRace(uuid);
+    }
+
+    @Nonnull
+    private String resolveEndlessPrimaryClass(@Nonnull PlayerRef playerRef) {
+        UUID uuid = playerRef.getUuid();
+        if (uuid == null) {
+            return "";
+        }
+        return integrations.getEndlessPrimaryClass(uuid);
+    }
+
+    @Nonnull
+    private String resolveEndlessSecondaryClass(@Nonnull PlayerRef playerRef) {
+        UUID uuid = playerRef.getUuid();
+        if (uuid == null) {
+            return "";
+        }
+        return integrations.getEndlessSecondaryClass(uuid);
     }
 
     @Nonnull

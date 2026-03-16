@@ -85,6 +85,8 @@ public final class NameplateTextResolver {
         private final String endlessLevel;
         private final String endlessPrestige;
         private final String endlessRace;
+        private final String endlessPrimaryClass;
+        private final String endlessSecondaryClass;
         private final String rpgLevel;
         private final String ecoquestsRank;
 
@@ -96,6 +98,8 @@ public final class NameplateTextResolver {
             this.endlessLevel = normalizeSegment(builder.endlessLevel);
             this.endlessPrestige = normalizeSegment(builder.endlessPrestige);
             this.endlessRace = normalizeSegment(builder.endlessRace);
+            this.endlessPrimaryClass = normalizeSegment(builder.endlessPrimaryClass);
+            this.endlessSecondaryClass = normalizeSegment(builder.endlessSecondaryClass);
             this.rpgLevel = normalizeSegment(builder.rpgLevel);
             this.ecoquestsRank = normalizeSegment(builder.ecoquestsRank);
         }
@@ -136,6 +140,16 @@ public final class NameplateTextResolver {
         }
 
         @Nonnull
+        public String getEndlessPrimaryClass() {
+            return endlessPrimaryClass;
+        }
+
+        @Nonnull
+        public String getEndlessSecondaryClass() {
+            return endlessSecondaryClass;
+        }
+
+        @Nonnull
         public String getRpgLevel() {
             return rpgLevel;
         }
@@ -157,6 +171,8 @@ public final class NameplateTextResolver {
             private String endlessLevel;
             private String endlessPrestige;
             private String endlessRace;
+            private String endlessPrimaryClass;
+            private String endlessSecondaryClass;
             private String rpgLevel;
             private String ecoquestsRank;
 
@@ -192,6 +208,16 @@ public final class NameplateTextResolver {
 
             public Builder endlessRace(@Nullable String endlessRace) {
                 this.endlessRace = endlessRace;
+                return this;
+            }
+
+            public Builder endlessPrimaryClass(@Nullable String endlessPrimaryClass) {
+                this.endlessPrimaryClass = endlessPrimaryClass;
+                return this;
+            }
+
+            public Builder endlessSecondaryClass(@Nullable String endlessSecondaryClass) {
+                this.endlessSecondaryClass = endlessSecondaryClass;
                 return this;
             }
 
@@ -238,6 +264,8 @@ public final class NameplateTextResolver {
                 .replace("{endless_level}", context.getEndlessLevel())
                 .replace("{endless_prestige}", context.getEndlessPrestige())
                 .replace("{endless_race}", context.getEndlessRace())
+                .replace("{endless_primary_class}", context.getEndlessPrimaryClass())
+                .replace("{endless_secondary_class}", context.getEndlessSecondaryClass())
                 .replace("{rpg_level}", context.getRpgLevel())
                 .replace("{ecoquests_rank}", context.getEcoquestsRank());
 

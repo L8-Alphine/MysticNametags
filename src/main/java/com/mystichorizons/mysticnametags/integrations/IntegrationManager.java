@@ -950,6 +950,7 @@ public class IntegrationManager {
         return provider.getClass().getSimpleName();
     }
 
+    // TODO: REMOVE METHODS - Was moved to a better integration call
     public boolean isItemRequirementHandlerAvailable() {
         return itemRequirementHandler != null;
     }
@@ -983,29 +984,74 @@ public class IntegrationManager {
         return java.util.Collections.unmodifiableList(names);
     }
 
+    @Nullable
+    private PlayerData getEndlessPlayerData(@Nonnull UUID uuid) {
+        try {
+            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
+
+            com.airijko.endlessleveling.EndlessLeveling plugin =
+                    com.airijko.endlessleveling.EndlessLeveling.getInstance();
+            if (plugin == null) {
+                return null;
+            }
+
+            PlayerDataManager pdm = plugin.getPlayerDataManager();
+            if (pdm == null) {
+                return null;
+            }
+
+            return pdm.get(uuid);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    @Nonnull
+    private String prettifyId(@Nullable String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+
+        String normalized = input.replace('_', ' ').replace('-', ' ').trim();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+
+        String[] parts = normalized.split("\\s+");
+        StringBuilder out = new StringBuilder(normalized.length());
+
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i];
+            if (part.isEmpty()) {
+                continue;
+            }
+
+            out.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) {
+                out.append(part.substring(1).toLowerCase());
+            }
+
+            if (i + 1 < parts.length) {
+                out.append(' ');
+            }
+        }
+
+        return out.toString();
+    }
+
     @Nonnull
     public String getEndlessLevel(@Nonnull UUID uuid) {
         if (!Settings.get().isEndlessLevelingNameplatesEnabled()) {
             return "";
         }
 
-        try {
-            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
-            com.airijko.endlessleveling.EndlessLeveling plugin =
-                    com.airijko.endlessleveling.EndlessLeveling.getInstance();
-            if (plugin == null) return "";
-
-            PlayerDataManager pdm = plugin.getPlayerDataManager();
-            if (pdm == null) return "";
-
-            PlayerData data = pdm.get(uuid);
-            if (data == null) return "";
-
-            int level = Math.max(1, data.getLevel());
-            return String.valueOf(level);
-        } catch (Throwable ignored) {
+        PlayerData data = getEndlessPlayerData(uuid);
+        if (data == null) {
             return "";
         }
+
+        int level = Math.max(1, data.getLevel());
+        return String.valueOf(level);
     }
 
     @Nonnull
@@ -1015,25 +1061,17 @@ public class IntegrationManager {
             return "";
         }
 
-        try {
-            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
-            com.airijko.endlessleveling.EndlessLeveling plugin =
-                    com.airijko.endlessleveling.EndlessLeveling.getInstance();
-            if (plugin == null) return "";
-
-            PlayerDataManager pdm = plugin.getPlayerDataManager();
-            if (pdm == null) return "";
-
-            PlayerData data = pdm.get(uuid);
-            if (data == null) return "";
-
-            int prestige = Math.max(0, data.getPrestigeLevel());
-            if (prestige <= 0) return "";
-
-            return s.getEndlessPrestigePrefix() + prestige;
-        } catch (Throwable ignored) {
+        PlayerData data = getEndlessPlayerData(uuid);
+        if (data == null) {
             return "";
         }
+
+        int prestige = Math.max(0, data.getPrestigeLevel());
+        if (prestige <= 0) {
+            return "";
+        }
+
+        return s.getEndlessPrestigePrefix() + prestige;
     }
 
     @Nonnull
@@ -1043,27 +1081,47 @@ public class IntegrationManager {
             return "";
         }
 
-        try {
-            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
-            com.airijko.endlessleveling.EndlessLeveling plugin =
-                    com.airijko.endlessleveling.EndlessLeveling.getInstance();
-            if (plugin == null) return "";
-
-            PlayerDataManager pdm = plugin.getPlayerDataManager();
-            if (pdm == null) return "";
-
-            PlayerData data = pdm.get(uuid);
-            if (data == null) return "";
-
-            String race = data.getRaceId();
-            if (race == null || race.isBlank()) {
-                race = PlayerData.DEFAULT_RACE_ID;
-            }
-
-            return race == null ? "" : race.trim();
-        } catch (Throwable ignored) {
+        PlayerData data = getEndlessPlayerData(uuid);
+        if (data == null) {
             return "";
         }
+
+        String race = data.getRaceId();
+        if (race == null || race.isBlank()) {
+            race = PlayerData.DEFAULT_RACE_ID;
+        }
+
+        return race == null ? "" : race.trim();
+    }
+
+    @Nonnull
+    public String getEndlessPrimaryClass(@Nonnull UUID uuid) {
+        Settings s = Settings.get();
+        if (!s.isEndlessLevelingNameplatesEnabled() || !s.isEndlessPrimaryClassDisplayEnabled()) {
+            return "";
+        }
+
+        PlayerData data = getEndlessPlayerData(uuid);
+        if (data == null) {
+            return "";
+        }
+
+        return prettifyId(data.getPrimaryClassId());
+    }
+
+    @Nonnull
+    public String getEndlessSecondaryClass(@Nonnull UUID uuid) {
+        Settings s = Settings.get();
+        if (!s.isEndlessLevelingNameplatesEnabled() || !s.isEndlessSecondaryClassDisplayEnabled()) {
+            return "";
+        }
+
+        PlayerData data = getEndlessPlayerData(uuid);
+        if (data == null) {
+            return "";
+        }
+
+        return prettifyId(data.getSecondaryClassId());
     }
 
     @Nonnull
