@@ -1,15 +1,22 @@
 package com.mystichorizons.mysticnametags.integrations;
 
+import com.airijko.endlessleveling.data.PlayerData;
+import com.airijko.endlessleveling.managers.PlayerDataManager;
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.economy.*;
+import com.mystichorizons.mysticnametags.integrations.ecoquests.EcoQuestsCompat;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingStatBridge;
 import com.mystichorizons.mysticnametags.integrations.permissions.*;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
+import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -974,5 +981,130 @@ public class IntegrationManager {
             }
         }
         return java.util.Collections.unmodifiableList(names);
+    }
+
+    @Nonnull
+    public String getEndlessLevel(@Nonnull UUID uuid) {
+        if (!Settings.get().isEndlessLevelingNameplatesEnabled()) {
+            return "";
+        }
+
+        try {
+            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
+            com.airijko.endlessleveling.EndlessLeveling plugin =
+                    com.airijko.endlessleveling.EndlessLeveling.getInstance();
+            if (plugin == null) return "";
+
+            PlayerDataManager pdm = plugin.getPlayerDataManager();
+            if (pdm == null) return "";
+
+            PlayerData data = pdm.get(uuid);
+            if (data == null) return "";
+
+            int level = Math.max(1, data.getLevel());
+            return String.valueOf(level);
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    @Nonnull
+    public String getEndlessPrestige(@Nonnull UUID uuid) {
+        Settings s = Settings.get();
+        if (!s.isEndlessLevelingNameplatesEnabled() || !s.isEndlessPrestigeDisplayEnabled()) {
+            return "";
+        }
+
+        try {
+            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
+            com.airijko.endlessleveling.EndlessLeveling plugin =
+                    com.airijko.endlessleveling.EndlessLeveling.getInstance();
+            if (plugin == null) return "";
+
+            PlayerDataManager pdm = plugin.getPlayerDataManager();
+            if (pdm == null) return "";
+
+            PlayerData data = pdm.get(uuid);
+            if (data == null) return "";
+
+            int prestige = Math.max(0, data.getPrestigeLevel());
+            if (prestige <= 0) return "";
+
+            return s.getEndlessPrestigePrefix() + prestige;
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    @Nonnull
+    public String getEndlessRace(@Nonnull UUID uuid) {
+        Settings s = Settings.get();
+        if (!s.isEndlessLevelingNameplatesEnabled() || !s.isEndlessRaceDisplayEnabled()) {
+            return "";
+        }
+
+        try {
+            Class.forName("com.airijko.endlessleveling.EndlessLeveling");
+            com.airijko.endlessleveling.EndlessLeveling plugin =
+                    com.airijko.endlessleveling.EndlessLeveling.getInstance();
+            if (plugin == null) return "";
+
+            PlayerDataManager pdm = plugin.getPlayerDataManager();
+            if (pdm == null) return "";
+
+            PlayerData data = pdm.get(uuid);
+            if (data == null) return "";
+
+            String race = data.getRaceId();
+            if (race == null || race.isBlank()) {
+                race = PlayerData.DEFAULT_RACE_ID;
+            }
+
+            return race == null ? "" : race.trim();
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    @Nonnull
+    public String getRpgLevel(@Nonnull PlayerRef playerRef) {
+        if (!Settings.get().isRpgLevelingNameplatesEnabled()) {
+            return "";
+        }
+
+        try {
+            RPGLevelingAPI api = RPGLevelingAPI.get();
+            if (api == null) return "";
+
+            Ref<EntityStore> ref = playerRef.getReference();
+            if (ref == null || !ref.isValid()) return "";
+
+            Store<EntityStore> store = ref.getStore();
+            RPGLevelingAPI.PlayerLevelInfo info = api.getPlayerLevelInfo(playerRef, store);
+            if (info == null || info.getLevel() <= 0) {
+                return "";
+            }
+
+            return String.valueOf(info.getLevel());
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    @Nonnull
+    public String getEcoQuestsRank(@Nonnull UUID uuid) {
+        try {
+            if (!EcoQuestsCompat.isAvailable()) {
+                return "";
+            }
+
+            String rank = EcoQuestsCompat.getRankId(uuid);
+            if (rank == null || rank.isBlank()) {
+                return "E";
+            }
+            return rank.trim();
+        } catch (Throwable ignored) {
+            return "E";
+        }
     }
 }
