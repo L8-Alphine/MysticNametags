@@ -10,20 +10,25 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.tags.TagManager;
-import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
-public class LevelNameplateRefreshTask implements Runnable {
+public final class LevelNameplateRefreshTask implements Runnable {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
+    /**
+     * Tracks last seen RPG level so we only refresh when it changes.
+     */
+    private final Map<UUID, Integer> lastKnownLevels = new ConcurrentHashMap<>();
+
     @Override
     public void run() {
-        // Config + availability guard
         if (!Settings.get().isRpgLevelingNameplatesEnabled()) return;
         if (!MysticNameTagsPlugin.isRpgLevelingAvailable()) return;
 
@@ -59,7 +64,9 @@ public class LevelNameplateRefreshTask implements Runnable {
             if (entityRef == null || !entityRef.isValid()) continue;
 
             String baseName = playerRef.getUsername();
-            if (baseName == null) baseName = "Player";
+            if (baseName == null || baseName.isBlank()) {
+                baseName = "Player";
+            }
 
             int level = 1;
             try {
@@ -68,31 +75,29 @@ public class LevelNameplateRefreshTask implements Runnable {
                     level = info.getLevel();
                 }
             } catch (Throwable t) {
-                LOGGER.at(Level.WARNING).log(
-                        "[MysticNameTags] Failed to fetch RPG level for " + baseName + " (" + uuid + "), defaulting to 1: " + t
-                );
+                LOGGER.at(Level.FINE).withCause(t)
+                        .log("[MysticNameTags] Failed to fetch RPG level for %s (%s)", baseName, uuid);
             }
 
-            // Build "rank + name + tag" (colored string), then append level (colored style),
-            // and also produce a plain fallback for the vanilla Nameplate component.
-            String resolvedColored = tagManager.getColoredFullNameplate(playerRef);
+            Integer previous = lastKnownLevels.put(uuid, level);
+            if (previous != null && previous == level) {
+                continue;
+            }
 
-            // You can style this however you want; glyph renderer understands <#RRGGBB> and </>.
-            String coloredWithLevel = resolvedColored + " <#AAAAAA>[Lvl. " + level + "]</>";
-
-            // Vanilla nameplate must be plain text
-            String plainFallback = ColorFormatter.stripFormatting(coloredWithLevel).trim();
-
-            if (Settings.get().isExperimentalGlyphNameplatesEnabled()) {
-                // Hide vanilla to prevent double-render
-                NameplateManager.get().apply(uuid, store, entityRef, " ");
-
-                // Render colored glyph line above player
-                GlyphNameplateManager.get().apply(uuid, world, store, entityRef, coloredWithLevel);
-            } else {
-                // Normal: vanilla nameplate only
-                NameplateManager.get().apply(uuid, store, entityRef, plainFallback);
+            try {
+                tagManager.refreshNameplate(playerRef, world);
+            } catch (Throwable t) {
+                LOGGER.at(Level.FINE).withCause(t)
+                        .log("[MysticNameTags] Failed to refresh RPG-driven nameplate for %s (%s)", baseName, uuid);
             }
         }
+    }
+
+    public void invalidate(@Nonnull UUID uuid) {
+        lastKnownLevels.remove(uuid);
+    }
+
+    public void forget(@Nonnull UUID uuid) {
+        lastKnownLevels.remove(uuid);
     }
 }
