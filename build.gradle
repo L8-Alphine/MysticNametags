@@ -4,17 +4,27 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.2.0'
+version = '1.2.1'
 
 repositories {
     mavenCentral()
+    // Official Hytale Maven repository
+    maven {
+        name = 'hytale-release'
+        url = 'https://maven.hytale.com/release'
+    }
+    maven {
+        name = 'hytale-pre-release'
+        url = 'https://maven.hytale.com/pre-release'
+    }
     maven {
         url "https://repo.codemc.io/repository/creatorfromhell/"
     }
 }
 
 dependencies {
-    compileOnly files('libs/HytaleServer.jar')
+    // Hytale Server API from official Maven repository
+    compileOnly 'com.hypixel.hytale:Server:+'
 
     // JSR305 annotations (@Nonnull, @Nullable)
     compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
