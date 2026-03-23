@@ -1328,6 +1328,22 @@ public class TagManager {
         }
     }
 
+    public void onExternalNameplateDataChanged(@Nonnull UUID uuid) {
+        clearCanUseCache(uuid);
+        forgetNameplate(uuid);
+
+        try {
+            integrations.invalidateEndlessLevelingNameplate(uuid);
+        } catch (Throwable ignored) {
+        }
+
+        PlayerRef ref = onlinePlayers.get(uuid);
+        World world = onlineWorlds.get(uuid);
+        if (ref != null && world != null) {
+            refreshNameplate(ref, world);
+        }
+    }
+
     private void refreshIfOnline(@Nonnull UUID uuid) {
         PlayerRef ref = onlinePlayers.get(uuid);
         World world = onlineWorlds.get(uuid);
