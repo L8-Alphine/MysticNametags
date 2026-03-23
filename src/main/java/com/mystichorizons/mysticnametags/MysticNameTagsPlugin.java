@@ -46,7 +46,6 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
     private ScheduledExecutorService levelScheduler;
     private ScheduledExecutorService glyphScheduler;
-    private ScheduledExecutorService viewerGlyphScheduler;
 
     private IntegrationManager integrations;
     private UpdateChecker updateChecker;
