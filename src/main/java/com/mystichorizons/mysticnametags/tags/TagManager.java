@@ -1424,11 +1424,12 @@ public class TagManager {
             }
 
             String previous = lastNameplateText.get(uuid);
-            if (previous != null && previous.equals(compareKey)) {
-                if (!glyphEnabled || GlyphNameplateManager.get().hasLiveRender(uuid)) {
-                    return;
-                }
-            }
+            // this causes helicopter issue so commenting out for now
+            // if (previous != null && previous.equals(compareKey)) {
+            //     if (!glyphEnabled || GlyphNameplateManager.get().hasLiveRender(uuid)) {
+            //         return;
+            //     }
+            // }
 
             if (glyphEnabled) {
                 NameplateManager.get().apply(uuid, store, ref, " ");

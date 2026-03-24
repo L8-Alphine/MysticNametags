@@ -7,6 +7,9 @@ import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
+import com.hypixel.hytale.protocol.Direction;
+import com.hypixel.hytale.protocol.ModelTransform;
+import com.hypixel.hytale.protocol.TransformUpdate;
 import com.hypixel.hytale.server.core.asset.type.entityeffect.config.EntityEffect;
 import com.hypixel.hytale.server.core.asset.type.entityeffect.config.OverlapBehavior;
 import com.hypixel.hytale.server.core.asset.type.model.config.Model;
@@ -18,6 +21,8 @@ import com.hypixel.hytale.server.core.modules.entity.component.Intangible;
 import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
 import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
+import com.hypixel.hytale.server.core.modules.entity.tracker.EntityTrackerSystems.EntityViewer;
+import com.hypixel.hytale.server.core.modules.entity.tracker.EntityTrackerSystems.Visible;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
@@ -43,23 +48,12 @@ public final class GlyphNameplateManager {
     private static final GlyphNameplateManager INSTANCE = new GlyphNameplateManager();
 
     private static final double ANCHOR_Y_OFFSET = 2.25d;
-    private static final float YAW_EPSILON = 0.001f;
-    private static final double POSITION_EPSILON = 0.001d;
-
-    // Require roughly ~2 blocks improvement before switching viewers.
-    private static final double VIEWER_SWITCH_BIAS_SQ = 4.0d;
 
     // Set to 180f only if all authored glyph assets are globally backwards.
     private static final float GLYPH_YAW_CORRECTION_DEGREES = 0f;
 
     private static final double GLYPH_EXTRA_SPACING_PX = 4.0d;
     private static final double GLYPH_SOURCE_WIDTH_PX = 16.0d;
-
-    // Your current build appears to still need child yaw sync to visually match anchor rotation.
-    private static final boolean FORCE_GLYPH_CHILD_ROTATION_SYNC = true;
-
-    // Keep true if your mounted anchors do not perfectly stay aligned on all builds.
-    private static final boolean FORCE_ANCHOR_POSITION_SYNC = true;
 
     private static final Map<Integer, String> RESOLVED_EFFECT_IDS = new ConcurrentHashMap<>();
     private final Map<UUID, RenderState> states = new ConcurrentHashMap<>();
@@ -186,10 +180,6 @@ public final class GlyphNameplateManager {
         return glyphWidth + extraSpacing;
     }
 
-    private static double square(double d) {
-        return d * d;
-    }
-
     private static float normalizeDegrees(float yaw) {
         float out = yaw % 360f;
         if (out < 0f) out += 360f;
@@ -201,19 +191,6 @@ public final class GlyphNameplateManager {
         float out = yaw % twoPi;
         if (out < 0f) out += twoPi;
         return out;
-    }
-
-    private static boolean nearlyEqualYaw(float a, float b, boolean looksDegrees) {
-        if (looksDegrees) {
-            float diff = Math.abs(normalizeDegrees(a) - normalizeDegrees(b));
-            diff = Math.min(diff, 360f - diff);
-            return diff < YAW_EPSILON;
-        } else {
-            float twoPi = (float) (Math.PI * 2.0);
-            float diff = Math.abs(normalizeRadians(a) - normalizeRadians(b));
-            diff = Math.min(diff, twoPi - diff);
-            return diff < YAW_EPSILON;
-        }
     }
 
     public void apply(@Nonnull UUID uuid,
@@ -299,9 +276,6 @@ public final class GlyphNameplateManager {
         follow(uuid, world, store, playerRef, state);
     }
 
-    /**
-     * Means: do we actually have a live rendered glyph anchor/glyph entity?
-     */
     public boolean hasState(@Nonnull UUID uuid) {
         RenderState state = states.get(uuid);
         return hasLiveRender(state);
@@ -341,17 +315,6 @@ public final class GlyphNameplateManager {
 
         despawnAll(store, world.getEntityStore(), state);
         state.lines.clear();
-
-        state.lastFaceYaw = Float.NaN;
-        state.lastAnchorX = Double.NaN;
-        state.lastAnchorY = Double.NaN;
-        state.lastAnchorZ = Double.NaN;
-
-        state.preferredViewer = null;
-        state.hasNearbyViewer = false;
-        state.nextViewerRefreshAtMs = 0L;
-        state.nextIdleFollowAtMs = 0L;
-        state.nextGlyphRotationSyncAtMs = 0L;
 
         TransformComponent playerTx = store.getComponent(playerRef, TransformComponent.getComponentType());
         if (playerTx == null) {
@@ -402,6 +365,12 @@ public final class GlyphNameplateManager {
             anchorHolder.putComponent(NetworkId.getComponentType(), new NetworkId(world.getEntityStore().takeNextNetworkId()));
             anchorHolder.putComponent(UUIDComponent.getComponentType(), UUIDComponent.randomUUID());
             anchorHolder.putComponent(Intangible.getComponentType(), Intangible.INSTANCE);
+
+            try {
+                // Ensure tracker knows about the anchor so clients can get the TransformUpdate
+                anchorHolder.ensureComponent(EntityModule.get().getVisibleComponentType());
+            } catch (Throwable ignored) {
+            }
 
             if (MountCompat.isSupported()) {
                 MountCompat.mount(anchorHolder, playerRef, new Vector3f(0f, (float) (ANCHOR_Y_OFFSET + lineYOffset), 0f));
@@ -477,9 +446,6 @@ public final class GlyphNameplateManager {
             return false;
         }
 
-        // Success rules:
-        // - blank / whitespace-only visual text can still be considered successful if at least one anchor spawned
-        // - otherwise, if we attempted to spawn visible glyphs, at least one should exist
         if (!spawnAttemptedForVisibleGlyph) {
             return true;
         }
@@ -496,21 +462,6 @@ public final class GlyphNameplateManager {
         TransformComponent playerTx = store.getComponent(playerRef, TransformComponent.getComponentType());
         if (playerTx == null) return;
 
-        Settings settings = Settings.get();
-
-        final double viewerActivationDistanceSq =
-                square(settings.getExperimentalGlyphViewerActivationDistance());
-        final double viewerDropDistanceSq =
-                square(Math.max(
-                        settings.getExperimentalGlyphViewerDropDistance(),
-                        settings.getExperimentalGlyphViewerActivationDistance()
-                ));
-        final long activeViewerRefreshMs = settings.getExperimentalGlyphViewerRefreshActiveMs();
-        final long idleViewerRefreshMs = settings.getExperimentalGlyphViewerRefreshIdleMs();
-        final long idleFollowMs = settings.getExperimentalGlyphIdleFollowIntervalMs();
-        final long glyphRotationSyncMs = settings.getExperimentalGlyphRotationSyncIntervalMs();
-        final double lineSpacing = settings.getExperimentalGlyphLineSpacing();
-
         Vector3d playerPos = playerTx.getTransform().getPosition();
         Vector3f playerRot = playerTx.getTransform().getRotation();
 
@@ -522,229 +473,80 @@ public final class GlyphNameplateManager {
             state.yawNativeLooksLikeDegrees = looksDegrees;
         }
 
-        long now = System.currentTimeMillis();
-
-        long viewerRefreshInterval = state.hasNearbyViewer
-                ? activeViewerRefreshMs
-                : idleViewerRefreshMs;
-
-        boolean needViewerRefresh =
-                state.preferredViewer == null
-                        || now >= state.nextViewerRefreshAtMs
-                        || !isViewerStillUsable(state.preferredViewer, playerPos, store, viewerDropDistanceSq);
-
-        if (needViewerRefresh) {
-            state.preferredViewer = resolvePreferredViewer(
-                    world,
-                    uuid,
-                    playerPos,
-                    store,
-                    state,
-                    viewerActivationDistanceSq,
-                    viewerDropDistanceSq
-            );
-            state.nextViewerRefreshAtMs = now + viewerRefreshInterval;
-        }
-
-        PlayerRef viewer = state.preferredViewer;
-        state.hasNearbyViewer = (viewer != null);
-
-        if (!state.hasNearbyViewer && now < state.nextIdleFollowAtMs) {
-            return;
-        }
-
-        float faceYawNative;
-        if (viewer != null) {
-            TransformComponent viewerTx = store.getComponent(viewer.getReference(), TransformComponent.getComponentType());
-            if (viewerTx != null) {
-                Vector3d viewerPos = viewerTx.getTransform().getPosition();
-
-                double dx = viewerPos.getX() - playerPos.getX();
-                double dz = viewerPos.getZ() - playerPos.getZ();
-
-                double angleRad = Math.atan2(dx, dz) + Math.PI;
-
-                faceYawNative = looksDegrees
-                        ? normalizeDegrees((float) Math.toDegrees(angleRad))
-                        : normalizeRadians((float) angleRad);
-            } else {
-                faceYawNative = RotationCompat.addYawNative(playerRot.getY(), 180f, looksDegrees);
-            }
-        } else {
-            faceYawNative = RotationCompat.addYawNative(playerRot.getY(), 180f, looksDegrees);
-        }
-
-        faceYawNative = RotationCompat.addYawNative(
-                faceYawNative,
-                GLYPH_YAW_CORRECTION_DEGREES,
-                looksDegrees
-        );
-
-        if (looksDegrees) {
-            faceYawNative = normalizeDegrees(faceYawNative);
-        } else {
-            faceYawNative = normalizeRadians(faceYawNative);
-        }
-
-        double anchorX = playerPos.getX();
-        double anchorY = playerPos.getY() + ANCHOR_Y_OFFSET;
-        double anchorZ = playerPos.getZ();
-
-        boolean moved =
-                Double.isNaN(state.lastAnchorX)
-                        || Math.abs(state.lastAnchorX - anchorX) > POSITION_EPSILON
-                        || Math.abs(state.lastAnchorY - anchorY) > POSITION_EPSILON
-                        || Math.abs(state.lastAnchorZ - anchorZ) > POSITION_EPSILON;
-
-        boolean rotated =
-                Float.isNaN(state.lastFaceYaw)
-                        || !nearlyEqualYaw(state.lastFaceYaw, faceYawNative, looksDegrees);
-
-        if (!moved && !rotated) {
-            if (!state.hasNearbyViewer) {
-                state.nextIdleFollowAtMs = now + idleFollowMs;
-            }
-            return;
-        }
-
-        state.lastAnchorX = anchorX;
-        state.lastAnchorY = anchorY;
-        state.lastAnchorZ = anchorZ;
-        state.lastFaceYaw = faceYawNative;
-
-        if (!state.hasNearbyViewer) {
-            state.nextIdleFollowAtMs = now + idleFollowMs;
-        }
-
         for (int i = 0; i < state.lines.size(); i++) {
             LineRenderState line = state.lines.get(i);
-            if (line == null) continue;
-            if (line.anchorRef == null || !line.anchorRef.isValid()) continue;
+            if (line == null || line.anchorRef == null || !line.anchorRef.isValid()) continue;
 
-            TransformComponent anchorTx = store.getComponent(line.anchorRef, TransformComponent.getComponentType());
-            if (anchorTx == null) continue;
+            Visible visible = store.getComponent(line.anchorRef, EntityModule.get().getVisibleComponentType());
+            if (visible == null || visible.visibleTo.isEmpty()) continue;
 
-            boolean changed = false;
+            for (Map.Entry<Ref<EntityStore>, EntityViewer> entry : visible.visibleTo.entrySet()) {
+                Ref<EntityStore> viewerRef = entry.getKey();
+                EntityViewer viewer = entry.getValue();
 
-            if (FORCE_ANCHOR_POSITION_SYNC && moved) {
-                double lineY = playerPos.getY() + ANCHOR_Y_OFFSET + (i * lineSpacing);
-                anchorTx.getPosition().setX(anchorX);
-                anchorTx.getPosition().setY(lineY);
-                anchorTx.getPosition().setZ(anchorZ);
-                changed = true;
-            }
+                if (!viewerRef.isValid()) continue;
 
-            if (rotated) {
-                anchorTx.setRotation(new Vector3f(0f, faceYawNative, 0f));
-                changed = true;
-            }
+                float yaw;
+                
+                // If the viewer is the player owning the tag, fallback to their own rotation + 180 degrees
+                // This ensures it faces them nicely in 3rd person and rotates with them
+                if (viewerRef.equals(playerRef)) {
+                    yaw = RotationCompat.addYawNative(playerRot.getY(), 180f, looksDegrees);
+                    if (looksDegrees) {
+                        yaw = normalizeDegrees(yaw);
+                    } else {
+                        yaw = normalizeRadians(yaw);
+                    }
+                } else {
+                    TransformComponent viewerTx = store.getComponent(viewerRef, TransformComponent.getComponentType());
+                    if (viewerTx == null) continue;
 
-            if (changed) {
-                StoreComponentUpdateCompat.update(store, line.anchorRef, anchorTx);
-            }
-        }
+                    Vector3d viewerPos = viewerTx.getTransform().getPosition();
 
-        if (FORCE_GLYPH_CHILD_ROTATION_SYNC
-                && rotated
-                && now >= state.nextGlyphRotationSyncAtMs) {
+                    double dx = viewerPos.getX() - playerPos.getX();
+                    double dz = viewerPos.getZ() - playerPos.getZ();
 
-            state.nextGlyphRotationSyncAtMs = now + glyphRotationSyncMs;
+                    yaw = (float) Math.atan2(-dx, -dz);
 
-            for (LineRenderState line : state.lines) {
-                if (line == null) continue;
-
-                for (Ref<EntityStore> glyphRef : line.glyphRefs) {
-                    if (glyphRef == null || !glyphRef.isValid()) continue;
-
-                    TransformComponent glyphTx = store.getComponent(glyphRef, TransformComponent.getComponentType());
-                    if (glyphTx == null) continue;
-
-                    glyphTx.setRotation(new Vector3f(0f, faceYawNative, 0f));
-                    StoreComponentUpdateCompat.update(store, glyphRef, glyphTx);
-                }
-            }
-        }
-    }
-
-    private boolean isViewerStillUsable(@Nullable PlayerRef viewer,
-                                        @Nonnull Vector3d targetPos,
-                                        @Nonnull Store<EntityStore> store,
-                                        double viewerDropDistanceSq) {
-        if (viewer == null) return false;
-
-        Ref<EntityStore> ref = viewer.getReference();
-        if (ref == null || !ref.isValid()) return false;
-
-        try {
-            TransformComponent tx = store.getComponent(ref, TransformComponent.getComponentType());
-            if (tx == null) return false;
-
-            double distSq = tx.getTransform().getPosition().distanceSquaredTo(targetPos);
-            return distSq <= viewerDropDistanceSq;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    @Nullable
-    private PlayerRef resolvePreferredViewer(@Nonnull World world,
-                                             @Nonnull UUID targetUuid,
-                                             @Nonnull Vector3d targetPos,
-                                             @Nonnull Store<EntityStore> store,
-                                             @Nonnull RenderState state,
-                                             double viewerActivationDistanceSq,
-                                             double viewerDropDistanceSq) {
-
-        PlayerRef current = state.preferredViewer;
-        double currentDistSq = Double.MAX_VALUE;
-
-        if (current != null) {
-            Ref<EntityStore> ref = current.getReference();
-            if (ref != null && ref.isValid()) {
-                TransformComponent tx = store.getComponent(ref, TransformComponent.getComponentType());
-                if (tx != null) {
-                    currentDistSq = tx.getTransform().getPosition().distanceSquaredTo(targetPos);
-
-                    if (currentDistSq <= viewerDropDistanceSq) {
-                        PlayerRef nearest = null;
-                        double nearestDistSq = currentDistSq;
-
-                        for (PlayerRef other : world.getPlayerRefs()) {
-                            if (other == null || other.getUuid() == null || other.getUuid().equals(targetUuid))
-                                continue;
-
-                            Ref<EntityStore> otherRef = other.getReference();
-                            if (otherRef == null || !otherRef.isValid()) continue;
-
-                            try {
-                                TransformComponent otherTx = store.getComponent(otherRef, TransformComponent.getComponentType());
-                                if (otherTx == null) continue;
-
-                                double distSq = otherTx.getTransform().getPosition().distanceSquaredTo(targetPos);
-                                if (distSq > viewerActivationDistanceSq) continue;
-
-                                if (distSq < nearestDistSq) {
-                                    nearestDistSq = distSq;
-                                    nearest = other;
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        }
-
-                        if (nearest != null && nearestDistSq + VIEWER_SWITCH_BIAS_SQ < currentDistSq) {
-                            state.preferredViewer = nearest;
-                            return nearest;
-                        }
-
-                        return current;
+                    if (looksDegrees) {
+                        yaw = normalizeDegrees((float) Math.toDegrees(yaw));
+                    } else {
+                        yaw = normalizeRadians(yaw);
                     }
                 }
+
+                yaw = RotationCompat.addYawNative(yaw, GLYPH_YAW_CORRECTION_DEGREES, looksDegrees);
+
+                try {
+                    // Update rotation via client TransformUpdate without overriding smooth position mounting
+                    ModelTransform transform = new ModelTransform();
+                    transform.bodyOrientation = new Direction(yaw, 0.0F, 0.0F);
+                    transform.lookOrientation = new Direction(yaw, 0.0F, 0.0F);
+                    TransformUpdate update = new TransformUpdate(transform);
+
+                    if (!viewer.visible.contains(line.anchorRef)) {
+                        viewer.visible.add(line.anchorRef);
+                    }
+                    
+                    // Rotate the main anchor to make the text billboard/pivot as a whole to this viewer
+                    viewer.queueUpdate(line.anchorRef, update);
+
+                    for (Ref<EntityStore> glyphRef : line.glyphRefs) {
+                        if (glyphRef != null && glyphRef.isValid()) {
+                            if (!viewer.visible.contains(glyphRef)) {
+                                viewer.visible.add(glyphRef);
+                            }
+                            
+                            // Rotate the individual faces to make them render cleanly towards the viewer
+                            viewer.queueUpdate(glyphRef, update);
+                        }
+                    }
+                } catch (Throwable t) {
+                    LOGGER.at(Level.FINE).withCause(t)
+                            .log("[MysticNameTags] Failed to queue rotation update for viewer.");
+                }
             }
         }
-
-        PlayerRef nearest = findNearestViewer(world, targetUuid, targetPos, store, viewerActivationDistanceSq);
-        state.preferredViewer = nearest;
-        return nearest;
     }
 
     private void despawnAll(@Nonnull Store<EntityStore> store,
@@ -775,36 +577,6 @@ public final class GlyphNameplateManager {
         }
 
         state.lines.clear();
-    }
-
-    private PlayerRef findNearestViewer(World world,
-                                        UUID targetUuid,
-                                        Vector3d targetPos,
-                                        Store<EntityStore> store,
-                                        double viewerActivationDistanceSq) {
-        PlayerRef nearest = null;
-        double minDistSq = viewerActivationDistanceSq;
-
-        for (PlayerRef other : world.getPlayerRefs()) {
-            if (other == null || other.getUuid() == null || other.getUuid().equals(targetUuid)) continue;
-
-            Ref<EntityStore> otherRef = other.getReference();
-            if (otherRef == null || !otherRef.isValid()) continue;
-
-            try {
-                TransformComponent otherTx = store.getComponent(otherRef, TransformComponent.getComponentType());
-                if (otherTx == null) continue;
-
-                double distSq = otherTx.getTransform().getPosition().distanceSquaredTo(targetPos);
-                if (distSq < minDistSq) {
-                    minDistSq = distSq;
-                    nearest = other;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        return nearest;
     }
 
     @Nullable
@@ -946,15 +718,6 @@ public final class GlyphNameplateManager {
         double scale = 1.0d;
         String worldName = null;
         Boolean yawNativeLooksLikeDegrees = null;
-        double lastAnchorX = Double.NaN;
-        double lastAnchorY = Double.NaN;
-        double lastAnchorZ = Double.NaN;
-        float lastFaceYaw = Float.NaN;
-        PlayerRef preferredViewer = null;
-        boolean hasNearbyViewer = false;
-        long nextViewerRefreshAtMs = 0L;
-        long nextIdleFollowAtMs = 0L;
-        long nextGlyphRotationSyncAtMs = 0L;
     }
 
     private static final class LineRenderState {
@@ -1169,39 +932,6 @@ public final class GlyphNameplateManager {
                 return true;
             } catch (Throwable ignored) {
                 return false;
-            }
-        }
-    }
-
-    private static final class StoreComponentUpdateCompat {
-        private static volatile boolean cached = false;
-        private static Method mUpdateComponent3;
-        private static Method mSetComponent3;
-        private static Method mPutComponent3;
-
-        static void update(Store<EntityStore> store, Ref<EntityStore> ref, TransformComponent tx) {
-            tryInit(store);
-            try {
-                Object type = TransformComponent.getComponentType();
-                if (mUpdateComponent3 != null) mUpdateComponent3.invoke(store, ref, type, tx);
-                else if (mSetComponent3 != null) mSetComponent3.invoke(store, ref, type, tx);
-                else if (mPutComponent3 != null) mPutComponent3.invoke(store, ref, type, tx);
-            } catch (Throwable ignored) {
-            }
-        }
-
-        private static void tryInit(Store<EntityStore> store) {
-            if (cached) return;
-            synchronized (StoreComponentUpdateCompat.class) {
-                if (cached) return;
-                for (Method m : store.getClass().getMethods()) {
-                    if (m.getParameterCount() == 3) {
-                        if (m.getName().equals("updateComponent")) mUpdateComponent3 = m;
-                        else if (m.getName().equals("setComponent")) mSetComponent3 = m;
-                        else if (m.getName().equals("putComponent")) mPutComponent3 = m;
-                    }
-                }
-                cached = true;
             }
         }
     }
