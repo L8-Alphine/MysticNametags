@@ -102,39 +102,6 @@ public class PlayerListener {
 
         // Do not do the real glyph/nameplate apply here.
         // PlayerReadyEvent is the better lifecycle point.
-
-        try {
-            MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
-            if (plugin != null) {
-                UpdateChecker checker = plugin.getUpdateChecker();
-                if (checker != null && checker.hasVersionInfo() && checker.isUpdateAvailable()) {
-
-                    TagManager tagManager = TagManager.get();
-                    IntegrationManager integrations = tagManager.getIntegrations();
-                    if (integrations != null &&
-                            integrations.hasPermission(playerRef, "mysticnametags.admin.update")) {
-
-                        String current = checker.getCurrentVersion();
-                        String latest = checker.getLatestVersion();
-
-                        playerRef.sendMessage(
-                                ColorFormatter.toMessage(
-                                        "&7[&bMysticNameTags&7] &eA new version is available: &f"
-                                                + latest + " &7(current: &f" + current + "&7)&e."
-                                )
-                        );
-                        playerRef.sendMessage(
-                                ColorFormatter.toMessage(
-                                        "&7[&bMysticNameTags&7] &eDownload it on &fCurseForge &ewhen convenient."
-                                )
-                        );
-                    }
-                }
-            }
-        } catch (Exception ex) {
-            LOGGER.at(Level.FINE).withCause(ex)
-                    .log("[MysticNameTags] Failed to send update notice on join.");
-        }
     }
 
     private void onAddPlayerToWorld(AddPlayerToWorldEvent event) {
@@ -214,6 +181,40 @@ public class PlayerListener {
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
                     .log("[MysticNameTags] Failed global refresh pass after PlayerReady for %s", uuid);
+        }
+
+        // Update Notifier
+
+        try {
+            MysticNameTagsPlugin plugin = MysticNameTagsPlugin.getInstance();
+            if (plugin != null) {
+                UpdateChecker checker = plugin.getUpdateChecker();
+                if (checker != null && checker.hasVersionInfo() && checker.isUpdateAvailable()) {
+
+                    IntegrationManager integrations = tagManager.getIntegrations();
+                    if (integrations != null &&
+                            integrations.hasPermission(playerRef, "mysticnametags.admin.update")) {
+
+                        String current = checker.getCurrentVersion();
+                        String latest = checker.getLatestVersion();
+
+                        playerRef.sendMessage(
+                                ColorFormatter.toMessage(
+                                        "&7[&bMysticNameTags&7] &eA new version is available: &f"
+                                                + latest + " &7(current: &f" + current + "&7)&e."
+                                )
+                        );
+                        playerRef.sendMessage(
+                                ColorFormatter.toMessage(
+                                        "&7[&bMysticNameTags&7] &eDownload it on &fCurseForge &ewhen convenient."
+                                )
+                        );
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            LOGGER.at(Level.FINE).withCause(ex)
+                    .log("[MysticNameTags] Failed to send update notice on join.");
         }
     }
 
