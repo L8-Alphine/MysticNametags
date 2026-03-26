@@ -391,144 +391,152 @@ public final class Settings {
      */
     private void saveToDisk() {
         File file = getFile();
-        try (FileWriter writer = new FileWriter(file)) {
-            JsonObject root = GSON.toJsonTree(this).getAsJsonObject();
-            JsonObject out = new JsonObject();
+        File parent = file.getParentFile();
 
-            Set<String> copied = new HashSet<>();
-
-            Consumer<String> copy = (key) -> {
-                if (root.has(key)) {
-                    out.add(key, root.get(key));
-                    copied.add(key);
-                }
-            };
-
-            out.addProperty("_", "MysticNameTags settings.json – edit & reload/restart to apply changes.");
-
-            addInfoBlock(out, "__core",
-                    "Core nameplate settings.",
-                    "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {endless_primary_class}, {endless_secondary_class}, {rpg_level}, {ecoquests_rank}",
-                    "stripExtraSpaces = condense multiple spaces",
-                    "language = locale bundle (e.g. en_US)",
-                    "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = off)"
-            );
-            copy.accept("nameplateFormat");
-            copy.accept("stripExtraSpaces");
-            copy.accept("language");
-            copy.accept("tagDelaysecs");
-
-            addInfoBlock(out, "__storage",
-                    "Storage backend for tag ownership data.",
-                    "storageBackend = FILE / SQLITE / MYSQL"
-            );
-            copy.accept("storageBackend");
-            copy.accept("sqliteFile");
-            copy.accept("mysqlHost");
-            copy.accept("mysqlPort");
-            copy.accept("mysqlDatabase");
-            copy.accept("mysqlUser");
-            copy.accept("mysqlPassword");
-
-            addInfoBlock(out, "__nameplates",
-                    "Nameplate behavior.",
-                    "nameplatesEnabled = master toggle",
-                    "defaultTagEnabled = use defaultTagId when no tag equipped",
-                    "defaultTagId must match tags.json id"
-            );
-            copy.accept("nameplatesEnabled");
-            copy.accept("defaultTagEnabled");
-            copy.accept("defaultTagId");
-
-            addInfoBlock(out, "__endless",
-                    "EndlessLeveling integration toggles."
-            );
-            copy.accept("endlessLevelingNameplatesEnabled");
-            copy.accept("endlessRaceDisplay");
-            copy.accept("endlessPrestigeDisplay");
-            copy.accept("endlessPrimaryClassDisplay");
-            copy.accept("endlessSecondaryClassDisplay");
-            copy.accept("endlessPrestigePrefix");
-
-            addInfoBlock(out, "__placeholders",
-                    "Placeholder APIs.",
-                    "Auto-detect flags control whether detection can override the enabled flags."
-            );
-            copy.accept("wiFlowPlaceholdersAutoDetect");
-            copy.accept("wiFlowPlaceholdersEnabled");
-            copy.accept("helpchPlaceholderApiAutoDetect");
-            copy.accept("helpchPlaceholderApiEnabled");
-
-            addInfoBlock(out, "__economy",
-                    "Tag purchasing & permission gating.",
-                    "fullPermissionGate = permission node fully gates tags (can hide/block access).",
-                    "permissionGate = tag remains visible, but permission node is required to unlock/equip."
-            );
-            copy.accept("economySystemEnabled");
-            copy.accept("useCoinSystem");
-            copy.accept("usePhysicalCoinEconomy");
-            copy.accept("fullPermissionGate");
-            copy.accept("permissionGate");
-
-            addInfoBlock(out, "__rpg",
-                    "RPGLeveling integration."
-            );
-            copy.accept("rpgLevelingNameplatesEnabled");
-            copy.accept("rpgLevelingRefreshSeconds");
-
-            addInfoBlock(out, "__playtime",
-                    "Playtime provider + extra commands.",
-                    "playtimeProvider = AUTO / INTERNAL / ZIB_PLAYTIME / NONE"
-            );
-            copy.accept("playtimeProvider");
-            copy.accept("ownedTagsCommandEnabled");
-
-            addInfoBlock(out, "__experimental_glyph_nameplates",
-                    "⚠ EXPERIMENTAL ⚠",
-                    "Glyph nameplates spawn an entity per character (expensive).",
-                    "Keep disabled unless testing with low player counts.",
-                    "experimentalGlyphViewerActivationDistance = activate nearest-viewer billboard inside this radius",
-                    "experimentalGlyphViewerDropDistance = keep current viewer until they leave this larger radius",
-                    "experimentalGlyphViewerRefreshActiveMs = viewer scan cadence while active",
-                    "experimentalGlyphViewerRefreshIdleMs = viewer scan cadence while idle",
-                    "experimentalGlyphIdleFollowIntervalMs = follow cadence when no valid nearby viewer exists",
-                    "experimentalGlyphRotationSyncIntervalMs = child glyph yaw sync cadence",
-                    "experimentalGlyphMaxLines = maximum number of rendered lines",
-                    "experimentalGlyphMaxCharsPerLine = visible glyph chars per line",
-                    "experimentalGlyphLineSpacing = vertical spacing between line anchors",
-                    "experimentalGlyphTintStrength = glyph color brightness multiplier (0.0 - 1.0, lower = dimmer/less glow)"
-            );
-            copy.accept("experimentalGlyphNameplatesEnabled");
-            copy.accept("experimentalGlyphMaxChars");
-            copy.accept("experimentalGlyphUpdateTicks");
-            copy.accept("experimentalGlyphMaxEntitiesPerPlayer");
-            copy.accept("experimentalGlyphViewerActivationDistance");
-            copy.accept("experimentalGlyphViewerDropDistance");
-            copy.accept("experimentalGlyphViewerRefreshActiveMs");
-            copy.accept("experimentalGlyphViewerRefreshIdleMs");
-            copy.accept("experimentalGlyphIdleFollowIntervalMs");
-            copy.accept("experimentalGlyphRotationSyncIntervalMs");
-            copy.accept("experimentalGlyphMaxLines");
-            copy.accept("experimentalGlyphMaxCharsPerLine");
-            copy.accept("experimentalGlyphLineSpacing");
-            copy.accept("experimentalGlyphTintStrength");
-
-            JsonObject other = new JsonObject();
-            for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
-                String key = entry.getKey();
-                if (key.startsWith("_")) continue;
-                if (copied.contains(key)) continue;
-                other.add(key, entry.getValue());
+        try {
+            if (parent != null && !parent.exists() && !parent.mkdirs() && !parent.exists()) {
+                throw new IllegalStateException("Failed to create config directory: " + parent.getAbsolutePath());
             }
 
-            if (!other.entrySet().isEmpty()) {
-                addInfoBlock(out, "__other", "=== Other / future settings ===");
-                for (Map.Entry<String, JsonElement> e : other.entrySet()) {
-                    out.add(e.getKey(), e.getValue());
-                }
-            }
+            try (FileWriter writer = new FileWriter(file)) {
+                JsonObject root = GSON.toJsonTree(this).getAsJsonObject();
+                JsonObject out = new JsonObject();
 
-            GSON.toJson(out, writer);
+                Set<String> copied = new HashSet<>();
+
+                Consumer<String> copy = (key) -> {
+                    if (root.has(key)) {
+                        out.add(key, root.get(key));
+                        copied.add(key);
+                    }
+                };
+
+                out.addProperty("_", "MysticNameTags settings.json – edit & reload/restart to apply changes.");
+
+                addInfoBlock(out, "__core",
+                        "Core nameplate settings.",
+                        "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {endless_primary_class}, {endless_secondary_class}, {rpg_level}, {ecoquests_rank}",
+                        "stripExtraSpaces = condense multiple spaces",
+                        "language = locale bundle (e.g. en_US)",
+                        "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = off)"
+                );
+                copy.accept("nameplateFormat");
+                copy.accept("stripExtraSpaces");
+                copy.accept("language");
+                copy.accept("tagDelaysecs");
+
+                addInfoBlock(out, "__storage",
+                        "Storage backend for tag ownership data.",
+                        "storageBackend = FILE / SQLITE / MYSQL"
+                );
+                copy.accept("storageBackend");
+                copy.accept("sqliteFile");
+                copy.accept("mysqlHost");
+                copy.accept("mysqlPort");
+                copy.accept("mysqlDatabase");
+                copy.accept("mysqlUser");
+                copy.accept("mysqlPassword");
+
+                addInfoBlock(out, "__nameplates",
+                        "Nameplate behavior.",
+                        "nameplatesEnabled = master toggle",
+                        "defaultTagEnabled = use defaultTagId when no tag equipped",
+                        "defaultTagId must match tags.json id"
+                );
+                copy.accept("nameplatesEnabled");
+                copy.accept("defaultTagEnabled");
+                copy.accept("defaultTagId");
+
+                addInfoBlock(out, "__endless",
+                        "EndlessLeveling integration toggles."
+                );
+                copy.accept("endlessLevelingNameplatesEnabled");
+                copy.accept("endlessRaceDisplay");
+                copy.accept("endlessPrestigeDisplay");
+                copy.accept("endlessPrimaryClassDisplay");
+                copy.accept("endlessSecondaryClassDisplay");
+                copy.accept("endlessPrestigePrefix");
+
+                addInfoBlock(out, "__placeholders",
+                        "Placeholder APIs.",
+                        "Auto-detect flags control whether detection can override the enabled flags."
+                );
+                copy.accept("wiFlowPlaceholdersAutoDetect");
+                copy.accept("wiFlowPlaceholdersEnabled");
+                copy.accept("helpchPlaceholderApiAutoDetect");
+                copy.accept("helpchPlaceholderApiEnabled");
+
+                addInfoBlock(out, "__economy",
+                        "Tag purchasing & permission gating.",
+                        "fullPermissionGate = permission node fully gates tags (can hide/block access).",
+                        "permissionGate = tag remains visible, but permission node is required to unlock/equip."
+                );
+                copy.accept("economySystemEnabled");
+                copy.accept("useCoinSystem");
+                copy.accept("usePhysicalCoinEconomy");
+                copy.accept("fullPermissionGate");
+                copy.accept("permissionGate");
+
+                addInfoBlock(out, "__rpg",
+                        "RPGLeveling integration."
+                );
+                copy.accept("rpgLevelingNameplatesEnabled");
+                copy.accept("rpgLevelingRefreshSeconds");
+
+                addInfoBlock(out, "__playtime",
+                        "Playtime provider + extra commands.",
+                        "playtimeProvider = AUTO / INTERNAL / ZIB_PLAYTIME / NONE"
+                );
+                copy.accept("playtimeProvider");
+                copy.accept("ownedTagsCommandEnabled");
+
+                addInfoBlock(out, "__experimental_glyph_nameplates",
+                        "⚠ EXPERIMENTAL ⚠",
+                        "Glyph nameplates spawn an entity per character (expensive).",
+                        "Keep disabled unless testing with low player counts.",
+                        "experimentalGlyphViewerActivationDistance = activate nearest-viewer billboard inside this radius",
+                        "experimentalGlyphViewerDropDistance = keep current viewer until they leave this larger radius",
+                        "experimentalGlyphViewerRefreshActiveMs = viewer scan cadence while active",
+                        "experimentalGlyphViewerRefreshIdleMs = viewer scan cadence while idle",
+                        "experimentalGlyphIdleFollowIntervalMs = follow cadence when no valid nearby viewer exists",
+                        "experimentalGlyphRotationSyncIntervalMs = child glyph yaw sync cadence",
+                        "experimentalGlyphMaxLines = maximum number of rendered lines",
+                        "experimentalGlyphMaxCharsPerLine = visible glyph chars per line",
+                        "experimentalGlyphLineSpacing = vertical spacing between line anchors",
+                        "experimentalGlyphTintStrength = glyph color brightness multiplier (0.0 - 1.0, lower = dimmer/less glow)"
+                );
+                copy.accept("experimentalGlyphNameplatesEnabled");
+                copy.accept("experimentalGlyphMaxChars");
+                copy.accept("experimentalGlyphUpdateTicks");
+                copy.accept("experimentalGlyphMaxEntitiesPerPlayer");
+                copy.accept("experimentalGlyphViewerActivationDistance");
+                copy.accept("experimentalGlyphViewerDropDistance");
+                copy.accept("experimentalGlyphViewerRefreshActiveMs");
+                copy.accept("experimentalGlyphViewerRefreshIdleMs");
+                copy.accept("experimentalGlyphIdleFollowIntervalMs");
+                copy.accept("experimentalGlyphRotationSyncIntervalMs");
+                copy.accept("experimentalGlyphMaxLines");
+                copy.accept("experimentalGlyphMaxCharsPerLine");
+                copy.accept("experimentalGlyphLineSpacing");
+                copy.accept("experimentalGlyphTintStrength");
+
+                JsonObject other = new JsonObject();
+                for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
+                    String key = entry.getKey();
+                    if (key.startsWith("_")) continue;
+                    if (copied.contains(key)) continue;
+                    other.add(key, entry.getValue());
+                }
+
+                if (!other.entrySet().isEmpty()) {
+                    addInfoBlock(out, "__other", "=== Other / future settings ===");
+                    for (Map.Entry<String, JsonElement> e : other.entrySet()) {
+                        out.add(e.getKey(), e.getValue());
+                    }
+                }
+
+                GSON.toJson(out, writer);
+            }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
                     .log("[MysticNameTags] Failed to save settings.json");
