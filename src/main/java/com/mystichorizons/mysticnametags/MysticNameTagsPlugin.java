@@ -126,6 +126,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         // Tags + ECS systems + commands + listeners
         // ------------------------------------------------------
         TagManager.init(integrations);
+        PlayerStatManager.init(this.integrations);
 
         // Register commands
         registerCommands();
