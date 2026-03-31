@@ -123,8 +123,8 @@ public final class PlayerStatManager implements StatProvider {
 
             case MYSQL: {
                 String host = settings.getMysqlHost();
-                int    port = settings.getMysqlPort();
-                String db   = settings.getMysqlDatabase();
+                int port = settings.getMysqlPort();
+                String db = settings.getMysqlDatabase();
                 String user = settings.getMysqlUser();
                 String pass = settings.getMysqlPassword();
 
@@ -170,7 +170,24 @@ public final class PlayerStatManager implements StatProvider {
 
     @Nonnull
     private PlayerStatsData getOrLoad(@Nonnull UUID uuid) {
-        return cache.computeIfAbsent(uuid, store::load);
+        return cache.computeIfAbsent(uuid, this::loadAndNormalize);
+    }
+
+    @Nonnull
+    private PlayerStatsData loadAndNormalize(@Nonnull UUID uuid) {
+        PlayerStatsData data = store.load(uuid);
+
+        try {
+            boolean changed = normalizeLoadedBlockCategories(data);
+            if (changed) {
+                store.save(uuid, data);
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed to normalize loaded block stats for " + uuid);
+        }
+
+        return data;
     }
 
     private void save(@Nonnull UUID uuid) {
@@ -204,10 +221,7 @@ public final class PlayerStatManager implements StatProvider {
      * Playtime accumulation is handled externally by PlaytimeService.
      */
     public void onPlayerQuit(@Nonnull UUID uuid) {
-        // drop any ephemeral session stats
         sessionStats.remove(uuid);
-
-        // persist updated data
         save(uuid);
     }
 
@@ -215,17 +229,6 @@ public final class PlayerStatManager implements StatProvider {
     // StatProvider implementation (for TagManager via IntegrationManager)
     // --------------------------------------------------
 
-    /**
-     * Tag requirements use a single string key – we interpret it as:
-     *   "category.statKey"
-     *
-     * Examples:
-     *   "custom.damage_dealt"
-     *   "custom.damage_taken"
-     *   "custom.player_kills"
-     *
-     * If no '.' is present, category "custom" is assumed.
-     */
     @Override
     public @Nullable Integer getStatValue(@Nonnull UUID uuid, @Nonnull String key) {
         long value = getStatLong(uuid, key);
@@ -240,12 +243,7 @@ public final class PlayerStatManager implements StatProvider {
 
     @Override
     public @Nullable Integer getStatValuePattern(@Nonnull UUID uuid, @Nonnull String keyPattern) {
-        if (!keyPattern.contains("*")) {
-            return getStatValue(uuid, keyPattern);
-        }
-
-        PlayerStatsData data = getOrLoad(uuid);
-        long total = sumMatchingStats(data, keyPattern);
+        long total = getStatLong(uuid, keyPattern);
 
         if (total <= 0L) {
             return null;
@@ -264,8 +262,24 @@ public final class PlayerStatManager implements StatProvider {
      * Raw long value for a "category.statKey" string.
      */
     public long getStatLong(@Nonnull UUID uuid, @Nonnull String key) {
+        PlayerStatsData data = getOrLoad(uuid);
+
+        if (key.indexOf('*') >= 0) {
+            return sumMatchingStats(data, key);
+        }
+
         ParsedKey parsed = parseKey(key);
-        return getOrLoad(uuid).get(parsed.category, parsed.stat);
+
+        long direct = data.get(parsed.category, parsed.stat);
+        if (direct > 0L) {
+            return direct;
+        }
+
+        if (isBlockCategory(parsed.category)) {
+            return getAliasedBlockStat(data, parsed.category, parsed.stat);
+        }
+
+        return 0L;
     }
 
     /**
@@ -275,6 +289,7 @@ public final class PlayerStatManager implements StatProvider {
         if (delta == 0L) {
             return getStatLong(uuid, key);
         }
+
         ParsedKey parsed = parseKey(key);
 
         PlayerStatsData data = getOrLoad(uuid);
@@ -289,9 +304,7 @@ public final class PlayerStatManager implements StatProvider {
     // --------------------------------------------------
 
     public long incrementEntityKill(@Nonnull UUID uuid, @Nonnull String entityId) {
-        // total kills
         addToStat(uuid, "custom.kills_total", 1L);
-        // per-entity category
         addToStat(uuid, "killed." + entityId, 1L);
         return getStatLong(uuid, "killed." + entityId);
     }
@@ -302,17 +315,39 @@ public final class PlayerStatManager implements StatProvider {
     }
 
     public long incrementBlockBroken(@Nonnull UUID uuid, @Nonnull String blockId) {
+        String normalized = normalizeBlockId(blockId);
+        String bare = stripNamespace(normalized);
+
         addToStat(uuid, "custom.blocks_broken_total", 1L);
-        addToStat(uuid, "mined." + blockId, 1L);
+
+        // Canonical
+        addToStat(uuid, "mined." + normalized, 1L);
+
+        // Legacy alias compatibility
+        if (!bare.equals(normalized)) {
+            addToStat(uuid, "mined." + bare, 1L);
+        }
+
         getSession(uuid).increment("session", "blocks_broken_total", 1L);
-        return getStatLong(uuid, "mined." + blockId);
+        return getStatLong(uuid, "mined." + normalized);
     }
 
     public long incrementBlockPlaced(@Nonnull UUID uuid, @Nonnull String blockId) {
+        String normalized = normalizeBlockId(blockId);
+        String bare = stripNamespace(normalized);
+
         addToStat(uuid, "custom.blocks_placed_total", 1L);
-        addToStat(uuid, "placed." + blockId, 1L);
+
+        // Canonical
+        addToStat(uuid, "placed." + normalized, 1L);
+
+        // Legacy alias compatibility
+        if (!bare.equals(normalized)) {
+            addToStat(uuid, "placed." + bare, 1L);
+        }
+
         getSession(uuid).increment("session", "blocks_placed_total", 1L);
-        return getStatLong(uuid, "placed." + blockId);
+        return getStatLong(uuid, "placed." + normalized);
     }
 
     public void addDamageDealt(@Nonnull UUID uuid, double amount) {
@@ -373,7 +408,6 @@ public final class PlayerStatManager implements StatProvider {
         String trimmed = key.trim();
         int dot = trimmed.indexOf('.');
         if (dot <= 0 || dot == trimmed.length() - 1) {
-            // No dot or malformed -> treat entire key as stat in "custom" category
             return new ParsedKey("custom", trimmed);
         }
         String cat = trimmed.substring(0, dot);
@@ -382,8 +416,13 @@ public final class PlayerStatManager implements StatProvider {
     }
 
     private long sumMatchingStats(@Nonnull PlayerStatsData data, @Nonnull String pattern) {
-        String regex = wildcardToRegex(pattern);
+        ParsedKey parsed = parseKey(pattern);
 
+        if (isBlockCategory(parsed.category)) {
+            return sumMatchingBlockStats(data, parsed.category, parsed.stat);
+        }
+
+        String regex = wildcardToRegex(pattern);
         long total = 0L;
 
         for (Map.Entry<String, Map<String, Long>> catEntry : data.viewAll().entrySet()) {
@@ -403,6 +442,177 @@ public final class PlayerStatManager implements StatProvider {
         }
 
         return total;
+    }
+
+    private long sumMatchingBlockStats(@Nonnull PlayerStatsData data,
+                                       @Nonnull String category,
+                                       @Nonnull String statPattern) {
+        Map<String, Long> categoryStats = data.getCategory(category);
+        if (categoryStats.isEmpty()) {
+            return 0L;
+        }
+
+        String normalizedPattern = normalizeBlockPattern(statPattern);
+        String barePattern = stripNamespacePattern(normalizedPattern);
+
+        String normalizedRegex = wildcardToRegex(normalizedPattern);
+        String bareRegex = wildcardToRegex(barePattern);
+
+        long total = 0L;
+        Map<String, Long> deduped = new LinkedHashMap<>();
+
+        for (Map.Entry<String, Long> entry : categoryStats.entrySet()) {
+            String rawKey = entry.getKey();
+            Long value = entry.getValue();
+
+            if (rawKey == null || rawKey.isBlank() || value == null || value <= 0L) {
+                continue;
+            }
+
+            String normalizedKey = normalizeBlockId(rawKey);
+            String bareKey = stripNamespace(normalizedKey);
+
+            boolean matches =
+                    normalizedKey.matches(normalizedRegex) ||
+                            bareKey.matches(bareRegex) ||
+                            rawKey.matches(normalizedRegex) ||
+                            rawKey.matches(bareRegex);
+
+            if (!matches) {
+                continue;
+            }
+
+            String dedupeKey = category + "." + normalizedKey;
+            deduped.merge(dedupeKey, value, Math::max);
+        }
+
+        for (Long value : deduped.values()) {
+            if (value != null && value > 0L) {
+                total += value;
+            }
+        }
+
+        return total;
+    }
+
+    private long getAliasedBlockStat(@Nonnull PlayerStatsData data,
+                                     @Nonnull String category,
+                                     @Nonnull String stat) {
+        String normalized = normalizeBlockId(stat);
+        String bare = stripNamespace(normalized);
+
+        long directNormalized = data.get(category, normalized);
+        if (directNormalized > 0L) {
+            return directNormalized;
+        }
+
+        long directBare = data.get(category, bare);
+        if (directBare > 0L) {
+            return directBare;
+        }
+
+        return 0L;
+    }
+
+    private boolean isBlockCategory(@Nonnull String category) {
+        return "mined".equalsIgnoreCase(category) || "placed".equalsIgnoreCase(category);
+    }
+
+    /**
+     * Normalizes loaded stats so canonical namespaced block keys exist.
+     * Keeps legacy bare keys for compatibility.
+     */
+    private boolean normalizeLoadedBlockCategories(@Nonnull PlayerStatsData data) {
+        boolean changed = false;
+
+        changed |= normalizeLoadedBlockCategory(data, "mined");
+        changed |= normalizeLoadedBlockCategory(data, "placed");
+
+        return changed;
+    }
+
+    private boolean normalizeLoadedBlockCategory(@Nonnull PlayerStatsData data,
+                                                 @Nonnull String category) {
+        Map<String, Long> existing = data.getCategory(category);
+        if (existing.isEmpty()) {
+            return false;
+        }
+
+        boolean changed = false;
+        Map<String, Long> canonicalAdds = new LinkedHashMap<>();
+
+        for (Map.Entry<String, Long> entry : existing.entrySet()) {
+            String rawKey = entry.getKey();
+            Long value = entry.getValue();
+
+            if (rawKey == null || rawKey.isBlank() || value == null || value <= 0L) {
+                continue;
+            }
+
+            String normalized = normalizeBlockId(rawKey);
+            if (!normalized.equals(rawKey)) {
+                canonicalAdds.merge(normalized, value, Math::max);
+            }
+        }
+
+        for (Map.Entry<String, Long> add : canonicalAdds.entrySet()) {
+            String stat = add.getKey();
+            long value = add.getValue() == null ? 0L : add.getValue();
+
+            if (value <= 0L) {
+                continue;
+            }
+
+            long current = data.get(category, stat);
+            if (current < value) {
+                data.increment(category, stat, value - current);
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    @Nonnull
+    private String normalizeBlockId(@Nonnull String blockId) {
+        String key = blockId.trim().toLowerCase();
+
+        if (key.isEmpty()) {
+            return "unknown";
+        }
+
+        if (key.contains(":")) {
+            return key;
+        }
+
+        return "hytale:" + key;
+    }
+
+    @Nonnull
+    private String normalizeBlockPattern(@Nonnull String statPattern) {
+        String key = statPattern.trim().toLowerCase();
+
+        if (key.isEmpty()) {
+            return "*";
+        }
+
+        if (key.contains(":")) {
+            return key;
+        }
+
+        return "hytale:" + key;
+    }
+
+    @Nonnull
+    private String stripNamespace(@Nonnull String key) {
+        int idx = key.indexOf(':');
+        return idx >= 0 ? key.substring(idx + 1) : key;
+    }
+
+    @Nonnull
+    private String stripNamespacePattern(@Nonnull String key) {
+        int idx = key.indexOf(':');
+        return idx >= 0 ? key.substring(idx + 1) : key;
     }
 
     private String wildcardToRegex(@Nonnull String pattern) {
