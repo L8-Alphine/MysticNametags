@@ -499,11 +499,26 @@ $C.@PageOverlay {
                 }
               }
 
-              Label #DetailDesc {
-                Style: @DetailDescStyle;
-                Text: "";
-                Anchor: (Height: 60, Bottom: 16);
-              }
+             Group {
+               Anchor: (Height: 60, Bottom: 16);
+               LayoutMode: Top;
+
+               Group {
+                 Anchor: (Full: 1);
+                 LayoutMode: TopScrolling;
+                 ScrollbarStyle: $C.@DefaultScrollbarStyle;
+
+                 Group {
+                   LayoutMode: Top;
+
+                   Label #DetailDesc {
+                     Style: @DetailDescStyle;
+                     Text: "";
+                     FlexWeight: 1;
+                   }
+                 }
+               }
+             }
 
               Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
 
