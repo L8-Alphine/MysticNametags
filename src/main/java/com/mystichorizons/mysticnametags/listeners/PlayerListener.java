@@ -130,7 +130,14 @@ public class PlayerListener {
                 }
 
                 tagManager.trackOnlinePlayer(playerRef, world);
-                tagManager.refreshNameplate(playerRef, world);
+                world.execute(() -> {
+                    try {
+                        tagManager.refreshNameplate(playerRef, world);
+                    } catch (Throwable t) {
+                        LOGGER.at(Level.FINE).withCause(t)
+                                .log("[MysticNameTags] Delayed PlayerReady nameplate refresh failed for %s", uuid);
+                    }
+                });
             }
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
@@ -160,7 +167,14 @@ public class PlayerListener {
         tagManager.trackOnlinePlayer(playerRef, world);
 
         try {
-            tagManager.refreshNameplate(playerRef, world);
+            world.execute(() -> {
+                try {
+                    tagManager.refreshNameplate(playerRef, world);
+                } catch (Throwable t) {
+                    LOGGER.at(Level.FINE).withCause(t)
+                            .log("[MysticNameTags] Delayed PlayerReady nameplate refresh failed for %s", uuid);
+                }
+            });
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
                     .log("[MysticNameTags] PlayerReady nameplate refresh failed for %s", uuid);
