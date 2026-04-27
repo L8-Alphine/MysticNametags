@@ -7,29 +7,25 @@ import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
-import com.hypixel.hytale.protocol.Direction;
-import com.hypixel.hytale.protocol.ModelTransform;
-import com.hypixel.hytale.protocol.TransformUpdate;
-import com.hypixel.hytale.server.core.asset.type.entityeffect.config.EntityEffect;
-import com.hypixel.hytale.server.core.asset.type.entityeffect.config.OverlapBehavior;
-import com.hypixel.hytale.server.core.asset.type.model.config.Model;
+import com.hypixel.hytale.protocol.EntityUpdate;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
-import com.hypixel.hytale.server.core.entity.effect.EffectControllerComponent;
 import com.hypixel.hytale.server.core.modules.entity.EntityModule;
 import com.hypixel.hytale.server.core.modules.entity.component.Intangible;
-import com.hypixel.hytale.server.core.modules.entity.component.ModelComponent;
-import com.hypixel.hytale.server.core.modules.entity.component.PersistentModel;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.EntityTrackerSystems.EntityViewer;
 import com.hypixel.hytale.server.core.modules.entity.tracker.EntityTrackerSystems.Visible;
 import com.hypixel.hytale.server.core.modules.entity.tracker.NetworkId;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphAssets;
 import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphInfoCompat;
+import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphIdFactory;
+import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphSender;
+import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphState;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
@@ -49,14 +45,18 @@ public final class GlyphNameplateManager {
 
     private static final double ANCHOR_Y_OFFSET = 2.25d;
 
-    // Set to 180f only if all authored glyph assets are globally backwards.
+    private static final float BILLBOARD_YAW_DIRTY_DEGREES = 2.0f;
+    private static final double BILLBOARD_POS_DIRTY_SQ = 0.0004d;
+    private static final long BILLBOARD_MIN_UPDATE_INTERVAL_MS = 25L;
+    private static final long BILLBOARD_FORCE_UPDATE_INTERVAL_MS = 250L;
+
     private static final float GLYPH_YAW_CORRECTION_DEGREES = 0f;
 
     private static final double GLYPH_EXTRA_SPACING_PX = 4.0d;
     private static final double GLYPH_SOURCE_WIDTH_PX = 16.0d;
 
-    private static final Map<Integer, String> RESOLVED_EFFECT_IDS = new ConcurrentHashMap<>();
     private final Map<UUID, RenderState> states = new ConcurrentHashMap<>();
+    private final PacketGlyphState packetGlyphState = new PacketGlyphState();
 
     private GlyphNameplateManager() {
     }
@@ -70,15 +70,8 @@ public final class GlyphNameplateManager {
 
         for (LineRenderState line : state.lines) {
             if (line == null) continue;
-
             if (line.anchorRef != null && line.anchorRef.isValid()) {
                 return true;
-            }
-
-            for (Ref<EntityStore> glyphRef : line.glyphRefs) {
-                if (glyphRef != null && glyphRef.isValid()) {
-                    return true;
-                }
             }
         }
 
@@ -193,6 +186,44 @@ public final class GlyphNameplateManager {
         return out;
     }
 
+    private static float angleDeltaDegrees(float a, float b) {
+        return ((a - b + 540.0f) % 360.0f) - 180.0f;
+    }
+
+    private static float toDegreesForCompare(float yaw, boolean nativeLooksLikeDegrees) {
+        return nativeLooksLikeDegrees ? normalizeDegrees(yaw) : normalizeDegrees((float) Math.toDegrees(yaw));
+    }
+
+    private static double billboardRightX(float yaw, boolean looksDegrees) {
+        double radians = looksDegrees ? Math.toRadians(yaw) : yaw;
+        return Math.cos(radians);
+    }
+
+    private static double billboardRightZ(float yaw, boolean looksDegrees) {
+        double radians = looksDegrees ? Math.toRadians(yaw) : yaw;
+        return -Math.sin(radians);
+    }
+
+    private static double distSq(double ax, double ay, double az, double bx, double by, double bz) {
+        double dx = ax - bx;
+        double dy = ay - by;
+        double dz = az - bz;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static int viewerIdentity(@Nonnull Store<EntityStore> store,
+                                      @Nonnull Ref<EntityStore> viewerRef) {
+        try {
+            NetworkId networkId = store.getComponent(viewerRef, NetworkId.getComponentType());
+            if (networkId != null) {
+                return networkId.getId();
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return System.identityHashCode(viewerRef);
+    }
+
     public void apply(@Nonnull UUID uuid,
                       @Nonnull World world,
                       @Nonnull Store<EntityStore> store,
@@ -213,7 +244,7 @@ public final class GlyphNameplateManager {
                 settings.getExperimentalGlyphMaxCharsPerLine()
         );
 
-        RenderState state = states.computeIfAbsent(uuid, ignored -> new RenderState());
+        RenderState state = states.computeIfAbsent(uuid, RenderState::new);
 
         String previousWorldName = state.worldName;
         boolean worldChanged = previousWorldName != null && !Objects.equals(previousWorldName, world.getName());
@@ -262,6 +293,7 @@ public final class GlyphNameplateManager {
 
     public void forget(@Nonnull UUID uuid) {
         states.remove(uuid);
+        packetGlyphState.clearSubject(uuid);
     }
 
     public void followOnly(@Nonnull World world,
@@ -269,6 +301,7 @@ public final class GlyphNameplateManager {
                            @Nonnull Ref<EntityStore> playerRef,
                            @Nonnull UUID uuid) {
         store.assertThread();
+
         RenderState state = states.get(uuid);
         if (state == null) return;
         if (!hasLiveRender(state)) return;
@@ -326,11 +359,7 @@ public final class GlyphNameplateManager {
 
         state.yawNativeLooksLikeDegrees = RotationCompat.looksLikeDegrees(playerRot.getY());
 
-        List<String> logicalLines = splitLines(
-                text,
-                settings.getExperimentalGlyphMaxLines()
-        );
-
+        List<String> logicalLines = splitLines(text, settings.getExperimentalGlyphMaxLines());
         if (logicalLines.isEmpty()) {
             logicalLines = Collections.singletonList("");
         }
@@ -342,7 +371,6 @@ public final class GlyphNameplateManager {
         boolean spawnedAnyGlyph = false;
 
         double charAdvance = getGlyphAdvance(state.scale);
-        float modelScale = GlyphInfoCompat.BASE_MODEL_SCALE * (float) state.scale;
 
         for (int lineIndex = 0; lineIndex < logicalLines.size(); lineIndex++) {
             String lineText = logicalLines.get(lineIndex);
@@ -350,7 +378,7 @@ public final class GlyphNameplateManager {
                 lineText = "";
             }
 
-            double lineYOffset = (lineIndex * lineSpacing);
+            double lineYOffset = lineIndex * lineSpacing;
 
             Vector3d anchorPos = new Vector3d(
                     playerPos.getX(),
@@ -367,7 +395,6 @@ public final class GlyphNameplateManager {
             anchorHolder.putComponent(Intangible.getComponentType(), Intangible.INSTANCE);
 
             try {
-                // Ensure tracker knows about the anchor so clients can get the TransformUpdate
                 anchorHolder.ensureComponent(EntityModule.get().getVisibleComponentType());
             } catch (Throwable ignored) {
             }
@@ -409,30 +436,17 @@ public final class GlyphNameplateManager {
 
                 spawnAttemptedForVisibleGlyph = true;
 
-                Color dimmed = scaleColor(cc.color, settings.getExperimentalGlyphTintStrength());
-                int rgbQuant = TintPaletteCompat.quantizeRgb(dimmed);
-
-                Vector3d gPos = new Vector3d(anchorPos.getX(), anchorPos.getY(), anchorPos.getZ());
-                Vector3f gRot = new Vector3f(0f, 0f, 0f);
-
-                Ref<EntityStore> glyphRef = spawnGlyph(
-                        store,
-                        world.getEntityStore(),
-                        ch,
-                        rgbQuant,
-                        gPos,
-                        gRot,
-                        modelScale,
-                        anchorRef,
-                        new Vector3f((float) offset, 0f, 0f)
-                );
-
-                if (glyphRef != null && glyphRef.isValid()) {
-                    lineState.glyphRefs.add(glyphRef);
-                    lineState.glyphOffsets.add(offset);
-                    spawnedCount++;
-                    spawnedAnyGlyph = true;
+                String assetId = resolveGlyphModelId(ch);
+                if (assetId == null) {
+                    continue;
                 }
+
+                lineState.glyphChars.add(ch);
+                lineState.glyphAssetIds.add(assetId);
+                lineState.glyphOffsets.add(offset);
+
+                spawnedCount++;
+                spawnedAnyGlyph = true;
             }
 
             state.lines.add(lineState);
@@ -473,85 +487,276 @@ public final class GlyphNameplateManager {
             state.yawNativeLooksLikeDegrees = looksDegrees;
         }
 
-        for (int i = 0; i < state.lines.size(); i++) {
-            LineRenderState line = state.lines.get(i);
+        Set<Integer> activeViewerIds = new HashSet<>();
+
+        for (int lineIndex = 0; lineIndex < state.lines.size(); lineIndex++) {
+            LineRenderState line = state.lines.get(lineIndex);
             if (line == null || line.anchorRef == null || !line.anchorRef.isValid()) continue;
 
             Visible visible = store.getComponent(line.anchorRef, EntityModule.get().getVisibleComponentType());
-            if (visible == null || visible.visibleTo.isEmpty()) continue;
 
-            for (Map.Entry<Ref<EntityStore>, EntityViewer> entry : visible.visibleTo.entrySet()) {
+            Map<Ref<EntityStore>, EntityViewer> viewers = new LinkedHashMap<>();
+
+            if (visible != null && visible.visibleTo != null) {
+                viewers.putAll(visible.visibleTo);
+            }
+
+            viewers.putIfAbsent(playerRef, null);
+
+            if (viewers.isEmpty()) {
+                continue;
+            }
+
+            for (Map.Entry<Ref<EntityStore>, EntityViewer> entry : viewers.entrySet()) {
+                if (PacketGlyphSender.isRuntimeDisabled()) {
+                    continue;
+                }
+
                 Ref<EntityStore> viewerRef = entry.getKey();
-                EntityViewer viewer = entry.getValue();
+                if (viewerRef == null || !viewerRef.isValid()) continue;
 
-                if (!viewerRef.isValid()) continue;
+                boolean selfView = viewerRef.equals(playerRef);
 
                 float yaw;
-                
-                // If the viewer is the player owning the tag, fallback to their own rotation + 180 degrees
-                // This ensures it faces them nicely in 3rd person and rotates with them
-                if (viewerRef.equals(playerRef)) {
+
+                if (selfView) {
                     yaw = RotationCompat.addYawNative(playerRot.getY(), 180f, looksDegrees);
-                    if (looksDegrees) {
-                        yaw = normalizeDegrees(yaw);
-                    } else {
-                        yaw = normalizeRadians(yaw);
-                    }
+                    yaw = looksDegrees ? normalizeDegrees(yaw) : normalizeRadians(yaw);
                 } else {
                     TransformComponent viewerTx = store.getComponent(viewerRef, TransformComponent.getComponentType());
                     if (viewerTx == null) continue;
 
                     Vector3d viewerPos = viewerTx.getTransform().getPosition();
-
                     double dx = viewerPos.getX() - playerPos.getX();
                     double dz = viewerPos.getZ() - playerPos.getZ();
 
                     yaw = (float) Math.atan2(-dx, -dz);
-
-                    if (looksDegrees) {
-                        yaw = normalizeDegrees((float) Math.toDegrees(yaw));
-                    } else {
-                        yaw = normalizeRadians(yaw);
-                    }
+                    yaw = looksDegrees ? normalizeDegrees((float) Math.toDegrees(yaw)) : normalizeRadians(yaw);
                 }
 
                 yaw = RotationCompat.addYawNative(yaw, GLYPH_YAW_CORRECTION_DEGREES, looksDegrees);
 
                 try {
-                    // Update rotation via client TransformUpdate without overriding smooth position mounting
-                    ModelTransform transform = new ModelTransform();
-                    transform.bodyOrientation = new Direction(yaw, 0.0F, 0.0F);
-                    transform.lookOrientation = new Direction(yaw, 0.0F, 0.0F);
-                    TransformUpdate update = new TransformUpdate(transform);
+                    PlayerRef packetViewer = selfView
+                            ? findPlayerRef(world, uuid)
+                            : findPlayerRef(world, viewerRef);
 
-                    if (!viewer.visible.contains(line.anchorRef)) {
-                        viewer.visible.add(line.anchorRef);
+                    if (packetViewer == null) {
+                        LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph skipped: could not resolve PlayerRef. selfView="
+                                + selfView + ", subject=" + uuid);
+                        continue;
                     }
-                    
-                    // Rotate the main anchor to make the text billboard/pivot as a whole to this viewer
-                    viewer.queueUpdate(line.anchorRef, update);
 
-                    for (Ref<EntityStore> glyphRef : line.glyphRefs) {
-                        if (glyphRef != null && glyphRef.isValid()) {
-                            if (!viewer.visible.contains(glyphRef)) {
-                                viewer.visible.add(glyphRef);
+                    UUID viewerUuid = packetViewer.getUuid();
+                    if (viewerUuid == null) {
+                        LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph skipped: viewer UUID was null.");
+                        continue;
+                    }
+
+                    int viewerId = viewerIdentity(store, viewerRef);
+                    activeViewerIds.add(viewerId);
+
+                    long now = System.currentTimeMillis();
+                    float yawDegrees = toDegreesForCompare(yaw, looksDegrees);
+
+                    double baseX = playerPos.getX();
+                    double baseY = playerPos.getY() + ANCHOR_Y_OFFSET + line.yOffset;
+                    double baseZ = playerPos.getZ();
+
+                    PacketGlyphState.ViewerState packetState =
+                            packetGlyphState.viewer(uuid, viewerId, viewerUuid);
+
+                    boolean yawDirty = Float.isNaN(packetState.lastYawDegrees)
+                            || Math.abs(angleDeltaDegrees(yawDegrees, packetState.lastYawDegrees)) >= BILLBOARD_YAW_DIRTY_DEGREES;
+
+                    boolean posDirty = Double.isNaN(packetState.lastBaseX)
+                            || distSq(baseX, baseY, baseZ, packetState.lastBaseX, packetState.lastBaseY, packetState.lastBaseZ) >= BILLBOARD_POS_DIRTY_SQ;
+
+                    boolean intervalReady = now >= packetState.nextUpdateAtMs;
+                    boolean forceReady = now >= packetState.forceUpdateAtMs;
+
+                    if (!yawDirty && !posDirty && !forceReady) {
+                        continue;
+                    }
+
+                    if (!intervalReady && !forceReady) {
+                        continue;
+                    }
+
+                    packetState.lastYawDegrees = yawDegrees;
+                    packetState.lastBaseX = baseX;
+                    packetState.lastBaseY = baseY;
+                    packetState.lastBaseZ = baseZ;
+                    packetState.nextUpdateAtMs = now + BILLBOARD_MIN_UPDATE_INTERVAL_MS;
+                    packetState.forceUpdateAtMs = now + BILLBOARD_FORCE_UPDATE_INTERVAL_MS;
+
+                    double rx = billboardRightX(yaw, looksDegrees);
+                    double rz = billboardRightZ(yaw, looksDegrees);
+
+                    float modelScale = GlyphInfoCompat.BASE_MODEL_SCALE * (float) state.scale;
+
+                    List<EntityUpdate> spawnUpdates = new ArrayList<>();
+
+                    int count = Math.min(
+                            Math.min(line.glyphChars.size(), line.glyphAssetIds.size()),
+                            line.glyphOffsets.size()
+                    );
+
+                    for (int glyphIndex = 0; glyphIndex < count; glyphIndex++) {
+                        String assetId = line.glyphAssetIds.get(glyphIndex);
+                        double offset = line.glyphOffsets.get(glyphIndex);
+
+                        int fakeId = PacketGlyphIdFactory.glyphId(uuid, viewerId, lineIndex, glyphIndex);
+
+                        double glyphX = baseX + (rx * offset);
+                        double glyphY = baseY;
+                        double glyphZ = baseZ + (rz * offset);
+
+                        if (!packetState.spawnedIds.contains(fakeId)) {
+                            spawnUpdates.add(PacketGlyphSender.glyphSpawnUpdate(
+                                    fakeId,
+                                    assetId,
+                                    glyphX,
+                                    glyphY,
+                                    glyphZ,
+                                    yaw,
+                                    modelScale
+                            ));
+                        } else {
+                            PacketGlyphSender.moveGlyph(
+                                    packetViewer,
+                                    fakeId,
+                                    glyphX,
+                                    glyphY,
+                                    glyphZ,
+                                    yaw
+                            );
+                        }
+                    }
+
+                    if (!spawnUpdates.isEmpty()) {
+                        LOGGER.at(Level.INFO).log("[MysticNameTags] Sending packet glyph spawn count="
+                                + spawnUpdates.size()
+                                + ", subject=" + uuid
+                                + ", viewer=" + viewerUuid
+                                + ", selfView=" + selfView);
+
+                        if (PacketGlyphSender.isRuntimeDisabled()) {
+                            continue;
+                        }
+
+                        boolean sent = PacketGlyphSender.spawnMany(packetViewer, spawnUpdates);
+
+                        if (sent) {
+                            for (int glyphIndex = 0; glyphIndex < count; glyphIndex++) {
+                                int fakeId = PacketGlyphIdFactory.glyphId(uuid, viewerId, lineIndex, glyphIndex);
+                                packetState.spawnedIds.add(fakeId);
                             }
-                            
-                            // Rotate the individual faces to make them render cleanly towards the viewer
-                            viewer.queueUpdate(glyphRef, update);
                         }
                     }
                 } catch (Throwable t) {
-                    LOGGER.at(Level.FINE).withCause(t)
-                            .log("[MysticNameTags] Failed to queue rotation update for viewer.");
+                    LOGGER.at(Level.INFO).withCause(t)
+                            .log("[MysticNameTags] Failed to update packet glyph billboard for viewer.");
                 }
             }
+        }
+
+        cleanupDroppedPacketViewers(world, uuid, activeViewerIds);
+    }
+
+    @Nullable
+    private static String resolveGlyphModelId(char ch) {
+        try {
+            String[] candidates = GlyphInfoCompat.getModelAssetIdCandidates(ch);
+            if (candidates == null || candidates.length == 0) {
+                return null;
+            }
+
+            for (String id : candidates) {
+                if (id == null || id.isEmpty()) {
+                    continue;
+                }
+
+                ModelAsset asset = (ModelAsset) ModelAsset.getAssetMap().getAsset(id);
+                if (asset != null) {
+                    return id;
+                }
+            }
+
+            String shortName = candidates[0];
+            int colon = shortName.lastIndexOf(':');
+            if (colon >= 0) {
+                shortName = shortName.substring(colon + 1);
+            }
+
+            String lowerShortName = shortName.toLowerCase(Locale.ROOT);
+
+            for (Map.Entry<String, ?> entry : ModelAsset.getAssetMap().getAssetMap().entrySet()) {
+                String key = entry.getKey();
+                if (key != null && key.toLowerCase(Locale.ROOT).endsWith(lowerShortName)) {
+                    return key;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return null;
+    }
+
+    private void cleanupDroppedPacketViewers(@Nonnull World world,
+                                             @Nonnull UUID subjectUuid,
+                                             @Nonnull Set<Integer> activeViewerIds) {
+        Map<Integer, PacketGlyphState.ViewerState> snapshot = packetGlyphState.snapshotViewers(subjectUuid);
+        if (snapshot.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<Integer, PacketGlyphState.ViewerState> entry : snapshot.entrySet()) {
+            int viewerId = entry.getKey();
+            PacketGlyphState.ViewerState viewerState = entry.getValue();
+
+            if (activeViewerIds.contains(viewerId)) {
+                continue;
+            }
+
+            PlayerRef playerRef = findPlayerRef(world, viewerState.viewerUuid);
+
+            if (playerRef != null && !viewerState.spawnedIds.isEmpty()) {
+                PacketGlyphSender.removeGlyphs(playerRef, viewerState.spawnedIds);
+            }
+
+            packetGlyphState.removeViewer(subjectUuid, viewerId);
         }
     }
 
     private void despawnAll(@Nonnull Store<EntityStore> store,
                             @Nonnull EntityStore entityStore,
                             @Nonnull RenderState state) {
+
+        try {
+            Universe universe = Universe.get();
+
+            if (universe != null) {
+                Map<Integer, PacketGlyphState.ViewerState> snapshot =
+                        packetGlyphState.snapshotViewers(state.subjectUuid);
+
+                for (World world : universe.getWorlds().values()) {
+                    if (world == null || !world.isAlive()) {
+                        continue;
+                    }
+
+                    for (PacketGlyphState.ViewerState viewerState : snapshot.values()) {
+                        PlayerRef viewer = findPlayerRef(world, viewerState.viewerUuid);
+                        if (viewer != null && !viewerState.spawnedIds.isEmpty()) {
+                            PacketGlyphSender.removeGlyphs(viewer, viewerState.spawnedIds);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        packetGlyphState.clearSubject(state.subjectUuid);
 
         for (LineRenderState line : state.lines) {
             if (line == null) continue;
@@ -564,15 +769,8 @@ public final class GlyphNameplateManager {
                 line.anchorRef = null;
             }
 
-            for (Ref<EntityStore> ref : line.glyphRefs) {
-                if (ref == null || !ref.isValid()) continue;
-                try {
-                    EntityRemoveCompat.remove(store, entityStore, ref);
-                } catch (Throwable ignored) {
-                }
-            }
-
-            line.glyphRefs.clear();
+            line.glyphChars.clear();
+            line.glyphAssetIds.clear();
             line.glyphOffsets.clear();
         }
 
@@ -580,149 +778,63 @@ public final class GlyphNameplateManager {
     }
 
     @Nullable
-    private Ref<EntityStore> spawnGlyph(@Nonnull Store<EntityStore> store,
-                                        @Nonnull EntityStore entityStore,
-                                        char ch,
-                                        int rgbQuant,
-                                        @Nonnull Vector3d pos,
-                                        @Nonnull Vector3f rot,
-                                        float scale,
-                                        @Nullable Ref<EntityStore> parentRef,
-                                        @Nullable Vector3f mountOffset) {
-
+    private static PlayerRef findPlayerRef(@Nonnull World world,
+                                           @Nonnull Ref<EntityStore> entityRef) {
         try {
-            Holder holder = EntityStore.REGISTRY.newHolder();
-
-            String[] candidates = GlyphInfoCompat.getModelAssetIdCandidates(ch);
-            if (candidates == null || candidates.length == 0) return null;
-
-            ModelAsset asset = null;
-            String usedModelId = null;
-
-            for (String id : candidates) {
-                if (id == null || id.isEmpty()) continue;
-                asset = (ModelAsset) ModelAsset.getAssetMap().getAsset(id);
-                if (asset != null) {
-                    usedModelId = id;
-                    break;
-                }
-            }
-
-            if (asset == null && candidates.length > 0) {
-                String shortName = candidates[0];
-                int colon = shortName.lastIndexOf(':');
-                if (colon >= 0) shortName = shortName.substring(colon + 1);
-                shortName = shortName.toLowerCase(Locale.ROOT);
-
-                for (Map.Entry<String, ?> entry : ModelAsset.getAssetMap().getAssetMap().entrySet()) {
-                    String key = entry.getKey();
-                    if (key != null && key.toLowerCase(Locale.ROOT).endsWith(shortName)) {
-                        asset = (ModelAsset) entry.getValue();
-                        usedModelId = key;
-                        break;
-                    }
-                }
-            }
-
-            if (asset == null || usedModelId == null) return null;
-
-            Model model = Model.createScaledModel(asset, scale);
-            holder.putComponent(TransformComponent.getComponentType(), new TransformComponent(pos, rot));
-            holder.putComponent(ModelComponent.getComponentType(), new ModelComponent(model));
-
-            try {
-                Model.ModelReference staticRef = new Model.ModelReference(usedModelId, scale, null, true);
-                holder.putComponent(PersistentModel.getComponentType(), new PersistentModel(staticRef));
-            } catch (Throwable ignored) {
-                holder.putComponent(PersistentModel.getComponentType(), new PersistentModel(model.toReference()));
-            }
-
-            try {
-                holder.putComponent(
-                        com.hypixel.hytale.server.core.modules.entity.component.EntityScaleComponent.getComponentType(),
-                        new com.hypixel.hytale.server.core.modules.entity.component.EntityScaleComponent(scale)
-                );
-            } catch (Throwable ignored) {
-            }
-
-            holder.putComponent(NetworkId.getComponentType(), new NetworkId(entityStore.takeNextNetworkId()));
-            holder.putComponent(UUIDComponent.getComponentType(), UUIDComponent.randomUUID());
-            holder.putComponent(Intangible.getComponentType(), Intangible.INSTANCE);
-
-            try {
-                holder.ensureComponent(EntityModule.get().getVisibleComponentType());
-            } catch (Throwable ignored) {
-            }
-            try {
-                holder.ensureComponent(EntityStore.REGISTRY.getNonSerializedComponentType());
-            } catch (Throwable ignored) {
-            }
-
-            holder.putComponent(EffectControllerComponent.getComponentType(), new EffectControllerComponent());
-
-            if (parentRef != null && mountOffset != null) {
-                MountCompat.mount(holder, parentRef, mountOffset);
-            }
-
-            Ref<EntityStore> spawned = store.addEntity(holder, AddReason.SPAWN);
-
-            try {
-                EffectControllerComponent spawnedEffects = store.getComponent(spawned, EffectControllerComponent.getComponentType());
-                EntityEffect tint = null;
-                String finalEffectId = RESOLVED_EFFECT_IDS.get(rgbQuant);
-
-                if (finalEffectId != null) {
-                    tint = (EntityEffect) EntityEffect.getAssetMap().getAsset(finalEffectId);
-                } else {
-                    String attemptId = GlyphAssets.tintEffectId(rgbQuant);
-                    tint = (EntityEffect) EntityEffect.getAssetMap().getAsset(attemptId);
-
-                    if (tint == null) {
-                        attemptId = attemptId.toLowerCase(Locale.ROOT);
-                        tint = (EntityEffect) EntityEffect.getAssetMap().getAsset(attemptId);
-                    }
-
-                    if (tint == null) {
-                        String shortName = "httint_" + String.format("%06x", rgbQuant);
-                        for (Map.Entry<String, ?> entry : EntityEffect.getAssetMap().getAssetMap().entrySet()) {
-                            String key = entry.getKey();
-                            if (key != null && key.toLowerCase(Locale.ROOT).contains(shortName)) {
-                                attemptId = key;
-                                tint = (EntityEffect) entry.getValue();
-                                break;
-                            }
-                        }
-                    }
-
-                    if (tint != null) {
-                        RESOLVED_EFFECT_IDS.put(rgbQuant, attemptId);
-                    }
+            for (PlayerRef player : world.getPlayerRefs()) {
+                if (player == null) {
+                    continue;
                 }
 
-                if (tint != null && spawnedEffects != null) {
-                    spawnedEffects.addEffect(spawned, tint, (float) Integer.MAX_VALUE, OverlapBehavior.OVERWRITE, store);
+                Ref<EntityStore> ref = player.getReference();
+                if (ref != null && ref.equals(entityRef)) {
+                    return player;
                 }
-            } catch (Throwable ignored) {
             }
-
-            return spawned;
-        } catch (Throwable t) {
-            LOGGER.at(Level.FINE).withCause(t).log("[MysticNameTags] Failed to spawn glyph '" + ch + "'");
-            return null;
+        } catch (Throwable ignored) {
         }
+
+        return null;
+    }
+
+    @Nullable
+    private static PlayerRef findPlayerRef(@Nonnull World world, @Nonnull UUID uuid) {
+        try {
+            for (PlayerRef player : world.getPlayerRefs()) {
+                if (player == null) {
+                    continue;
+                }
+
+                UUID playerUuid = player.getUuid();
+                if (uuid.equals(playerUuid)) {
+                    return player;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return null;
     }
 
     private static final class RenderState {
+        final UUID subjectUuid;
         final List<LineRenderState> lines = new ArrayList<>();
+
         String lastText = null;
         double scale = 1.0d;
         String worldName = null;
         Boolean yawNativeLooksLikeDegrees = null;
+
+        RenderState(@Nonnull UUID subjectUuid) {
+            this.subjectUuid = subjectUuid;
+        }
     }
 
     private static final class LineRenderState {
-        final List<Ref<EntityStore>> glyphRefs = new ArrayList<>();
+        final List<Character> glyphChars = new ArrayList<>();
+        final List<String> glyphAssetIds = new ArrayList<>();
         final List<Double> glyphOffsets = new ArrayList<>();
+
         String text = "";
         double yOffset = 0.0d;
         Ref<EntityStore> anchorRef = null;
@@ -943,33 +1055,6 @@ public final class GlyphNameplateManager {
 
         static float addYawNative(float yawNative, float addDegrees, boolean looksDegrees) {
             return (float) (looksDegrees ? yawNative + addDegrees : yawNative + Math.toRadians(addDegrees));
-        }
-    }
-
-    private static final class TintPaletteCompat {
-        private static final int[] ALLOWED_VALUES = {0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0, 0xFF};
-        private static final int[] LUT = new int[256];
-
-        static {
-            for (int i = 0; i < 256; i++) {
-                int closest = 0;
-                int minDiff = Integer.MAX_VALUE;
-                for (int val : ALLOWED_VALUES) {
-                    int diff = Math.abs(i - val);
-                    if (diff < minDiff) {
-                        minDiff = diff;
-                        closest = val;
-                    }
-                }
-                LUT[i] = closest;
-            }
-        }
-
-        static int quantizeRgb(Color c) {
-            int r = LUT[c.getRed() & 0xFF];
-            int g = LUT[c.getGreen() & 0xFF];
-            int b = LUT[c.getBlue() & 0xFF];
-            return ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
         }
     }
 
