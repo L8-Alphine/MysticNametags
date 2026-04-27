@@ -3,15 +3,19 @@ package com.mystichorizons.mysticnametags.nameplate.packet;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PacketGlyphState {
 
-    private final Map<UUID, Map<Integer, ViewerState>> viewersBySubject = new HashMap<>();
+    // Must be thread-safe: follow() reads on world thread,
+    // forget()/clearSubject() writes from disconnect event thread.
+    // Plain HashMap causes infinite loop in get() under concurrent modification.
+    private final Map<UUID, Map<Integer, ViewerState>> viewersBySubject = new ConcurrentHashMap<>();
 
     @Nonnull
     public ViewerState viewer(@Nonnull UUID subjectUuid, int viewerNetworkId, @Nonnull UUID viewerUuid) {
         ViewerState state = viewersBySubject
-                .computeIfAbsent(subjectUuid, ignored -> new HashMap<>())
+                .computeIfAbsent(subjectUuid, ignored -> new ConcurrentHashMap<>())
                 .computeIfAbsent(viewerNetworkId, ignored -> new ViewerState(viewerNetworkId, viewerUuid));
 
         state.viewerUuid = viewerUuid;

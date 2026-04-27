@@ -12,6 +12,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphSender;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.nameplate.GlyphNameplateManager;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
@@ -272,5 +273,6 @@ public class PlayerListener {
         }
 
         TagManager.get().untrackOnlinePlayer(uuid);
+        PacketGlyphSender.evictReceiverCache(uuid);
     }
 }
