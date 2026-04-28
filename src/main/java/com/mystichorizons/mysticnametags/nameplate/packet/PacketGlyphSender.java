@@ -10,21 +10,27 @@ import javax.annotation.Nonnull;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Collection;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PacketGlyphSender {
 
     private static volatile boolean packetGlyphsRuntimeDisabled = false;
     private static final boolean PACKET_CANARY_ONLY = true;
 
+    // cache the receiver per player so we don't do the reflective graph walk every packet
+    private static final Map<UUID, IPacketReceiver> receiverCache = new ConcurrentHashMap<>();
+
     private PacketGlyphSender() {
     }
 
     public static boolean isRuntimeDisabled() {
         return packetGlyphsRuntimeDisabled;
+    }
+
+    /** Drop cached receiver for a player. Call on disconnect. */
+    public static void evictReceiverCache(@Nonnull UUID uuid) {
+        receiverCache.remove(uuid);
     }
 
     @Nonnull
@@ -127,15 +133,25 @@ public final class PacketGlyphSender {
         }
 
         try {
-            IPacketReceiver receiver = findPacketReceiver(viewer, 0, new IdentityHashMap<>());
+            UUID viewerUuid = viewer.getUuid();
+            IPacketReceiver receiver = viewerUuid != null ? receiverCache.get(viewerUuid) : null;
             if (receiver == null) {
-                disableRuntime("no IPacketReceiver found", null);
-                return false;
+                // reflective discovery is expensive, only do it once per player
+                receiver = findPacketReceiver(viewer, 0, new IdentityHashMap<>());
+                if (receiver == null) {
+                    disableRuntime("no IPacketReceiver found", null);
+                    return false;
+                }
+                if (viewerUuid != null) {
+                    receiverCache.put(viewerUuid, receiver);
+                }
             }
 
             receiver.writeNoCache(toClientPacket);
             return true;
         } catch (Throwable t) {
+            // stale cache entry maybe, clear it and let next call rediscover
+            try { if (viewer.getUuid() != null) receiverCache.remove(viewer.getUuid()); } catch (Exception ignored) {}
             disableRuntime("packet write failed", t);
             return false;
         }
