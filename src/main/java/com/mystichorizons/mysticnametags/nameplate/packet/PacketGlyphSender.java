@@ -6,6 +6,7 @@ import com.hypixel.hytale.server.core.receiver.IPacketReceiver;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.*;
@@ -44,6 +45,22 @@ public final class PacketGlyphSender {
                                                 float offsetZ,
                                                 float yaw,
                                                 float scale) {
+        return glyphSpawnUpdate(networkId, mountedToNetworkId, model, x, y, z, offsetX, offsetY, offsetZ, yaw, scale, null);
+    }
+
+    @Nonnull
+    public static EntityUpdate glyphSpawnUpdate(int networkId,
+                                                int mountedToNetworkId,
+                                                @Nonnull com.hypixel.hytale.protocol.Model model,
+                                                double x,
+                                                double y,
+                                                double z,
+                                                float offsetX,
+                                                float offsetY,
+                                                float offsetZ,
+                                                float yaw,
+                                                float scale,
+                                                @Nullable Integer tintEffectIndex) {
 
         ModelTransform transform = new ModelTransform();
         setPosition(transform, x, y, z);
@@ -60,8 +77,29 @@ public final class PacketGlyphSender {
                         offsetZ,
                         transform,
                         model,
-                        scale
+                        scale,
+                        tintEffectIndex
                 )
+        );
+    }
+
+    @Nonnull
+    public static EntityUpdate anchorSpawnUpdate(int networkId,
+                                                 int mountedToNetworkId,
+                                                 double x,
+                                                 double y,
+                                                 double z,
+                                                 float offsetY,
+                                                 float yaw) {
+        ModelTransform transform = new ModelTransform();
+        setPosition(transform, x, y, z);
+        transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
+        transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+
+        return new EntityUpdate(
+                networkId,
+                null,
+                anchorComponents(mountedToNetworkId, offsetY, transform)
         );
     }
 
@@ -72,7 +110,8 @@ public final class PacketGlyphSender {
                                                      float offsetZ,
                                                      @Nonnull ModelTransform transform,
                                                      @Nonnull com.hypixel.hytale.protocol.Model model,
-                                                     float scale) {
+                                                     float scale,
+                                                     @Nullable Integer tintEffectIndex) {
         List<ComponentUpdate> updates = new ArrayList<>();
 
         // MUST be first
@@ -100,7 +139,79 @@ public final class PacketGlyphSender {
 
         updates.add(new ModelUpdate(model, scale));
 
+        if (tintEffectIndex != null && tintEffectIndex >= 0) {
+            updates.add(new EntityEffectsUpdate(new EntityEffectUpdate[]{
+                    new EntityEffectUpdate(EffectOp.Add, tintEffectIndex, 0.0f, true, false, null)
+            }));
+        }
+
         return updates.toArray(new ComponentUpdate[0]);
+    }
+
+    @Nonnull
+    private static ComponentUpdate[] anchorComponents(int mountedToNetworkId,
+                                                      float offsetY,
+                                                      @Nonnull ModelTransform transform) {
+        List<ComponentUpdate> updates = new ArrayList<>();
+
+        updates.add(new NewSpawnUpdate());
+        updates.add(new IntangibleUpdate());
+        updates.add(new InteractableUpdate());
+        updates.add(new HitboxCollisionUpdate(0));
+        updates.add(new TransformUpdate(transform));
+
+        if (mountedToNetworkId > 0) {
+            updates.add(new MountedUpdate(
+                    mountedToNetworkId,
+                    new Vector3f(0.0f, offsetY, 0.0f),
+                    MountController.Minecart,
+                    null
+            ));
+        }
+
+        return updates.toArray(new ComponentUpdate[0]);
+    }
+
+    public static void updateAnchor(@Nonnull PlayerRef viewer,
+                                    int networkId,
+                                    int mountedToNetworkId,
+                                    double x,
+                                    double y,
+                                    double z,
+                                    float offsetY,
+                                    float yaw) {
+        if (packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        try {
+            ModelTransform transform = new ModelTransform();
+            setPosition(transform, x, y, z);
+            transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
+            transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+
+            ComponentUpdate[] components = mountedToNetworkId > 0
+                    ? new ComponentUpdate[]{
+                            new TransformUpdate(transform),
+                            new MountedUpdate(
+                                    mountedToNetworkId,
+                                    new Vector3f(0.0f, offsetY, 0.0f),
+                                    MountController.Minecart,
+                                    null
+                            )
+                    }
+                    : new ComponentUpdate[]{new TransformUpdate(transform)};
+
+            EntityUpdate update = new EntityUpdate(
+                    networkId,
+                    new ComponentUpdateType[0],
+                    components
+            );
+
+            safeWrite(viewer, new EntityUpdates(null, new EntityUpdate[]{update}));
+        } catch (Throwable t) {
+            disableRuntime("updateAnchor packet build failed", t);
+        }
     }
 
     public static void updateMountedGlyph(@Nonnull PlayerRef viewer,
