@@ -4,21 +4,20 @@ import com.hypixel.hytale.protocol.*;
 import com.hypixel.hytale.protocol.packets.entities.EntityUpdates;
 import com.hypixel.hytale.server.core.receiver.IPacketReceiver;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
-import org.jetbrains.annotations.Nullable;
 
 import javax.annotation.Nonnull;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class PacketGlyphSender {
 
     private static volatile boolean packetGlyphsRuntimeDisabled = false;
-    private static final boolean PACKET_CANARY_ONLY = true;
+    private static final boolean PACKET_CANARY_ONLY = false;
 
-    // cache the receiver per player so we don't do the reflective graph walk every packet
+    // Cache the direct packet handler per player. Never recursively reflect through PlayerRef
+    // from the world thread; some server accessors acquire locks and can stall shutdown/join.
     private static final Map<UUID, IPacketReceiver> receiverCache = new ConcurrentHashMap<>();
 
     private PacketGlyphSender() {
@@ -35,17 +34,16 @@ public final class PacketGlyphSender {
 
     @Nonnull
     public static EntityUpdate glyphSpawnUpdate(int networkId,
-                                                @Nonnull String assetId,
+                                                int mountedToNetworkId,
+                                                @Nonnull com.hypixel.hytale.protocol.Model model,
                                                 double x,
                                                 double y,
                                                 double z,
+                                                float offsetX,
+                                                float offsetY,
+                                                float offsetZ,
                                                 float yaw,
                                                 float scale) {
-
-        com.hypixel.hytale.protocol.Model model = new com.hypixel.hytale.protocol.Model();
-        model.assetId = assetId;
-        model.path = assetId;
-        model.scale = scale;
 
         ModelTransform transform = new ModelTransform();
         setPosition(transform, x, y, z);
@@ -55,49 +53,107 @@ public final class PacketGlyphSender {
         return new EntityUpdate(
                 networkId,
                 null,
-                new ComponentUpdate[]{
-
-                        // MUST be first
-                        new NewSpawnUpdate(),
-
-                        // REQUIRED baseline safety components
-                        new IntangibleUpdate(),
-                        new InteractableUpdate(),
-                        new HitboxCollisionUpdate(0),
-
-                        // Optional but often required for model-based entities
-                        new PropUpdate(),
-
-                        // Then your actual data
-                        new TransformUpdate(transform),
-                        new ModelUpdate(model, scale)
-                }
+                spawnComponents(
+                        mountedToNetworkId,
+                        offsetX,
+                        offsetY,
+                        offsetZ,
+                        transform,
+                        model,
+                        scale
+                )
         );
     }
 
-    public static void moveGlyph(@Nonnull PlayerRef viewer,
-                                 int networkId,
-                                 double x,
-                                 double y,
-                                 double z,
-                                 float yaw) {
+    @Nonnull
+    private static ComponentUpdate[] spawnComponents(int mountedToNetworkId,
+                                                     float offsetX,
+                                                     float offsetY,
+                                                     float offsetZ,
+                                                     @Nonnull ModelTransform transform,
+                                                     @Nonnull com.hypixel.hytale.protocol.Model model,
+                                                     float scale) {
+        List<ComponentUpdate> updates = new ArrayList<>();
+
+        // MUST be first
+        updates.add(new NewSpawnUpdate());
+
+        // REQUIRED baseline safety components
+        updates.add(new IntangibleUpdate());
+        updates.add(new InteractableUpdate());
+        updates.add(new HitboxCollisionUpdate(0));
+
+        // Optional but often required for model-based entities
+        updates.add(new PropUpdate());
+
+        // Then your actual data
+        updates.add(new TransformUpdate(transform));
+
+        if (mountedToNetworkId > 0) {
+            updates.add(new MountedUpdate(
+                    mountedToNetworkId,
+                    new Vector3f(offsetX, offsetY, offsetZ),
+                    MountController.Minecart,
+                    null
+            ));
+        }
+
+        updates.add(new ModelUpdate(model, scale));
+
+        return updates.toArray(new ComponentUpdate[0]);
+    }
+
+    public static void updateMountedGlyph(@Nonnull PlayerRef viewer,
+                                          int networkId,
+                                          int mountedToNetworkId,
+                                          double x,
+                                          double y,
+                                          double z,
+                                          float offsetX,
+                                          float offsetY,
+                                          float offsetZ,
+                                          float yaw) {
         if (packetGlyphsRuntimeDisabled) {
             return;
         }
 
         try {
+            ModelTransform transform = new ModelTransform();
+            setPosition(transform, x, y, z);
+            transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
+            transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+
             EntityUpdate update = new EntityUpdate(
                     networkId,
                     new ComponentUpdateType[0],
-                    new ComponentUpdate[]{
-                            transform(x, y, z, yaw)
-                    }
+                    moveComponents(mountedToNetworkId, offsetX, offsetY, offsetZ, transform)
             );
 
             safeWrite(viewer, new EntityUpdates(null, new EntityUpdate[]{update}));
         } catch (Throwable t) {
-            disableRuntime("moveGlyph packet build failed", t);
+            disableRuntime("updateMountedGlyph packet build failed", t);
         }
+    }
+
+    @Nonnull
+    private static ComponentUpdate[] moveComponents(int mountedToNetworkId,
+                                                    float offsetX,
+                                                    float offsetY,
+                                                    float offsetZ,
+                                                    @Nonnull ModelTransform transform) {
+        if (mountedToNetworkId <= 0) {
+            return new ComponentUpdate[]{new TransformUpdate(transform)};
+        }
+
+        return new ComponentUpdate[]{
+                new TransformUpdate(transform),
+                new MountedUpdate(
+                        mountedToNetworkId,
+                        new Vector3f(offsetX, offsetY, offsetZ),
+                        MountController.Minecart,
+                        null
+                )
+        };
     }
 
     public static boolean spawnMany(@Nonnull PlayerRef viewer,
@@ -136,12 +192,7 @@ public final class PacketGlyphSender {
             UUID viewerUuid = viewer.getUuid();
             IPacketReceiver receiver = viewerUuid != null ? receiverCache.get(viewerUuid) : null;
             if (receiver == null) {
-                // reflective discovery is expensive, only do it once per player
-                receiver = findPacketReceiver(viewer, 0, new IdentityHashMap<>());
-                if (receiver == null) {
-                    disableRuntime("no IPacketReceiver found", null);
-                    return false;
-                }
+                receiver = viewer.getPacketHandler();
                 if (viewerUuid != null) {
                     receiverCache.put(viewerUuid, receiver);
                 }
@@ -179,15 +230,6 @@ public final class PacketGlyphSender {
         }
 
         safeWrite(viewer, packet);
-    }
-
-    @Nonnull
-    private static TransformUpdate transform(double x, double y, double z, float yaw) {
-        ModelTransform transform = new ModelTransform();
-        setPosition(transform, x, y, z);
-        transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
-        transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
-        return new TransformUpdate(transform);
     }
 
     private static void setPosition(@Nonnull ModelTransform transform, double x, double y, double z) {
@@ -231,68 +273,4 @@ public final class PacketGlyphSender {
         }
     }
 
-    @Nullable
-    private static IPacketReceiver findPacketReceiver(Object root,
-                                                      int depth,
-                                                      Map<Object, Boolean> seen) {
-        if (root == null || depth > 3) {
-            return null;
-        }
-
-        if (seen.containsKey(root)) {
-            return null;
-        }
-
-        seen.put(root, Boolean.TRUE);
-
-        if (root instanceof IPacketReceiver receiver) {
-            return receiver;
-        }
-
-        Class<?> type = root.getClass();
-
-        for (Method method : type.getMethods()) {
-            if (method.getParameterCount() != 0) {
-                continue;
-            }
-
-            String name = method.getName();
-
-            if (name.equals("getClass")
-                    || name.equals("hashCode")
-                    || name.equals("toString")
-                    || name.equals("getUuid")
-                    || name.equals("getReference")) {
-                continue;
-            }
-
-            try {
-                Object value = method.invoke(root);
-                IPacketReceiver found = findPacketReceiver(value, depth + 1, seen);
-                if (found != null) {
-                    System.out.println("[MysticNameTags] Found IPacketReceiver through method: " +
-                            type.getName() + "#" + name);
-                    return found;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        for (Field field : type.getDeclaredFields()) {
-            try {
-                field.setAccessible(true);
-                Object value = field.get(root);
-
-                IPacketReceiver found = findPacketReceiver(value, depth + 1, seen);
-                if (found != null) {
-                    System.out.println("[MysticNameTags] Found IPacketReceiver through field: " +
-                            type.getName() + "#" + field.getName());
-                    return found;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        return null;
-    }
 }
