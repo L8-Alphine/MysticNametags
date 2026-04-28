@@ -131,14 +131,7 @@ public class PlayerListener {
                 }
 
                 tagManager.trackOnlinePlayer(playerRef, world);
-                world.execute(() -> {
-                    try {
-                        tagManager.refreshNameplate(playerRef, world);
-                    } catch (Throwable t) {
-                        LOGGER.at(Level.FINE).withCause(t)
-                                .log("[MysticNameTags] Delayed PlayerReady nameplate refresh failed for %s", uuid);
-                    }
-                });
+                tagManager.refreshNameplate(playerRef, world);
             }
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
@@ -168,34 +161,10 @@ public class PlayerListener {
         tagManager.trackOnlinePlayer(playerRef, world);
 
         try {
-            world.execute(() -> {
-                try {
-                    tagManager.refreshNameplate(playerRef, world);
-                } catch (Throwable t) {
-                    LOGGER.at(Level.FINE).withCause(t)
-                            .log("[MysticNameTags] Delayed PlayerReady nameplate refresh failed for %s", uuid);
-                }
-            });
+            tagManager.refreshNameplate(playerRef, world);
         } catch (Throwable t) {
             LOGGER.at(Level.FINE).withCause(t)
                     .log("[MysticNameTags] PlayerReady nameplate refresh failed for %s", uuid);
-        }
-
-        try {
-            for (UUID onlineUuid : tagManager.getTrackedOnlinePlayerIds()) {
-                PlayerRef onlineRef = tagManager.getOnlinePlayer(onlineUuid);
-                World onlineWorld = tagManager.getOnlineWorld(onlineUuid);
-                if (onlineRef == null || onlineWorld == null) continue;
-                if (!world.getName().equals(onlineWorld.getName())) continue;
-
-                try {
-                    tagManager.refreshNameplate(onlineRef, onlineWorld);
-                } catch (Throwable ignored) {
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.at(Level.FINE).withCause(t)
-                    .log("[MysticNameTags] Failed global refresh pass after PlayerReady for %s", uuid);
         }
 
         // Update Notifier
