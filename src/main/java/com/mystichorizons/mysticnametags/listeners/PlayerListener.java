@@ -256,12 +256,9 @@ public class PlayerListener {
         }
 
         World world = TagManager.get().getOnlineWorld(uuid);
-        try {
-            if (world != null) {
-                GlyphNameplateManager.get().remove(uuid, world);
-            }
-        } catch (Throwable ignored) {
-        } finally {
+        if (world != null) {
+            GlyphNameplateManager.get().disconnectCleanup(uuid, world);
+        } else {
             GlyphNameplateManager.get().forget(uuid);
         }
 
