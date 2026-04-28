@@ -296,6 +296,60 @@ public final class GlyphNameplateManager {
         packetGlyphState.clearSubject(uuid);
     }
 
+    /**
+     * Disconnect-safe cleanup.  Called from the PlayerDisconnectEvent handler
+     * which runs synchronously inside {@code Universe.removePlayer()} —
+     * <em>before</em> {@code Player.remove()} is enqueued on the world thread.
+     *
+     * <p>The method clears tracking state immediately (so the follow-task
+     * stops touching this player) and then enqueues a lightweight anchor-
+     * entity removal on the world thread.  Unlike {@link #remove(UUID, World)},
+     * it skips the cross-world viewer iteration and packet writes — the
+     * disconnecting player's connection is already being torn down so those
+     * packets would either fail or be pointless.</p>
+     *
+     * <p>The outer lambda is wrapped in {@code catch(Throwable)} so that an
+     * unexpected {@code Error} cannot kill the world's ticking thread and
+     * stall the subsequent {@code Player.remove()} task (which caused the
+     * 5-second timeout seen in production).</p>
+     */
+    public void disconnectCleanup(@Nonnull UUID uuid, @Nonnull World world) {
+        // 1. Pull state atomically — follow task will no longer see this player
+        RenderState state = states.remove(uuid);
+
+        // 2. Clear packet-glyph bookkeeping (safe from any thread)
+        packetGlyphState.clearSubject(uuid);
+
+        if (state == null || state.lines.isEmpty()) {
+            return;
+        }
+
+        // 3. Enqueue anchor entity removal on the world thread.
+        //    This will sit in the queue BEFORE Player.remove(), which is fine —
+        //    the anchor cleanup is lightweight and protected by catch(Throwable).
+        if (world.isAlive()) {
+            world.execute(() -> {
+                try {
+                    Store<EntityStore> store = world.getEntityStore().getStore();
+                    for (LineRenderState line : state.lines) {
+                        if (line == null) continue;
+                        if (line.anchorRef != null && line.anchorRef.isValid()) {
+                            try {
+                                EntityRemoveCompat.remove(store, world.getEntityStore(), line.anchorRef);
+                            } catch (Throwable ignored) {
+                            }
+                            line.anchorRef = null;
+                        }
+                    }
+                    state.lines.clear();
+                } catch (Throwable t) {
+                    LOGGER.at(Level.WARNING).withCause(t)
+                            .log("[MysticNameTags] Anchor cleanup failed during disconnect for %s", uuid);
+                }
+            });
+        }
+    }
+
     public void followOnly(@Nonnull World world,
                            @Nonnull Store<EntityStore> store,
                            @Nonnull Ref<EntityStore> playerRef,
