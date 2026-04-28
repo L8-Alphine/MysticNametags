@@ -138,7 +138,7 @@ public final class Settings {
 
     private boolean experimentalGlyphNameplatesEnabled = false;
     private int experimentalGlyphMaxChars = 32;
-    private int experimentalGlyphUpdateTicks = 10; // 10 ticks -> 500ms
+    private int experimentalGlyphUpdateTicks = 1; // 1 tick -> smooth per-viewer billboarding
     private int experimentalGlyphMaxEntitiesPerPlayer = 40;
 
     // Glyph billboard optimization / tuning
@@ -492,8 +492,9 @@ public final class Settings {
 
                 addInfoBlock(out, "__experimental_glyph_nameplates",
                         "⚠ EXPERIMENTAL ⚠",
-                        "Glyph nameplates spawn an entity per character (expensive).",
+                        "Glyph nameplates packet-spawn models and mount them to the player.",
                         "Keep disabled unless testing with low player counts.",
+                        "experimentalGlyphUpdateTicks = billboard refresh cadence; 1 is smoothest",
                         "experimentalGlyphViewerActivationDistance = activate nearest-viewer billboard inside this radius",
                         "experimentalGlyphViewerDropDistance = keep current viewer until they leave this larger radius",
                         "experimentalGlyphViewerRefreshActiveMs = viewer scan cadence while active",
