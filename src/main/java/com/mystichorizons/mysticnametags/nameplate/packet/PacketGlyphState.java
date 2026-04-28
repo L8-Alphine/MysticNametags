@@ -59,7 +59,6 @@ public final class PacketGlyphState {
         public double lastBaseZ = Double.NaN;
 
         public long nextUpdateAtMs = 0L;
-        public long forceUpdateAtMs = 0L;
 
         private ViewerState(int viewerNetworkId, @Nonnull UUID viewerUuid) {
             this.viewerNetworkId = viewerNetworkId;
