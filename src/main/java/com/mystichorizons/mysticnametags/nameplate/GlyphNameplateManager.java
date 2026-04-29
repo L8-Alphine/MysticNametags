@@ -8,6 +8,7 @@ import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.math.vector.Vector3d;
 import com.hypixel.hytale.math.vector.Vector3f;
 import com.hypixel.hytale.protocol.EntityUpdate;
+import com.hypixel.hytale.protocol.ModelAttachment;
 import com.hypixel.hytale.server.core.asset.type.entityeffect.config.EntityEffect;
 import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
@@ -47,13 +48,13 @@ public final class GlyphNameplateManager {
     private static final double ANCHOR_Y_OFFSET = 2.25d;
 
     private static final float BILLBOARD_YAW_DIRTY_DEGREES = 0.75f;
-    private static final long BILLBOARD_MIN_UPDATE_INTERVAL_MS = 25L;
-    private static final double SELF_VIEW_POS_DIRTY_SQ = 0.0004d;
+    private static final int POST_SPAWN_CORRECTION_UPDATES = 3;
 
     private static final float GLYPH_YAW_CORRECTION_DEGREES = 0f;
 
     private static final double GLYPH_EXTRA_SPACING_PX = 4.0d;
     private static final double GLYPH_SOURCE_WIDTH_PX = 16.0d;
+    private static final double GLYPH_RUN_SLOT_UNITS_PER_BLOCK = 64.0d;
 
     private final Map<UUID, RenderState> states = new ConcurrentHashMap<>();
     private final PacketGlyphState packetGlyphState = new PacketGlyphState();
@@ -186,22 +187,8 @@ public final class GlyphNameplateManager {
         return ((a - b + 540.0f) % 360.0f) - 180.0f;
     }
 
-    private static double square(double value) {
-        return value * value;
-    }
-
     private static float toDegreesForCompare(float yaw, boolean nativeLooksLikeDegrees) {
         return nativeLooksLikeDegrees ? normalizeDegrees(yaw) : normalizeDegrees((float) Math.toDegrees(yaw));
-    }
-
-    private static double billboardRightX(float yaw, boolean looksDegrees) {
-        double radians = looksDegrees ? Math.toRadians(yaw) : yaw;
-        return Math.cos(radians);
-    }
-
-    private static double billboardRightZ(float yaw, boolean looksDegrees) {
-        double radians = looksDegrees ? Math.toRadians(yaw) : yaw;
-        return -Math.sin(radians);
     }
 
     private static int viewerIdentity(@Nonnull Store<EntityStore> store,
@@ -395,6 +382,7 @@ public final class GlyphNameplateManager {
 
         despawnAll(store, world.getEntityStore(), state);
         state.lines.clear();
+        state.packetGeneration++;
 
         TransformComponent playerTx = store.getComponent(playerRef, TransformComponent.getComponentType());
         if (playerTx == null) {
@@ -479,6 +467,7 @@ public final class GlyphNameplateManager {
                 spawnedAnyGlyph = true;
             }
 
+            rebuildLineRuns(lineState, state.scale);
             state.lines.add(lineState);
 
             if (spawnedCount >= hardCap) {
@@ -519,6 +508,9 @@ public final class GlyphNameplateManager {
         if (state.yawNativeLooksLikeDegrees == null) {
             state.yawNativeLooksLikeDegrees = looksDegrees;
         }
+
+        float playerYaw = looksDegrees ? normalizeDegrees(playerRot.getY()) : normalizeRadians(playerRot.getY());
+        float playerYawDegrees = toDegreesForCompare(playerYaw, looksDegrees);
 
         Set<Integer> activeViewerIds = new HashSet<>();
 
@@ -593,119 +585,99 @@ public final class GlyphNameplateManager {
                     int viewerId = viewerIdentity(store, viewerRef);
                     activeViewerIds.add(viewerId);
 
-                    long now = System.currentTimeMillis();
+                    long now = System.nanoTime();
                     float yawDegrees = toDegreesForCompare(yaw, looksDegrees);
 
                     PacketGlyphState.ViewerState packetState =
                             packetGlyphState.viewer(uuid, viewerId, viewerUuid);
 
-                    boolean yawDirty = Float.isNaN(packetState.lastYawDegrees)
-                            || Math.abs(angleDeltaDegrees(yawDegrees, packetState.lastYawDegrees)) >= BILLBOARD_YAW_DIRTY_DEGREES;
-
-                    double movedSq = square(playerPos.getX() - packetState.lastBaseX)
-                            + square(playerPos.getY() - packetState.lastBaseY)
-                            + square(playerPos.getZ() - packetState.lastBaseZ);
-                    boolean positionDirty = selfView && movedSq >= SELF_VIEW_POS_DIRTY_SQ;
-                    boolean intervalReady = now >= packetState.nextUpdateAtMs;
-
-                    if (!yawDirty && !positionDirty) {
-                        continue;
-                    }
-
-                    if (!intervalReady) {
-                        continue;
-                    }
-
-                    packetState.lastYawDegrees = yawDegrees;
-                    packetState.lastBaseX = playerPos.getX();
-                    packetState.lastBaseY = playerPos.getY();
-                    packetState.lastBaseZ = playerPos.getZ();
-                    packetState.nextUpdateAtMs = now + BILLBOARD_MIN_UPDATE_INTERVAL_MS;
-                    double rx = billboardRightX(yaw, looksDegrees);
-                    double rz = billboardRightZ(yaw, looksDegrees);
-
                     float modelScale = GlyphInfoCompat.BASE_MODEL_SCALE * (float) state.scale;
-                    int mountedToNetworkId = playerNetworkId.getId();
-                    int anchorId = PacketGlyphIdFactory.lineAnchorId(uuid, viewerId, lineIndex);
                     float lineOffsetY = (float) (ANCHOR_Y_OFFSET + line.yOffset);
+                    int mountedToNetworkId = playerNetworkId.getId();
                     double anchorX = playerPos.getX();
                     double anchorY = playerPos.getY() + lineOffsetY;
                     double anchorZ = playerPos.getZ();
+                    float glyphYaw = yaw;
+                    int count = line.glyphRuns.size();
 
-                    List<EntityUpdate> spawnUpdates = new ArrayList<>();
-
-                    int count = Math.min(
-                            Math.min(Math.min(Math.min(line.glyphChars.size(), line.glyphAssetIds.size()), line.glyphModels.size()),
-                                    line.glyphOffsets.size()),
-                            line.glyphTintEffectIndexes.size()
-                    );
-
-                    if (count > 0) {
-                        if (!packetState.spawnedIds.contains(anchorId)) {
-                            spawnUpdates.add(PacketGlyphSender.anchorSpawnUpdate(
-                                    anchorId,
-                                    mountedToNetworkId,
-                                    anchorX,
-                                    anchorY,
-                                    anchorZ,
-                                    lineOffsetY,
-                                    yaw
-                            ));
-                        } else {
-                            PacketGlyphSender.updateAnchor(
-                                    packetViewer,
-                                    anchorId,
-                                    mountedToNetworkId,
-                                    anchorX,
-                                    anchorY,
-                                    anchorZ,
-                                    lineOffsetY,
-                                    yaw
-                            );
+                    boolean hasMissingPacketEntities = false;
+                    for (int runIndex = 0; runIndex < count; runIndex++) {
+                        int fakeId = PacketGlyphIdFactory.glyphId(uuid, viewerId, lineIndex, runIndex, state.packetGeneration);
+                        if (!packetState.spawnedIds.contains(fakeId)) {
+                            hasMissingPacketEntities = true;
+                            break;
                         }
                     }
 
-                    for (int glyphIndex = 0; glyphIndex < count; glyphIndex++) {
-                        com.hypixel.hytale.protocol.Model packetModel = line.glyphModels.get(glyphIndex);
-                        double offset = line.glyphOffsets.get(glyphIndex);
-                        Integer tintEffectIndex = line.glyphTintEffectIndexes.get(glyphIndex);
+                    boolean postSpawnCorrection = packetState.postSpawnCorrectionsRemaining > 0;
+                    boolean yawDirty = Float.isNaN(packetState.lastYawDegrees)
+                            || Math.abs(angleDeltaDegrees(yawDegrees, packetState.lastYawDegrees)) >= BILLBOARD_YAW_DIRTY_DEGREES;
+                    boolean parentYawDirty = Float.isNaN(packetState.lastParentYawDegrees)
+                            || Math.abs(angleDeltaDegrees(playerYawDegrees, packetState.lastParentYawDegrees)) >= BILLBOARD_YAW_DIRTY_DEGREES;
+                    boolean positionDirty = Double.isNaN(packetState.lastBaseX)
+                            || playerPos.getX() != packetState.lastBaseX
+                            || playerPos.getY() != packetState.lastBaseY
+                            || playerPos.getZ() != packetState.lastBaseZ;
+                    long updateIntervalNs = Math.max(1L,
+                            (long) Settings.get().getExperimentalGlyphRotationSyncIntervalMs()) * 1_000_000L;
+                    boolean intervalReady = now >= packetState.nextUpdateAtNs;
+                    boolean glyphNeedsUpdate = !packetState.spawnedIds.isEmpty()
+                            && (postSpawnCorrection || yawDirty || parentYawDirty || positionDirty)
+                            && intervalReady;
 
-                        int fakeId = PacketGlyphIdFactory.glyphId(uuid, viewerId, lineIndex, glyphIndex);
+                    if (count <= 0 || (!hasMissingPacketEntities && !glyphNeedsUpdate)) {
+                        continue;
+                    }
 
-                        float offsetX = (float) offset;
-                        double glyphX = anchorX + (rx * offset);
-                        double glyphY = anchorY;
-                        double glyphZ = anchorZ + (rz * offset);
+                    List<EntityUpdate> spawnUpdates = new ArrayList<>();
+                    List<PacketGlyphSender.GlyphMove> moveUpdates = new ArrayList<>();
+
+                    for (int runIndex = 0; runIndex < count; runIndex++) {
+                        GlyphRunState run = line.glyphRuns.get(runIndex);
+                        if (run == null || run.packetModel == null) {
+                            continue;
+                        }
+
+                        int fakeId = PacketGlyphIdFactory.glyphId(
+                                uuid,
+                                viewerId,
+                                lineIndex,
+                                runIndex,
+                                state.packetGeneration
+                        );
 
                         if (!packetState.spawnedIds.contains(fakeId)) {
                             spawnUpdates.add(PacketGlyphSender.glyphSpawnUpdate(
                                     fakeId,
-                                    anchorId,
-                                    packetModel,
-                                    glyphX,
-                                    glyphY,
-                                    glyphZ,
-                                    offsetX,
+                                    mountedToNetworkId,
+                                    run.packetModel,
+                                    anchorX,
+                                    anchorY,
+                                    anchorZ,
                                     0.0f,
+                                    lineOffsetY,
                                     0.0f,
-                                    0.0f,
+                                    glyphYaw,
                                     modelScale,
-                                    tintEffectIndex
+                                    run.tintEffectIndex
                             ));
-                        } else {
-                            PacketGlyphSender.updateMountedGlyph(
-                                    packetViewer,
+                        } else if (glyphNeedsUpdate) {
+                            moveUpdates.add(new PacketGlyphSender.GlyphMove(
                                     fakeId,
-                                    anchorId,
-                                    glyphX,
-                                    glyphY,
-                                    glyphZ,
-                                    offsetX,
+                                    mountedToNetworkId,
+                                    anchorX,
+                                    anchorY,
+                                    anchorZ,
                                     0.0f,
+                                    lineOffsetY,
                                     0.0f,
-                                    0.0f
-                            );
+                                    glyphYaw
+                            ));
                         }
+                    }
+
+                    if (!moveUpdates.isEmpty()) {
+                        PacketGlyphSender.updateGlyphs(packetViewer, moveUpdates);
                     }
 
                     if (!spawnUpdates.isEmpty()) {
@@ -722,14 +694,48 @@ public final class GlyphNameplateManager {
                         boolean sent = PacketGlyphSender.spawnMany(packetViewer, spawnUpdates);
 
                         if (sent) {
-                            logPacketSpawnOnce(uuid, viewerUuid, selfView, count, mountedToNetworkId,
+                            logPacketSpawnOnce(uuid, viewerUuid, selfView, line.glyphChars.size(), mountedToNetworkId,
                                     line.glyphAssetIds.isEmpty() ? "none" : line.glyphAssetIds.get(0));
 
-                            packetState.spawnedIds.add(anchorId);
-                            for (int glyphIndex = 0; glyphIndex < count; glyphIndex++) {
-                                int fakeId = PacketGlyphIdFactory.glyphId(uuid, viewerId, lineIndex, glyphIndex);
+                            Map<Integer, Integer> tintUpdates = new LinkedHashMap<>();
+                            for (int runIndex = 0; runIndex < count; runIndex++) {
+                                GlyphRunState run = line.glyphRuns.get(runIndex);
+                                if (run == null) {
+                                    continue;
+                                }
+
+                                int fakeId = PacketGlyphIdFactory.glyphId(uuid, viewerId, lineIndex, runIndex, state.packetGeneration);
                                 packetState.spawnedIds.add(fakeId);
+
+                                Integer tintEffectIndex = run.tintEffectIndex;
+                                if (tintEffectIndex != null && tintEffectIndex >= 0) {
+                                    tintUpdates.put(fakeId, tintEffectIndex);
+                                }
                             }
+
+                            if (!tintUpdates.isEmpty()) {
+                                PacketGlyphSender.updateGlyphTints(packetViewer, tintUpdates);
+                            }
+
+                            packetState.postSpawnCorrectionsRemaining = Math.max(
+                                    packetState.postSpawnCorrectionsRemaining,
+                                    POST_SPAWN_CORRECTION_UPDATES
+                            );
+                            packetState.nextUpdateAtNs = 0L;
+                        }
+                    }
+
+                    if (lineIndex + 1 >= state.lines.size()) {
+                        packetState.lastYawDegrees = yawDegrees;
+                        packetState.lastParentYawDegrees = playerYawDegrees;
+                        packetState.lastBaseX = playerPos.getX();
+                        packetState.lastBaseY = playerPos.getY();
+                        packetState.lastBaseZ = playerPos.getZ();
+                        if (glyphNeedsUpdate && postSpawnCorrection) {
+                            packetState.postSpawnCorrectionsRemaining--;
+                            packetState.nextUpdateAtNs = now + Math.min(updateIntervalNs, 1_000_000L);
+                        } else if (glyphNeedsUpdate) {
+                            packetState.nextUpdateAtNs = now + updateIntervalNs;
                         }
                     }
                 } catch (Throwable t) {
@@ -760,6 +766,113 @@ public final class GlyphNameplateManager {
                 + ", glyphCount=" + glyphCount
                 + ", mountedToNetworkId=" + mountedToNetworkId
                 + ", firstAsset=" + firstAssetId);
+    }
+
+    private static void rebuildLineRuns(@Nonnull LineRenderState line, double scale) {
+        line.glyphRuns.clear();
+
+        int count = Math.min(
+                Math.min(Math.min(line.glyphChars.size(), line.glyphOffsets.size()), line.glyphTintEffectIndexes.size()),
+                line.glyphAssetIds.size()
+        );
+
+        int start = -1;
+        Integer currentTint = null;
+
+        for (int i = 0; i < count; i++) {
+            Integer tint = line.glyphTintEffectIndexes.get(i);
+            if (start < 0) {
+                start = i;
+                currentTint = tint;
+                continue;
+            }
+
+            if (!Objects.equals(currentTint, tint)) {
+                addLineRun(line, start, i, currentTint, scale);
+                start = i;
+                currentTint = tint;
+            }
+        }
+
+        if (start >= 0) {
+            addLineRun(line, start, count, currentTint, scale);
+        }
+    }
+
+    private static void addLineRun(@Nonnull LineRenderState line,
+                                   int startInclusive,
+                                   int endExclusive,
+                                   @Nullable Integer tintEffectIndex,
+                                   double scale) {
+        if (startInclusive >= endExclusive) {
+            return;
+        }
+
+        com.hypixel.hytale.protocol.Model model = buildLineRunPacketModel(line, startInclusive, endExclusive, scale);
+        if (model == null) {
+            return;
+        }
+
+        line.glyphRuns.add(new GlyphRunState(startInclusive, endExclusive, tintEffectIndex, model));
+    }
+
+    @Nullable
+    private static com.hypixel.hytale.protocol.Model buildLineRunPacketModel(@Nonnull LineRenderState line,
+                                                                             int startInclusive,
+                                                                             int endExclusive,
+                                                                             double scale) {
+        com.hypixel.hytale.protocol.Model model = resolveGlyphLineBasePacket();
+        if (model == null) {
+            model = new com.hypixel.hytale.protocol.Model();
+            model.assetId = GlyphAssets.NAMESPACE + ":GlyphLineBase";
+            model.path = "NPC/MysticNameTags/GlyphLineBase.blockymodel";
+            model.texture = "NPC/MysticNameTags/glyph_fallback.png";
+        } else {
+            model = new com.hypixel.hytale.protocol.Model(model);
+        }
+
+        List<ModelAttachment> attachments = new ArrayList<>(Math.max(0, endExclusive - startInclusive));
+        double safeScale = Math.max(0.0001d, scale);
+
+        for (int i = startInclusive; i < endExclusive; i++) {
+            char ch = line.glyphChars.get(i);
+            String safeId = GlyphInfoCompat.getSafeIdLower(ch);
+            if (safeId == null) {
+                continue;
+            }
+
+            double offset = line.glyphOffsets.get(i);
+            int offsetPx = (int) Math.round((-offset / safeScale) * GLYPH_RUN_SLOT_UNITS_PER_BLOCK);
+            String slotModel = GlyphAssets.slotModelPath(offsetPx);
+            String texture = GlyphAssets.texturePath(ch, safeId);
+            attachments.add(new ModelAttachment(slotModel, texture, null, null));
+        }
+
+        if (attachments.isEmpty()) {
+            return null;
+        }
+
+        model.attachments = attachments.toArray(new ModelAttachment[0]);
+        return model;
+    }
+
+    @Nullable
+    private static com.hypixel.hytale.protocol.Model resolveGlyphLineBasePacket() {
+        try {
+            ModelAsset asset = (ModelAsset) ModelAsset.getAssetMap().getAsset(GlyphAssets.NAMESPACE + ":GlyphLineBase");
+            if (asset == null) {
+                asset = (ModelAsset) ModelAsset.getAssetMap().getAsset("GlyphLineBase");
+            }
+            if (asset == null) {
+                return null;
+            }
+
+            com.hypixel.hytale.server.core.asset.type.model.config.Model model =
+                    com.hypixel.hytale.server.core.asset.type.model.config.Model.createUnitScaleModel(asset);
+            return model == null ? null : model.toPacket();
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     @Nullable
@@ -822,21 +935,26 @@ public final class GlyphNameplateManager {
         int rgb = quantizeTintRgb(GlyphAssets.rgb(color));
 
         return tintEffectIndexCache.computeIfAbsent(rgb, key -> {
-            String effectId = GlyphAssets.tintEffectId(key);
+            String shortEffectId = "HtTint_" + String.format("%06X", (key & 0xFFFFFF));
+            String namespacedEffectId = GlyphAssets.tintEffectId(key);
 
             try {
-                if (EntityEffect.getAssetMap().getAsset(effectId) == null) {
-                    if (loggedMissingTintEffects.add(key)) {
-                        LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph tint effect not found: " + effectId);
+                for (String effectId : new String[]{shortEffectId, namespacedEffectId}) {
+                    if (EntityEffect.getAssetMap().getAsset(effectId) != null) {
+                        return EntityEffect.getAssetMap().getIndex(effectId);
                     }
-                    return -1;
                 }
 
-                return EntityEffect.getAssetMap().getIndex(effectId);
+                if (loggedMissingTintEffects.add(key)) {
+                    LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph tint effect not found: "
+                            + shortEffectId + " or " + namespacedEffectId);
+                }
+                return -1;
             } catch (Throwable t) {
                 if (loggedMissingTintEffects.add(key)) {
                     LOGGER.at(Level.INFO).withCause(t)
-                            .log("[MysticNameTags] Packet glyph tint effect lookup failed: " + effectId);
+                            .log("[MysticNameTags] Packet glyph tint effect lookup failed: "
+                                    + shortEffectId + " or " + namespacedEffectId);
                 }
                 return -1;
             }
@@ -988,6 +1106,7 @@ public final class GlyphNameplateManager {
         double scale = 1.0d;
         String worldName = null;
         Boolean yawNativeLooksLikeDegrees = null;
+        int packetGeneration = 0;
 
         RenderState(@Nonnull UUID subjectUuid) {
             this.subjectUuid = subjectUuid;
@@ -1000,10 +1119,28 @@ public final class GlyphNameplateManager {
         final List<com.hypixel.hytale.protocol.Model> glyphModels = new ArrayList<>();
         final List<Double> glyphOffsets = new ArrayList<>();
         final List<Integer> glyphTintEffectIndexes = new ArrayList<>();
+        final List<GlyphRunState> glyphRuns = new ArrayList<>();
 
         String text = "";
         double yOffset = 0.0d;
         Ref<EntityStore> anchorRef = null;
+    }
+
+    private static final class GlyphRunState {
+        final int startInclusive;
+        final int endExclusive;
+        final Integer tintEffectIndex;
+        final com.hypixel.hytale.protocol.Model packetModel;
+
+        GlyphRunState(int startInclusive,
+                      int endExclusive,
+                      @Nullable Integer tintEffectIndex,
+                      @Nonnull com.hypixel.hytale.protocol.Model packetModel) {
+            this.startInclusive = startInclusive;
+            this.endExclusive = endExclusive;
+            this.tintEffectIndex = tintEffectIndex;
+            this.packetModel = packetModel;
+        }
     }
 
     private static final class ColoredChar {
