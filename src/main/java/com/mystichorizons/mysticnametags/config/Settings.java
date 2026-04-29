@@ -416,6 +416,7 @@ public final class Settings {
                 addInfoBlock(out, "__core",
                         "Core nameplate settings.",
                         "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {endless_primary_class}, {endless_secondary_class}, {rpg_level}, {ecoquests_rank}",
+                        "nameplateFormat supports /n for a new line",
                         "stripExtraSpaces = condense multiple spaces",
                         "language = locale bundle (e.g. en_US)",
                         "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = off)"
@@ -500,7 +501,7 @@ public final class Settings {
                         "experimentalGlyphViewerRefreshActiveMs = viewer scan cadence while active",
                         "experimentalGlyphViewerRefreshIdleMs = viewer scan cadence while idle",
                         "experimentalGlyphIdleFollowIntervalMs = follow cadence when no valid nearby viewer exists",
-                        "experimentalGlyphRotationSyncIntervalMs = child glyph yaw sync cadence",
+                        "experimentalGlyphRotationSyncIntervalMs = packet glyph billboard/position sync cadence; lower = smoother, higher = fewer packets",
                         "experimentalGlyphMaxLines = maximum number of rendered lines",
                         "experimentalGlyphMaxCharsPerLine = visible glyph chars per line",
                         "experimentalGlyphLineSpacing = vertical spacing between line anchors",
