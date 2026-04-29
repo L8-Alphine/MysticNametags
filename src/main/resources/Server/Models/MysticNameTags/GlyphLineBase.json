@@ -1,0 +1,8 @@
+{
+  "Model": "NPC/MysticNameTags/GlyphLineBase.blockymodel",
+  "Texture": "NPC/MysticNameTags/glyph_fallback.png",
+  "HitBox": {
+    "Max": {"X": 1, "Y": 1, "Z": 1},
+    "Min": {"X": 0, "Y": 0, "Z": 0}
+  }
+}
