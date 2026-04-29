@@ -269,6 +269,8 @@ public final class NameplateTextResolver {
                 .replace("{rpg_level}", context.getRpgLevel())
                 .replace("{ecoquests_rank}", context.getEcoquestsRank());
 
+        raw = expandEscapedNewlines(raw);
+
         if (settings.isStripExtraSpacesEnabled()) {
             raw = collapseWhitespacePreserveLines(raw);
         }
@@ -290,6 +292,8 @@ public final class NameplateTextResolver {
             } catch (Throwable ignored) {
             }
         }
+
+        raw = expandEscapedNewlines(raw);
 
         String colored = ColorFormatter.colorize(raw);
         if (colored == null) {
@@ -360,5 +364,21 @@ public final class NameplateTextResolver {
         }
 
         return out.toString();
+    }
+
+    @Nonnull
+    private static String expandEscapedNewlines(@Nonnull String text) {
+        return text
+                .replace("/r/n", "\n")
+                .replace("/n", "\n")
+                .replace("/r", "\n")
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\r", "\n")
+                .replace("<br />", "\n")
+                .replace("<br/>", "\n")
+                .replace("<br>", "\n")
+                .replace("{newline}", "\n")
+                .replace("{nl}", "\n");
     }
 }
