@@ -15,6 +15,20 @@ public final class GlyphAssets {
         return NAMESPACE + ":Glyph_" + safeCharId;
     }
 
+    public static String texturePath(char ch, String safeCharId) {
+        if (ch >= 'A' && ch <= 'Z') {
+            return "NPC/MysticNameTags/glyph_up_" + ch + ".png";
+        }
+
+        return "NPC/MysticNameTags/glyph_" + safeCharId + ".png";
+    }
+
+    public static String slotModelPath(int offsetPx) {
+        int rounded = Math.max(-128, Math.min(128, offsetPx));
+        String sign = rounded < 0 ? "m" : "p";
+        return "NPC/MysticNameTags/GlyphSlot_" + sign + String.format("%03d", Math.abs(rounded)) + ".blockymodel";
+    }
+
     public static String tintEffectId(int rgbQuantized) {
         // e.g. mysticnametags:HtTint_FF00AA
         return NAMESPACE + ":HtTint_" + String.format("%06X", (rgbQuantized & 0xFFFFFF));

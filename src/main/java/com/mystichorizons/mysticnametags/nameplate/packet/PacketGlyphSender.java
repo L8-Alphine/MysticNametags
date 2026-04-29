@@ -1,0 +1,480 @@
+package com.mystichorizons.mysticnametags.nameplate.packet;
+
+import com.hypixel.hytale.protocol.*;
+import com.hypixel.hytale.protocol.packets.entities.EntityUpdates;
+import com.hypixel.hytale.server.core.receiver.IPacketReceiver;
+import com.hypixel.hytale.server.core.universe.PlayerRef;
+
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class PacketGlyphSender {
+
+    private static volatile boolean packetGlyphsRuntimeDisabled = false;
+    private static final boolean PACKET_CANARY_ONLY = false;
+    private static final MountController GLYPH_ENTITY_MOUNT_CONTROLLER = MountController.Minecart;
+
+    // Cache the direct packet handler per player. Never recursively reflect through PlayerRef
+    // from the world thread; some server accessors acquire locks and can stall shutdown/join.
+    private static final Map<UUID, IPacketReceiver> receiverCache = new ConcurrentHashMap<>();
+
+    private PacketGlyphSender() {
+    }
+
+    public static boolean isRuntimeDisabled() {
+        return packetGlyphsRuntimeDisabled;
+    }
+
+    /** Drop cached receiver for a player. Call on disconnect. */
+    public static void evictReceiverCache(@Nonnull UUID uuid) {
+        receiverCache.remove(uuid);
+    }
+
+    @Nonnull
+    public static EntityUpdate glyphSpawnUpdate(int networkId,
+                                                int mountedToNetworkId,
+                                                @Nonnull com.hypixel.hytale.protocol.Model model,
+                                                double x,
+                                                double y,
+                                                double z,
+                                                float offsetX,
+                                                float offsetY,
+                                                float offsetZ,
+                                                float yaw,
+                                                float scale) {
+        return glyphSpawnUpdate(networkId, mountedToNetworkId, model, x, y, z, offsetX, offsetY, offsetZ, yaw, scale, null);
+    }
+
+    @Nonnull
+    public static EntityUpdate glyphSpawnUpdate(int networkId,
+                                                int mountedToNetworkId,
+                                                @Nonnull com.hypixel.hytale.protocol.Model model,
+                                                double x,
+                                                double y,
+                                                double z,
+                                                float offsetX,
+                                                float offsetY,
+                                                float offsetZ,
+                                                float yaw,
+                                                float scale,
+                                                @Nullable Integer tintEffectIndex) {
+
+        ModelTransform transform = new ModelTransform();
+        setPosition(transform, x, y, z);
+        transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
+        transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+
+        return new EntityUpdate(
+                networkId,
+                null,
+                spawnComponents(
+                        mountedToNetworkId,
+                        offsetX,
+                        offsetY,
+                        offsetZ,
+                        transform,
+                        model,
+                        scale,
+                        tintEffectIndex
+                )
+        );
+    }
+
+    @Nonnull
+    public static EntityUpdate anchorSpawnUpdate(int networkId,
+                                                 int mountedToNetworkId,
+                                                 double x,
+                                                 double y,
+                                                 double z,
+                                                 float offsetY,
+                                                 float yaw) {
+        ModelTransform transform = new ModelTransform();
+        setPosition(transform, x, y, z);
+        transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
+        transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+
+        return new EntityUpdate(
+                networkId,
+                null,
+                anchorComponents(mountedToNetworkId, offsetY, transform)
+        );
+    }
+
+    @Nonnull
+    private static ComponentUpdate[] spawnComponents(int mountedToNetworkId,
+                                                     float offsetX,
+                                                     float offsetY,
+                                                     float offsetZ,
+                                                     @Nonnull ModelTransform transform,
+                                                     @Nonnull com.hypixel.hytale.protocol.Model model,
+                                                     float scale,
+                                                     @Nullable Integer tintEffectIndex) {
+        List<ComponentUpdate> updates = new ArrayList<>();
+
+        // MUST be first
+        updates.add(new NewSpawnUpdate());
+
+        // REQUIRED baseline safety components
+        updates.add(new IntangibleUpdate());
+        updates.add(new InteractableUpdate());
+        updates.add(new HitboxCollisionUpdate(0));
+
+        // Optional but often required for model-based entities
+        updates.add(new PropUpdate());
+
+        // Then your actual data
+        updates.add(new TransformUpdate(transform));
+
+        if (mountedToNetworkId > 0) {
+            updates.add(new MountedUpdate(
+                    mountedToNetworkId,
+                    new Vector3f(offsetX, offsetY, offsetZ),
+                    GLYPH_ENTITY_MOUNT_CONTROLLER,
+                    null
+            ));
+        }
+
+        updates.add(new ModelUpdate(model, scale));
+
+        if (tintEffectIndex != null && tintEffectIndex >= 0) {
+            updates.add(new EntityEffectsUpdate(new EntityEffectUpdate[]{
+                    new EntityEffectUpdate(EffectOp.Add, tintEffectIndex, 3600.0f, true, false, null)
+            }));
+        }
+
+        return updates.toArray(new ComponentUpdate[0]);
+    }
+
+    @Nonnull
+    private static ComponentUpdate[] anchorComponents(int mountedToNetworkId,
+                                                      float offsetY,
+                                                      @Nonnull ModelTransform transform) {
+        List<ComponentUpdate> updates = new ArrayList<>();
+
+        updates.add(new NewSpawnUpdate());
+        updates.add(new IntangibleUpdate());
+        updates.add(new InteractableUpdate());
+        updates.add(new HitboxCollisionUpdate(0));
+        updates.add(new TransformUpdate(transform));
+
+        if (mountedToNetworkId > 0) {
+            updates.add(new MountedUpdate(
+                    mountedToNetworkId,
+                    new Vector3f(0.0f, offsetY, 0.0f),
+                    GLYPH_ENTITY_MOUNT_CONTROLLER,
+                    null
+            ));
+        }
+
+        return updates.toArray(new ComponentUpdate[0]);
+    }
+
+    public static void updateAnchor(@Nonnull PlayerRef viewer,
+                                    int networkId,
+                                    int mountedToNetworkId,
+                                    double x,
+                                    double y,
+                                    double z,
+                                    float offsetY,
+                                    float yaw) {
+        if (packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        try {
+            ModelTransform transform = new ModelTransform();
+            setPosition(transform, x, y, z);
+            transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
+            transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+
+            EntityUpdate update = new EntityUpdate(
+                    networkId,
+                    new ComponentUpdateType[0],
+                    new ComponentUpdate[]{new TransformUpdate(transform)}
+            );
+
+            safeWrite(viewer, new EntityUpdates(null, new EntityUpdate[]{update}));
+        } catch (Throwable t) {
+            disableRuntime("updateAnchor packet build failed", t);
+        }
+    }
+
+    public static void updateMountedGlyph(@Nonnull PlayerRef viewer,
+                                          int networkId,
+                                          int mountedToNetworkId,
+                                          double x,
+                                          double y,
+                                          double z,
+                                          float offsetX,
+                                          float offsetY,
+                                          float offsetZ,
+                                          float yaw) {
+        if (packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        try {
+            ModelTransform transform = new ModelTransform();
+            setPosition(transform, x, y, z);
+            transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
+            transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+
+            EntityUpdate update = new EntityUpdate(
+                    networkId,
+                    new ComponentUpdateType[0],
+                    moveComponents(mountedToNetworkId, offsetX, offsetY, offsetZ, transform)
+            );
+
+            safeWrite(viewer, new EntityUpdates(null, new EntityUpdate[]{update}));
+        } catch (Throwable t) {
+            disableRuntime("updateMountedGlyph packet build failed", t);
+        }
+    }
+
+    public static void updateGlyphs(@Nonnull PlayerRef viewer,
+                                    @Nonnull List<GlyphMove> moves) {
+        if (moves.isEmpty() || packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        try {
+            List<EntityUpdate> updates = new ArrayList<>(moves.size());
+
+            for (GlyphMove move : moves) {
+                if (move == null) {
+                    continue;
+                }
+
+                ModelTransform transform = new ModelTransform();
+                setPosition(transform, move.x, move.y, move.z);
+                transform.bodyOrientation = new Direction(move.yaw, 0.0f, 0.0f);
+                transform.lookOrientation = new Direction(move.yaw, 0.0f, 0.0f);
+
+                updates.add(new EntityUpdate(
+                        move.networkId,
+                        new ComponentUpdateType[0],
+                        moveComponents(move.mountedToNetworkId, move.offsetX, move.offsetY, move.offsetZ, transform)
+                ));
+            }
+
+            if (!updates.isEmpty()) {
+                safeWrite(viewer, new EntityUpdates(null, updates.toArray(new EntityUpdate[0])));
+            }
+        } catch (Throwable t) {
+            disableRuntime("updateGlyphs packet build failed", t);
+        }
+    }
+
+    public static void updateGlyphTints(@Nonnull PlayerRef viewer,
+                                        @Nonnull Map<Integer, Integer> tintEffectIndexesByNetworkId) {
+        if (tintEffectIndexesByNetworkId.isEmpty() || packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        try {
+            List<EntityUpdate> updates = new ArrayList<>();
+
+            for (Map.Entry<Integer, Integer> entry : tintEffectIndexesByNetworkId.entrySet()) {
+                Integer networkId = entry.getKey();
+                Integer tintEffectIndex = entry.getValue();
+
+                if (networkId == null || tintEffectIndex == null || tintEffectIndex < 0) {
+                    continue;
+                }
+
+                updates.add(new EntityUpdate(
+                        networkId,
+                        new ComponentUpdateType[0],
+                        new ComponentUpdate[]{
+                                new EntityEffectsUpdate(new EntityEffectUpdate[]{
+                                        new EntityEffectUpdate(EffectOp.Add, tintEffectIndex, 3600.0f, true, false, null)
+                                })
+                        }
+                ));
+            }
+
+            if (!updates.isEmpty()) {
+                safeWrite(viewer, new EntityUpdates(null, updates.toArray(new EntityUpdate[0])));
+            }
+        } catch (Throwable t) {
+            disableRuntime("updateGlyphTints packet build failed", t);
+        }
+    }
+
+    @Nonnull
+    private static ComponentUpdate[] moveComponents(int mountedToNetworkId,
+                                                    float offsetX,
+                                                    float offsetY,
+                                                    float offsetZ,
+                                                    @Nonnull ModelTransform transform) {
+        if (mountedToNetworkId <= 0) {
+            return new ComponentUpdate[]{new TransformUpdate(transform)};
+        }
+
+        // These are run-level glyph plates now, not per-letter plates. Keep both
+        // transform and mount current so the whole run can billboard as one unit.
+        return new ComponentUpdate[]{
+                new TransformUpdate(transform),
+                new MountedUpdate(
+                        mountedToNetworkId,
+                        new Vector3f(offsetX, offsetY, offsetZ),
+                        GLYPH_ENTITY_MOUNT_CONTROLLER,
+                        null
+                )
+        };
+    }
+
+    public static boolean spawnMany(@Nonnull PlayerRef viewer,
+                                    @Nonnull List<EntityUpdate> updates) {
+        if (updates.isEmpty() || packetGlyphsRuntimeDisabled) {
+            return false;
+        }
+
+        EntityUpdate[] outgoing = PACKET_CANARY_ONLY
+                ? new EntityUpdate[]{updates.get(0)}
+                : updates.toArray(new EntityUpdate[0]);
+
+        EntityUpdates packet;
+
+        try {
+            packet = new EntityUpdates(null, outgoing);
+        } catch (Throwable t) {
+            disableRuntime("spawnMany packet build failed", t);
+            return false;
+        }
+
+        return safeWrite(viewer, packet);
+    }
+
+    private static boolean safeWrite(@Nonnull PlayerRef viewer, @Nonnull Object packet) {
+        if (packetGlyphsRuntimeDisabled) {
+            return false;
+        }
+
+        if (!(packet instanceof ToClientPacket toClientPacket)) {
+            disableRuntime("packet is not ToClientPacket: " + packet.getClass().getName(), null);
+            return false;
+        }
+
+        try {
+            UUID viewerUuid = viewer.getUuid();
+            IPacketReceiver receiver = viewerUuid != null ? receiverCache.get(viewerUuid) : null;
+            if (receiver == null) {
+                receiver = viewer.getPacketHandler();
+                if (viewerUuid != null) {
+                    receiverCache.put(viewerUuid, receiver);
+                }
+            }
+
+            receiver.writeNoCache(toClientPacket);
+            return true;
+        } catch (Throwable t) {
+            // stale cache entry maybe, clear it and let next call rediscover
+            try { if (viewer.getUuid() != null) receiverCache.remove(viewer.getUuid()); } catch (Exception ignored) {}
+            disableRuntime("packet write failed", t);
+            return false;
+        }
+    }
+
+    public static void removeGlyphs(@Nonnull PlayerRef viewer,
+                                    @Nonnull Collection<Integer> ids) {
+        if (ids.isEmpty() || packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        EntityUpdates packet;
+
+        try {
+            int[] removed = new int[ids.size()];
+            int i = 0;
+            for (Integer id : ids) {
+                removed[i++] = id == null ? 0 : id;
+            }
+
+            packet = new EntityUpdates(removed, null);
+        } catch (Throwable t) {
+            disableRuntime("removeGlyphs packet build failed", t);
+            return;
+        }
+
+        safeWrite(viewer, packet);
+    }
+
+    private static void setPosition(@Nonnull ModelTransform transform, double x, double y, double z) {
+        try {
+            Object position;
+
+            try {
+                Constructor<Position> ctor = Position.class.getConstructor(double.class, double.class, double.class);
+                position = ctor.newInstance(x, y, z);
+            } catch (Throwable ignored) {
+                position = Position.class.getConstructor().newInstance();
+                setNumberField(position, "x", x);
+                setNumberField(position, "y", y);
+                setNumberField(position, "z", z);
+            }
+
+            Field field = ModelTransform.class.getField("position");
+            field.set(transform, position);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void setNumberField(@Nonnull Object target, @Nonnull String fieldName, double value) throws Exception {
+        Field field = target.getClass().getField(fieldName);
+        Class<?> type = field.getType();
+
+        if (type == double.class || type == Double.class) {
+            field.set(target, value);
+        } else if (type == float.class || type == Float.class) {
+            field.set(target, (float) value);
+        } else if (type == int.class || type == Integer.class) {
+            field.set(target, (int) Math.round(value));
+        }
+    }
+
+    public static void disableRuntime(String reason, Throwable t) {
+        packetGlyphsRuntimeDisabled = true;
+        System.out.println("[MysticNameTags] Packet glyphs runtime-disabled: " + reason);
+        if (t != null) {
+            t.printStackTrace();
+        }
+    }
+
+    public static final class GlyphMove {
+        public final int networkId;
+        public final int mountedToNetworkId;
+        public final double x;
+        public final double y;
+        public final double z;
+        public final float offsetX;
+        public final float offsetY;
+        public final float offsetZ;
+        public final float yaw;
+
+        public GlyphMove(int networkId,
+                         int mountedToNetworkId,
+                         double x,
+                         double y,
+                         double z,
+                         float offsetX,
+                         float offsetY,
+                         float offsetZ,
+                         float yaw) {
+            this.networkId = networkId;
+            this.mountedToNetworkId = mountedToNetworkId;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.offsetZ = offsetZ;
+            this.yaw = yaw;
+        }
+    }
+
+}

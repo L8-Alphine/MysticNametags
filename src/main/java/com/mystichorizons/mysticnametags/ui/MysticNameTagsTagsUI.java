@@ -9,19 +9,18 @@ import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.protocol.packets.interface_.NotificationStyle;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.player.pages.InteractiveCustomUIPage;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.ui.builder.EventData;
 import com.hypixel.hytale.server.core.ui.builder.UICommandBuilder;
 import com.hypixel.hytale.server.core.ui.builder.UIEventBuilder;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport;
-import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.tags.TagManager.TagPurchaseResult;
@@ -916,28 +915,12 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         try {
             TagPurchaseResult result = manager.toggleTag(playerRef, uuid, resolvedId);
 
-            Player player = store.getComponent(ref, Player.getComponentType());
-            if (player != null) {
-                String baseName = playerRef.getUsername();
-                try {
-                    switch (result) {
-                        case UNLOCKED_FREE,
-                             UNLOCKED_PAID,
-                             EQUIPPED_ALREADY_OWNED -> {
-                            String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
-                            NameplateManager.get().apply(uuid, store, ref, text);
-                        }
-                        case UNEQUIPPED -> {
-                            NameplateManager.get().restore(uuid, store, ref, baseName);
-                            String text = manager.buildPlainNameplate(playerRef, baseName, uuid);
-                            NameplateManager.get().apply(uuid, store, ref, text);
-                        }
-                        default -> {
-                            // no-op
-                        }
-                    }
-                } catch (Throwable ignored) {
+            try {
+                World world = manager.getOnlineWorld(uuid);
+                if (world != null) {
+                    manager.forceRefreshNameplate(playerRef, world);
                 }
+            } catch (Throwable ignored) {
             }
 
             switch (result) {

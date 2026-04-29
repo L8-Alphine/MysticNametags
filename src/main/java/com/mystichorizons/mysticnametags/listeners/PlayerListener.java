@@ -12,6 +12,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphSender;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.nameplate.GlyphNameplateManager;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
@@ -180,23 +181,6 @@ public class PlayerListener {
                     .log("[MysticNameTags] PlayerReady nameplate refresh failed for %s", uuid);
         }
 
-        try {
-            for (UUID onlineUuid : tagManager.getTrackedOnlinePlayerIds()) {
-                PlayerRef onlineRef = tagManager.getOnlinePlayer(onlineUuid);
-                World onlineWorld = tagManager.getOnlineWorld(onlineUuid);
-                if (onlineRef == null || onlineWorld == null) continue;
-                if (!world.getName().equals(onlineWorld.getName())) continue;
-
-                try {
-                    tagManager.refreshNameplate(onlineRef, onlineWorld);
-                } catch (Throwable ignored) {
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.at(Level.FINE).withCause(t)
-                    .log("[MysticNameTags] Failed global refresh pass after PlayerReady for %s", uuid);
-        }
-
         // Update Notifier
 
         try {
@@ -255,12 +239,9 @@ public class PlayerListener {
         }
 
         World world = TagManager.get().getOnlineWorld(uuid);
-        try {
-            if (world != null) {
-                GlyphNameplateManager.get().remove(uuid, world);
-            }
-        } catch (Throwable ignored) {
-        } finally {
+        if (world != null) {
+            GlyphNameplateManager.get().disconnectCleanup(uuid, world);
+        } else {
             GlyphNameplateManager.get().forget(uuid);
         }
 
@@ -272,5 +253,6 @@ public class PlayerListener {
         }
 
         TagManager.get().untrackOnlinePlayer(uuid);
+        PacketGlyphSender.evictReceiverCache(uuid);
     }
 }

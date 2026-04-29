@@ -463,6 +463,8 @@ public class TagManager {
         PlayerTagData data = getOrLoad(uuid);
         data.setEquipped(id.toLowerCase(Locale.ROOT));
         savePlayerData(uuid);
+        clearCanUseCache(uuid);
+        forceRefreshIfOnline(uuid);
         return true;
     }
 
@@ -1202,11 +1204,7 @@ public class TagManager {
         savePlayerData(uuid);
         clearCanUseCache(uuid);
 
-        PlayerRef ref = onlinePlayers.get(uuid);
-        World world = onlineWorlds.get(uuid);
-        if (ref != null && world != null) {
-            refreshNameplate(ref, world);
-        }
+        forceRefreshIfOnline(uuid);
 
         return true;
     }
@@ -1229,11 +1227,7 @@ public class TagManager {
         savePlayerData(uuid);
         clearCanUseCache(uuid);
 
-        PlayerRef ref = onlinePlayers.get(uuid);
-        World world = onlineWorlds.get(uuid);
-        if (ref != null && world != null) {
-            refreshNameplate(ref, world);
-        }
+        forceRefreshIfOnline(uuid);
 
         return true;
     }
@@ -1255,11 +1249,7 @@ public class TagManager {
         } catch (Throwable ignored) {
         }
 
-        PlayerRef ref = onlinePlayers.get(uuid);
-        World world = onlineWorlds.get(uuid);
-        if (ref != null && world != null) {
-            refreshNameplate(ref, world);
-        }
+        forceRefreshIfOnline(uuid);
 
         return true;
     }
@@ -1358,16 +1348,7 @@ public class TagManager {
     }
 
     private void refreshIfOnline(@Nonnull UUID uuid) {
-        PlayerRef ref = onlinePlayers.get(uuid);
-        World world = onlineWorlds.get(uuid);
-        if (ref != null && world != null) {
-            try {
-                refreshNameplate(ref, world);
-            } catch (Throwable t) {
-                LOGGER.at(Level.WARNING).withCause(t)
-                        .log("[MysticNameTags] Failed to refresh nameplate after tag change for " + uuid);
-            }
-        }
+        forceRefreshIfOnline(uuid);
     }
 
     @Nonnull
@@ -1424,12 +1405,16 @@ public class TagManager {
             }
 
             String previous = lastNameplateText.get(uuid);
-            // this causes helicopter issue so commenting out for now
-            // if (previous != null && previous.equals(compareKey)) {
-            //     if (!glyphEnabled || GlyphNameplateManager.get().hasLiveRender(uuid)) {
-            //         return;
-            //     }
-            // }
+            if (previous != null && previous.equals(compareKey)) {
+                if (!glyphEnabled) {
+                    return;
+                }
+
+                if (GlyphNameplateManager.get().hasLiveRender(uuid)) {
+                    GlyphNameplateManager.get().followOnly(world, store, ref, uuid);
+                    return;
+                }
+            }
 
             if (glyphEnabled) {
                 NameplateManager.get().apply(uuid, store, ref, " ");

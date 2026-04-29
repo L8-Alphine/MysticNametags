@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.2.1'
+version = '1.2.2'
 
 repositories {
     mavenCentral()
@@ -111,6 +111,64 @@ tasks.named('jar') {
 
 tasks.named('build') {
     dependsOn shadowJar
+}
+
+def generatedGlyphSlotDir = layout.buildDirectory.dir('generated/glyph-slot-models')
+
+tasks.register('generateGlyphSlotModels') {
+    outputs.dir(generatedGlyphSlotDir)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def outDir = generatedGlyphSlotDir.get().file('Common/NPC/MysticNameTags').asFile
+        delete outDir
+        outDir.mkdirs()
+
+        (-128..128).each { int x ->
+            def sign = x < 0 ? 'm' : 'p'
+            def name = String.format('GlyphSlot_%s%03d.blockymodel', sign, Math.abs(x))
+            def file = new File(outDir, name)
+            file.text = """{
+  "nodes": [
+    {
+      "id": "1",
+      "name": "face",
+      "position": {"x": ${x}, "y": 8, "z": 0},
+      "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
+      "shape": {
+        "type": "quad",
+        "offset": {"x": 0, "y": 0, "z": 0},
+        "stretch": {"x": 1, "y": 1, "z": 1},
+        "settings": {
+          "isPiece": false,
+          "size": {"x": 16, "y": 16},
+          "normal": "+Z"
+        },
+        "textureLayout": {
+          "front": {
+            "offset": {"x": 0, "y": 0},
+            "mirror": {"x": false, "y": false},
+            "angle": 0
+          }
+        },
+        "unwrapMode": "custom",
+        "visible": true,
+        "doubleSided": true,
+        "shadingMode": "fullbright"
+      }
+    }
+  ],
+  "format": "character",
+  "lod": "auto"
+}
+"""
+        }
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn 'generateGlyphSlotModels'
+    from(generatedGlyphSlotDir)
 }
 
 // Task to copy server JAR to libs folder if not present

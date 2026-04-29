@@ -10,6 +10,8 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
 
 import java.util.UUID;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
@@ -17,6 +19,7 @@ public final class GlyphNameplateFollowTask implements Runnable {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
     private static final AtomicBoolean CLEARED_WHILE_DISABLED = new AtomicBoolean(false);
+    private static final Map<String, AtomicBoolean> WORLD_TASKS_IN_FLIGHT = new ConcurrentHashMap<>();
 
     @Override
     public void run() {
@@ -44,34 +47,48 @@ public final class GlyphNameplateFollowTask implements Runnable {
         for (World world : universe.getWorlds().values()) {
             if (world == null || !world.isAlive()) continue;
 
-            world.execute(() -> {
-                try {
-                    Store<EntityStore> store = world.getEntityStore().getStore();
-                    store.assertThread();
+            String worldName = world.getName();
+            AtomicBoolean inFlight = WORLD_TASKS_IN_FLIGHT.computeIfAbsent(worldName, ignored -> new AtomicBoolean(false));
+            if (!inFlight.compareAndSet(false, true)) {
+                continue;
+            }
 
-                    for (PlayerRef playerRef : world.getPlayerRefs()) {
-                        if (playerRef == null) continue;
+            try {
+                world.execute(() -> {
+                    try {
+                        Store<EntityStore> store = world.getEntityStore().getStore();
+                        store.assertThread();
 
-                        UUID uuid = playerRef.getUuid();
-                        if (uuid == null) continue;
-                        if (!GlyphNameplateManager.get().hasState(uuid)) continue;
+                        for (PlayerRef playerRef : world.getPlayerRefs()) {
+                            if (playerRef == null) continue;
 
-                        Ref<EntityStore> entityRef = playerRef.getReference();
-                        if (entityRef == null || !entityRef.isValid()) continue;
+                            UUID uuid = playerRef.getUuid();
+                            if (uuid == null) continue;
+                            if (!GlyphNameplateManager.get().hasState(uuid)) continue;
 
-                        try {
-                            // Passed world context to allow the manager to find the nearest viewing player
-                            GlyphNameplateManager.get().followOnly(world, store, entityRef, uuid);
-                        } catch (Throwable t) {
-                            LOGGER.at(Level.FINE).withCause(t)
-                                    .log("[MysticNameTags] Glyph follow failed for player=" + uuid);
+                            Ref<EntityStore> entityRef = playerRef.getReference();
+                            if (entityRef == null || !entityRef.isValid()) continue;
+
+                            try {
+                                // Passed world context to allow the manager to find the nearest viewing player
+                                GlyphNameplateManager.get().followOnly(world, store, entityRef, uuid);
+                            } catch (Throwable t) {
+                                LOGGER.at(Level.FINE).withCause(t)
+                                        .log("[MysticNameTags] Glyph follow failed for player=" + uuid);
+                            }
                         }
+                    } catch (Throwable t) {
+                        LOGGER.at(Level.FINE).withCause(t)
+                                .log("[MysticNameTags] Glyph follow tick failed for world=" + world.getName());
+                    } finally {
+                        inFlight.set(false);
                     }
-                } catch (Throwable t) {
-                    LOGGER.at(Level.FINE).withCause(t)
-                            .log("[MysticNameTags] Glyph follow tick failed for world=" + world.getName());
-                }
-            });
+                });
+            } catch (Throwable t) {
+                inFlight.set(false);
+                LOGGER.at(Level.FINE).withCause(t)
+                        .log("[MysticNameTags] Failed to enqueue glyph follow tick for world=" + worldName);
+            }
         }
     }
 }
