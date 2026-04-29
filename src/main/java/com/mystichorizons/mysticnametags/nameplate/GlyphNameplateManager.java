@@ -281,12 +281,11 @@ public final class GlyphNameplateManager {
      * which runs synchronously inside {@code Universe.removePlayer()} —
      * <em>before</em> {@code Player.remove()} is enqueued on the world thread.
      *
-     * <p>The method clears tracking state immediately (so the follow-task
-     * stops touching this player) and then enqueues a lightweight anchor-
-     * entity removal on the world thread.  Unlike {@link #remove(UUID, World)},
-     * it skips the cross-world viewer iteration and packet writes — the
-     * disconnecting player's connection is already being torn down so those
-     * packets would either fail or be pointless.</p>
+     * <p>The method clears render tracking immediately (so the follow-task
+     * stops touching this player), sends packet despawns to surviving viewers,
+     * and then enqueues lightweight anchor-entity removal on the world thread.
+     * The disconnecting player's own connection is skipped because it is
+     * already being torn down.</p>
      *
      * <p>The outer lambda is wrapped in {@code catch(Throwable)} so that an
      * unexpected {@code Error} cannot kill the world's ticking thread and
@@ -297,14 +296,17 @@ public final class GlyphNameplateManager {
         // 1. Pull state atomically — follow task will no longer see this player
         RenderState state = states.remove(uuid);
 
-        // 2. Clear packet-glyph bookkeeping (safe from any thread)
+        // 2. Remove packet-only glyphs from everyone still watching this player.
+        removePacketGlyphsForRemainingViewers(uuid);
+
+        // 3. Clear packet-glyph bookkeeping (safe from any thread)
         packetGlyphState.clearSubject(uuid);
 
         if (state == null || state.lines.isEmpty()) {
             return;
         }
 
-        // 3. Enqueue anchor entity removal on the world thread.
+        // 4. Enqueue anchor entity removal on the world thread.
         //    This will sit in the queue BEFORE Player.remove(), which is fine —
         //    the anchor cleanup is lightweight and protected by catch(Throwable).
         if (world.isAlive()) {
@@ -327,6 +329,43 @@ public final class GlyphNameplateManager {
                             .log("[MysticNameTags] Anchor cleanup failed during disconnect for %s", uuid);
                 }
             });
+        }
+    }
+
+    private void removePacketGlyphsForRemainingViewers(@Nonnull UUID subjectUuid) {
+        Map<Integer, PacketGlyphState.ViewerState> snapshot = packetGlyphState.snapshotViewers(subjectUuid);
+        if (snapshot.isEmpty()) {
+            return;
+        }
+
+        try {
+            Universe universe = Universe.get();
+            if (universe == null) {
+                return;
+            }
+
+            for (World viewerWorld : universe.getWorlds().values()) {
+                if (viewerWorld == null || !viewerWorld.isAlive()) {
+                    continue;
+                }
+
+                for (PacketGlyphState.ViewerState viewerState : snapshot.values()) {
+                    if (viewerState == null || viewerState.spawnedIds.isEmpty()) {
+                        continue;
+                    }
+                    if (subjectUuid.equals(viewerState.viewerUuid)) {
+                        continue;
+                    }
+
+                    PlayerRef viewer = findPlayerRef(viewerWorld, viewerState.viewerUuid);
+                    if (viewer != null) {
+                        PacketGlyphSender.removeGlyphs(viewer, viewerState.spawnedIds);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Packet glyph disconnect cleanup failed for %s", subjectUuid);
         }
     }
 
