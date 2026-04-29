@@ -16,6 +16,7 @@ public final class PacketGlyphSender {
 
     private static volatile boolean packetGlyphsRuntimeDisabled = false;
     private static final boolean PACKET_CANARY_ONLY = false;
+    private static final MountController GLYPH_ENTITY_MOUNT_CONTROLLER = MountController.Minecart;
 
     // Cache the direct packet handler per player. Never recursively reflect through PlayerRef
     // from the world thread; some server accessors acquire locks and can stall shutdown/join.
@@ -132,7 +133,7 @@ public final class PacketGlyphSender {
             updates.add(new MountedUpdate(
                     mountedToNetworkId,
                     new Vector3f(offsetX, offsetY, offsetZ),
-                    MountController.Minecart,
+                    GLYPH_ENTITY_MOUNT_CONTROLLER,
                     null
             ));
         }
@@ -141,7 +142,7 @@ public final class PacketGlyphSender {
 
         if (tintEffectIndex != null && tintEffectIndex >= 0) {
             updates.add(new EntityEffectsUpdate(new EntityEffectUpdate[]{
-                    new EntityEffectUpdate(EffectOp.Add, tintEffectIndex, 0.0f, true, false, null)
+                    new EntityEffectUpdate(EffectOp.Add, tintEffectIndex, 3600.0f, true, false, null)
             }));
         }
 
@@ -164,7 +165,7 @@ public final class PacketGlyphSender {
             updates.add(new MountedUpdate(
                     mountedToNetworkId,
                     new Vector3f(0.0f, offsetY, 0.0f),
-                    MountController.Minecart,
+                    GLYPH_ENTITY_MOUNT_CONTROLLER,
                     null
             ));
         }
@@ -190,22 +191,10 @@ public final class PacketGlyphSender {
             transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
             transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
 
-            ComponentUpdate[] components = mountedToNetworkId > 0
-                    ? new ComponentUpdate[]{
-                            new TransformUpdate(transform),
-                            new MountedUpdate(
-                                    mountedToNetworkId,
-                                    new Vector3f(0.0f, offsetY, 0.0f),
-                                    MountController.Minecart,
-                                    null
-                            )
-                    }
-                    : new ComponentUpdate[]{new TransformUpdate(transform)};
-
             EntityUpdate update = new EntityUpdate(
                     networkId,
                     new ComponentUpdateType[0],
-                    components
+                    new ComponentUpdate[]{new TransformUpdate(transform)}
             );
 
             safeWrite(viewer, new EntityUpdates(null, new EntityUpdate[]{update}));
@@ -246,6 +235,76 @@ public final class PacketGlyphSender {
         }
     }
 
+    public static void updateGlyphs(@Nonnull PlayerRef viewer,
+                                    @Nonnull List<GlyphMove> moves) {
+        if (moves.isEmpty() || packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        try {
+            List<EntityUpdate> updates = new ArrayList<>(moves.size());
+
+            for (GlyphMove move : moves) {
+                if (move == null) {
+                    continue;
+                }
+
+                ModelTransform transform = new ModelTransform();
+                setPosition(transform, move.x, move.y, move.z);
+                transform.bodyOrientation = new Direction(move.yaw, 0.0f, 0.0f);
+                transform.lookOrientation = new Direction(move.yaw, 0.0f, 0.0f);
+
+                updates.add(new EntityUpdate(
+                        move.networkId,
+                        new ComponentUpdateType[0],
+                        moveComponents(move.mountedToNetworkId, move.offsetX, move.offsetY, move.offsetZ, transform)
+                ));
+            }
+
+            if (!updates.isEmpty()) {
+                safeWrite(viewer, new EntityUpdates(null, updates.toArray(new EntityUpdate[0])));
+            }
+        } catch (Throwable t) {
+            disableRuntime("updateGlyphs packet build failed", t);
+        }
+    }
+
+    public static void updateGlyphTints(@Nonnull PlayerRef viewer,
+                                        @Nonnull Map<Integer, Integer> tintEffectIndexesByNetworkId) {
+        if (tintEffectIndexesByNetworkId.isEmpty() || packetGlyphsRuntimeDisabled) {
+            return;
+        }
+
+        try {
+            List<EntityUpdate> updates = new ArrayList<>();
+
+            for (Map.Entry<Integer, Integer> entry : tintEffectIndexesByNetworkId.entrySet()) {
+                Integer networkId = entry.getKey();
+                Integer tintEffectIndex = entry.getValue();
+
+                if (networkId == null || tintEffectIndex == null || tintEffectIndex < 0) {
+                    continue;
+                }
+
+                updates.add(new EntityUpdate(
+                        networkId,
+                        new ComponentUpdateType[0],
+                        new ComponentUpdate[]{
+                                new EntityEffectsUpdate(new EntityEffectUpdate[]{
+                                        new EntityEffectUpdate(EffectOp.Add, tintEffectIndex, 3600.0f, true, false, null)
+                                })
+                        }
+                ));
+            }
+
+            if (!updates.isEmpty()) {
+                safeWrite(viewer, new EntityUpdates(null, updates.toArray(new EntityUpdate[0])));
+            }
+        } catch (Throwable t) {
+            disableRuntime("updateGlyphTints packet build failed", t);
+        }
+    }
+
     @Nonnull
     private static ComponentUpdate[] moveComponents(int mountedToNetworkId,
                                                     float offsetX,
@@ -256,12 +315,14 @@ public final class PacketGlyphSender {
             return new ComponentUpdate[]{new TransformUpdate(transform)};
         }
 
+        // These are run-level glyph plates now, not per-letter plates. Keep both
+        // transform and mount current so the whole run can billboard as one unit.
         return new ComponentUpdate[]{
                 new TransformUpdate(transform),
                 new MountedUpdate(
                         mountedToNetworkId,
                         new Vector3f(offsetX, offsetY, offsetZ),
-                        MountController.Minecart,
+                        GLYPH_ENTITY_MOUNT_CONTROLLER,
                         null
                 )
         };
@@ -381,6 +442,38 @@ public final class PacketGlyphSender {
         System.out.println("[MysticNameTags] Packet glyphs runtime-disabled: " + reason);
         if (t != null) {
             t.printStackTrace();
+        }
+    }
+
+    public static final class GlyphMove {
+        public final int networkId;
+        public final int mountedToNetworkId;
+        public final double x;
+        public final double y;
+        public final double z;
+        public final float offsetX;
+        public final float offsetY;
+        public final float offsetZ;
+        public final float yaw;
+
+        public GlyphMove(int networkId,
+                         int mountedToNetworkId,
+                         double x,
+                         double y,
+                         double z,
+                         float offsetX,
+                         float offsetY,
+                         float offsetZ,
+                         float yaw) {
+            this.networkId = networkId;
+            this.mountedToNetworkId = mountedToNetworkId;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.offsetZ = offsetZ;
+            this.yaw = yaw;
         }
     }
 

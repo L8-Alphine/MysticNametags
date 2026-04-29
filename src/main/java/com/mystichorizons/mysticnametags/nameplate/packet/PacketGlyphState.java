@@ -54,11 +54,13 @@ public final class PacketGlyphState {
         public final Set<Integer> spawnedIds = new HashSet<>();
 
         public float lastYawDegrees = Float.NaN;
+        public float lastParentYawDegrees = Float.NaN;
         public double lastBaseX = Double.NaN;
         public double lastBaseY = Double.NaN;
         public double lastBaseZ = Double.NaN;
 
-        public long nextUpdateAtMs = 0L;
+        public long nextUpdateAtNs = 0L;
+        public int postSpawnCorrectionsRemaining = 0;
 
         private ViewerState(int viewerNetworkId, @Nonnull UUID viewerUuid) {
             this.viewerNetworkId = viewerNetworkId;
