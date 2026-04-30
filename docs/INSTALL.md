@@ -64,10 +64,6 @@ Current version in repository: **v1.2.3**
    ```
    <server-directory>/mods/
    ```
-   or
-   ```
-   <server-directory>/plugins/
-   ```
 
 2. Copy the downloaded JAR file into this directory:
    ```bash
