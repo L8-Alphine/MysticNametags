@@ -1,5 +1,5 @@
 # MysticNameTags
-[![CodeFactor](https://www.codefactor.io/repository/github/hyzion-studios/mysticnametags/badge)](https://www.codefactor.io/repository/github/hyzion-studios/mysticnametags)
+[![CodeFactor](https://www.codefactor.io/repository/github/l8-alphine/mysticessentials/badge)](https://www.codefactor.io/repository/github/l8-alphine/mysticessentials)
 
 **MysticNameTags** is a modern, permission-driven, and performance-focused
 **tag and nameplate system for Hytale servers**.
