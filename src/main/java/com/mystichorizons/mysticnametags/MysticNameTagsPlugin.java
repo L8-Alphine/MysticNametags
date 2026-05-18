@@ -309,6 +309,10 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.WARNING)
                     .withCause(t)
                     .log("[MysticNameTags] Error while clearing nameplates during shutdown.");
+        }
+        try {
+            EndlessLevelingCompat.restorePlayerNameplates();
+        } catch (Throwable ignored) {
         } finally {
             MysticLog.shutdown();
             instance = null;
@@ -427,16 +431,14 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         startLevelSchedulerIfNeeded();
         stopGlyphFollowScheduler();
         startGlyphFollowSchedulerIfNeeded();
+        tryRegisterEndlessLevelingNameplates();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Reload complete.");
     }
 
     private void tryRegisterEndlessLevelingNameplates() {
-        if (endlessLevelingSystemRegistered) {
-            return;
-        }
-
         if (!Settings.get().isEndlessLevelingNameplatesEnabled()) {
+            EndlessLevelingCompat.restorePlayerNameplates();
             LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling nameplates disabled in settings.");
             return;
         }
@@ -444,6 +446,11 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         try {
             if (!EndlessLevelingCompat.isAvailable()) {
                 LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling API not detected.");
+                return;
+            }
+
+            EndlessLevelingCompat.suppressPlayerNameplates();
+            if (endlessLevelingSystemRegistered) {
                 return;
             }
 

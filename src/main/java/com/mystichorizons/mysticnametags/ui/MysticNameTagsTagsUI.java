@@ -578,7 +578,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             cmd.set(cardSelector + ".Visible", true);
 
             String rawDisplay = def.getDisplay();
-            String nameText = ColorFormatter.stripFormatting(rawDisplay != null ? rawDisplay : def.getId());
+            String nameText = ColorFormatter.colorizeForUi(rawDisplay != null ? rawDisplay : def.getId());
             String nameHex = rawDisplay != null ? ColorFormatter.extractUiTextColor(rawDisplay) : null;
             String priceText = buildPriceText(def, econEnabled, usingCash, lang);
 
@@ -701,15 +701,15 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         try {
             String fullNameplate = TagManager.get().buildNameplate(playerRef, username, uuid);
-            String stripped = ColorFormatter.stripFormatting(fullNameplate);
-            if (stripped != null && !stripped.isBlank()) {
-                playerDisplayText = stripped;
+            String colored = ColorFormatter.colorizeForUi(fullNameplate);
+            if (colored != null && !colored.isBlank()) {
+                playerDisplayText = colored;
             }
 
-            String firstHex = ColorFormatter.extractFirstHexColor(fullNameplate);
-            if (firstHex != null && !firstHex.isBlank()) {
-                playerDisplayHex = firstHex;
-            }
+            // Full nameplates can contain multiple independently-colored
+            // segments. A single Custom UI label can only use one TextColor, so
+            // keep this preview neutral instead of falsely tinting all text.
+            playerDisplayHex = null;
         } catch (Throwable ignored) {
         }
 
@@ -726,7 +726,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         if (active != null) {
             String activeDisplay = active.getDisplay();
             if (activeDisplay != null && !activeDisplay.isBlank()) {
-                currentTagText = ColorFormatter.stripFormatting(activeDisplay);
+                currentTagText = ColorFormatter.colorizeForUi(activeDisplay);
                 String hex = ColorFormatter.extractUiTextColor(activeDisplay);
                 if (hex == null) {
                     hex = ColorFormatter.extractFirstHexColor(activeDisplay);
@@ -1036,7 +1036,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
 
-        String detailName = ColorFormatter.stripFormatting(def.getDisplay() != null ? def.getDisplay() : def.getId());
+        String detailName = ColorFormatter.colorizeForUi(def.getDisplay() != null ? def.getDisplay() : def.getId());
         String detailNameHex = def.getDisplay() != null ? ColorFormatter.extractUiTextColor(def.getDisplay()) : null;
 
         String detailDesc = def.getDescription() != null

@@ -189,7 +189,7 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
             String rawDisplay = def.getDisplay();
             String rawDescription = def.getDescription();
 
-            String nameText = ColorFormatter.stripFormatting(rawDisplay != null ? rawDisplay : def.getId());
+            String nameText = ColorFormatter.colorizeForUi(rawDisplay != null ? rawDisplay : def.getId());
             String nameHex = rawDisplay != null ? ColorFormatter.extractUiTextColor(rawDisplay) : null;
 
             String descText = rawDescription != null ? ColorFormatter.stripFormatting(rawDescription) : "";
@@ -259,16 +259,11 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
         try {
             String baseName = playerRef.getUsername();
             String coloredNameplate = tagManager.buildNameplate(playerRef, baseName, uuid);
-            previewText = ColorFormatter.stripFormatting(coloredNameplate);
+            previewText = ColorFormatter.colorizeForUi(coloredNameplate);
 
-            if (uuid != null) {
-                String rankPrefix = TagManager.get().getIntegrations().getPrimaryPrefix(uuid);
-                previewHex = ColorFormatter.extractFirstHexColor(rankPrefix);
-
-                if (previewHex == null && active != null) {
-                    previewHex = ColorFormatter.extractFirstHexColor(active.getDisplay());
-                }
-            }
+            // Full nameplates can contain multiple colors, but this UI field is
+            // a single label. Keep the whole-nameplate preview neutral.
+            previewHex = null;
         } catch (Throwable ignored) {
             previewText = playerRef.getUsername();
         }

@@ -22,6 +22,7 @@ public class MysticNameTagsPluginCommand extends AbstractCommandCollection {
         this.addSubCommand(new ReloadSubCommand());
         this.addSubCommand(new UISubCommand());
         this.addSubCommand(new TagsSubCommand()); // e.g. /mnametags tags
+        this.addSubCommand(new NameplateSubCommand());
     }
 
     @Override
