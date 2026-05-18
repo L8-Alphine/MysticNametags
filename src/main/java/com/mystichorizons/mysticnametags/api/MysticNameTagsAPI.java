@@ -6,6 +6,7 @@ import com.hypixel.hytale.server.core.io.PacketHandler;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
@@ -261,6 +262,77 @@ public final class MysticNameTagsAPI {
     }
 
     // ---------------------------------------------------------------------
+    // EndlessLeveling helpers
+    // ---------------------------------------------------------------------
+
+    /**
+     * Returns true when the EndlessLeveling 9.x public API is present.
+     */
+    public static boolean isEndlessLevelingAvailable() {
+        return EndlessLevelingCompat.isAvailable();
+    }
+
+    /**
+     * Returns true when MysticNameTags has attached its EndlessLeveling nameplate refresh bridge.
+     */
+    public static boolean isEndlessLevelingNameplateAttached() {
+        return integrations().isEndlessLevelingNameplateAttached();
+    }
+
+    /**
+     * Returns the player's EndlessLeveling level as display text, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessLevel(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessLevel(uuid);
+    }
+
+    /**
+     * Returns the configured EndlessLeveling prestige display, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessPrestige(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessPrestige(uuid);
+    }
+
+    /**
+     * Returns the player's EndlessLeveling race id, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessRace(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessRace(uuid);
+    }
+
+    /**
+     * Returns the player's EndlessLeveling primary class display, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessPrimaryClass(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessPrimaryClass(uuid);
+    }
+
+    /**
+     * Returns the player's EndlessLeveling secondary class display, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessSecondaryClass(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessSecondaryClass(uuid);
+    }
+
+    /**
+     * Reads an EndlessLeveling stat key such as {@code endlessleveling.level},
+     * {@code endlessleveling.xp}, {@code endlessleveling.prestige}, or
+     * {@code endlessleveling.skill.STRENGTH}.
+     */
+    @Nullable
+    public static Integer getEndlessLevelingStat(@Nullable UUID uuid, @Nullable String key) {
+        if (uuid == null || key == null || !key.trim().startsWith("endlessleveling.")) {
+            return null;
+        }
+        return integrations().getStatValue(uuid, key);
+    }
+
+    // ---------------------------------------------------------------------
     // Rank prefix & economy helpers
     // ---------------------------------------------------------------------
 
@@ -358,6 +430,11 @@ public final class MysticNameTagsAPI {
      *   <li>%mystic_rank%         – colored rank prefix (PrefixesPlus/LuckPerms)</li>
      *   <li>%mystic_rank_plain%   – plain rank prefix</li>
      *   <li>%mystic_balance%      – numeric balance</li>
+     *   <li>%mystic_endless_level% – EndlessLeveling level</li>
+     *   <li>%mystic_endless_prestige% – EndlessLeveling prestige display</li>
+     *   <li>%mystic_endless_race% – EndlessLeveling race id</li>
+     *   <li>%mystic_endless_primary_class% – EndlessLeveling primary class display</li>
+     *   <li>%mystic_endless_secondary_class% – EndlessLeveling secondary class display</li>
      * </ul>
      *
      * Any placeholder without available data is replaced with an empty string.
@@ -386,7 +463,12 @@ public final class MysticNameTagsAPI {
                     .replace("%mystic_full_plain%", "")
                     .replace("%mystic_rank%", "")
                     .replace("%mystic_rank_plain%", "")
-                    .replace("%mystic_balance%", "");
+                    .replace("%mystic_balance%", "")
+                    .replace("%mystic_endless_level%", "")
+                    .replace("%mystic_endless_prestige%", "")
+                    .replace("%mystic_endless_race%", "")
+                    .replace("%mystic_endless_primary_class%", "")
+                    .replace("%mystic_endless_secondary_class%", "");
         }
 
         // Tag
@@ -421,7 +503,12 @@ public final class MysticNameTagsAPI {
                 .replace("%mystic_rank_plain%", rankPlain)
                 .replace("%mystic_full%", fullColored)
                 .replace("%mystic_full_plain%", fullPlain)
-                .replace("%mystic_balance%", String.valueOf(balance));
+                .replace("%mystic_balance%", String.valueOf(balance))
+                .replace("%mystic_endless_level%", getEndlessLevel(useUuid))
+                .replace("%mystic_endless_prestige%", getEndlessPrestige(useUuid))
+                .replace("%mystic_endless_race%", getEndlessRace(useUuid))
+                .replace("%mystic_endless_primary_class%", getEndlessPrimaryClass(useUuid))
+                .replace("%mystic_endless_secondary_class%", getEndlessSecondaryClass(useUuid));
     }
 
     // ---------------------------------------------------------------------
