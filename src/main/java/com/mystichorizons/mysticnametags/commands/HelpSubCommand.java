@@ -37,6 +37,7 @@ public class HelpSubCommand extends CommandBase {
         sendColored(context, lang.tr("cmd.help.line.reload"));
         sendColored(context, lang.tr("cmd.help.line.ui"));
         sendColored(context, lang.tr("cmd.help.line.tags"));
+        sendColored(context, lang.tr("cmd.help.line.nameplate"));
         sendColored(context, lang.tr("cmd.help.footer"));
     }
 }
