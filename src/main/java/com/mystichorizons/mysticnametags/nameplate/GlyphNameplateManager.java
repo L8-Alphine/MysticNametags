@@ -28,6 +28,7 @@ import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphInfoCompat;
 import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphIdFactory;
 import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphSender;
 import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphState;
+import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
@@ -101,7 +102,7 @@ public final class GlyphNameplateManager {
 
     private static String clampMultilineVisibleLength(String text, int maxLines, int maxVisiblePerLine) {
         if (text == null || text.isEmpty()) return "";
-        text = ColorFormatter.miniToLegacy(text);
+        text = ColorFormatter.colorizeForGlyphNameplate(text);
 
         List<String> lines = splitLines(text, maxLines);
         List<String> out = new ArrayList<>(lines.size());
@@ -269,6 +270,10 @@ public final class GlyphNameplateManager {
             store.assertThread();
             despawnAll(store, world.getEntityStore(), state);
         });
+    }
+
+    public void removeSelfView(@Nonnull UUID uuid, @Nonnull World world) {
+        removePacketGlyphsForViewer(uuid, world, uuid);
     }
 
     public void forget(@Nonnull UUID uuid) {
@@ -584,6 +589,9 @@ public final class GlyphNameplateManager {
                 if (viewerRef == null || !viewerRef.isValid()) continue;
 
                 boolean selfView = viewerRef.equals(playerRef);
+                if (selfView && !TagManager.get().isOwnNameplateVisible(uuid)) {
+                    continue;
+                }
 
                 float yaw;
 
@@ -978,10 +986,14 @@ public final class GlyphNameplateManager {
             String namespacedEffectId = GlyphAssets.tintEffectId(key);
 
             try {
-                for (String effectId : new String[]{shortEffectId, namespacedEffectId}) {
-                    if (EntityEffect.getAssetMap().getAsset(effectId) != null) {
-                        return EntityEffect.getAssetMap().getIndex(effectId);
-                    }
+                String directEffectId = findTintEffectAssetId(shortEffectId, namespacedEffectId);
+                if (directEffectId != null) {
+                    return EntityEffect.getAssetMap().getIndex(directEffectId);
+                }
+
+                String nearestEffectId = findNearestTintEffectAssetId(key);
+                if (nearestEffectId != null) {
+                    return EntityEffect.getAssetMap().getIndex(nearestEffectId);
                 }
 
                 if (loggedMissingTintEffects.add(key)) {
@@ -998,6 +1010,82 @@ public final class GlyphNameplateManager {
                 return -1;
             }
         });
+    }
+
+    @Nullable
+    private static String findTintEffectAssetId(@Nonnull String... candidates) {
+        try {
+            for (String effectId : candidates) {
+                if (EntityEffect.getAssetMap().getAsset(effectId) != null) {
+                    return effectId;
+                }
+            }
+
+            Map<String, ?> effectMap = EntityEffect.getAssetMap().getAssetMap();
+            for (String effectId : candidates) {
+                String lowerSuffix = effectId.toLowerCase(Locale.ROOT);
+                for (String key : effectMap.keySet()) {
+                    if (key != null && key.toLowerCase(Locale.ROOT).endsWith(lowerSuffix)) {
+                        return key;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static String findNearestTintEffectAssetId(int desiredRgb) {
+        try {
+            Map<String, ?> effectMap = EntityEffect.getAssetMap().getAssetMap();
+
+            String bestId = null;
+            long bestDistance = Long.MAX_VALUE;
+
+            int desiredR = (desiredRgb >> 16) & 0xFF;
+            int desiredG = (desiredRgb >> 8) & 0xFF;
+            int desiredB = desiredRgb & 0xFF;
+
+            for (String key : effectMap.keySet()) {
+                if (key == null) {
+                    continue;
+                }
+
+                int marker = key.lastIndexOf("HtTint_");
+                if (marker < 0 || marker + 13 > key.length()) {
+                    continue;
+                }
+
+                String hex = key.substring(marker + "HtTint_".length(), marker + 13);
+                if (!hex.matches("[0-9A-Fa-f]{6}")) {
+                    continue;
+                }
+
+                int rgb = Integer.parseInt(hex, 16) & 0xFFFFFF;
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+
+                long dr = desiredR - r;
+                long dg = desiredG - g;
+                long db = desiredB - b;
+                long distance = dr * dr + dg * dg + db * db;
+
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestId = key;
+                    if (distance == 0L) {
+                        break;
+                    }
+                }
+            }
+
+            return bestId;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static int quantizeTintRgb(int rgb) {
@@ -1045,6 +1133,28 @@ public final class GlyphNameplateManager {
             }
 
             packetGlyphState.removeViewer(subjectUuid, viewerId);
+        }
+    }
+
+    private void removePacketGlyphsForViewer(@Nonnull UUID subjectUuid,
+                                             @Nonnull World world,
+                                             @Nonnull UUID viewerUuid) {
+        Map<Integer, PacketGlyphState.ViewerState> snapshot = packetGlyphState.snapshotViewers(subjectUuid);
+        if (snapshot.isEmpty()) {
+            return;
+        }
+
+        PlayerRef viewer = findPlayerRef(world, viewerUuid);
+        for (Map.Entry<Integer, PacketGlyphState.ViewerState> entry : snapshot.entrySet()) {
+            PacketGlyphState.ViewerState viewerState = entry.getValue();
+            if (viewerState == null || !viewerUuid.equals(viewerState.viewerUuid)) {
+                continue;
+            }
+
+            if (viewer != null && !viewerState.spawnedIds.isEmpty()) {
+                PacketGlyphSender.removeGlyphs(viewer, viewerState.spawnedIds);
+            }
+            packetGlyphState.removeViewer(subjectUuid, entry.getKey());
         }
     }
 
@@ -1218,7 +1328,7 @@ public final class GlyphNameplateManager {
             List<ColoredChar> out = new ArrayList<>();
             if (text == null || text.isEmpty()) return out;
 
-            text = ColorFormatter.miniToLegacy(text);
+            text = ColorFormatter.colorizeForGlyphNameplate(text);
             Color current = Color.WHITE;
 
             for (int i = 0; i < text.length(); i++) {
