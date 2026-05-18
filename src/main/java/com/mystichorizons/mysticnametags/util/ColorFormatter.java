@@ -66,9 +66,9 @@ public final class ColorFormatter {
             return input;
         }
 
-        // 0) MiniMessage -> legacy (&#RRGGBB, &l, &o, &r)
+        // 0) MiniMessage -> compact legacy (&#RRGGBB, &l, &o, &r).
         // This also expands <gradient:...>text</gradient> into per-char &#RRGGBB.
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
         // 1) Expand hex codes like "&#8A2BE2" to &x&8&A&2&B&E&2
         Matcher matcher = HEX_PATTERN.matcher(input);
@@ -93,6 +93,41 @@ public final class ColorFormatter {
         processed = translateAlternateColorCodes('&', processed);
 
         return processed;
+    }
+
+    /**
+     * Normalize config/user color markup without expanding compact hex.
+     *
+     * This is the safest form for systems that understand the plugin's normal
+     * config syntax directly, such as chat placeholders:
+     * - MiniMessage subset -> legacy/hex codes
+     * - bare #RRGGBB -> &#RRGGBB
+     * - § codes -> & codes
+     * - keeps every later color transition intact
+     */
+    public static String colorizeCompact(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        String out = MiniMessageParser.toLegacy(input);
+        out = translateAlternateColorCodes('§', out);
+        out = translateAlternateColorCodes('&', out);
+        return out;
+    }
+
+    public static String colorizeForChat(String input) {
+        return colorizeCompact(input);
+    }
+
+    /**
+     * Custom UI labels do not render legacy color markup in Text values.
+     * Return only the visible text; callers should set Style.TextColor using
+     * extractUiTextColor/extractFirstHexColor when a representative color is
+     * needed.
+     */
+    public static String colorizeForUi(String input) {
+        return stripFormatting(colorizeCompact(input));
     }
 
     // ------------------------------------------------------------
@@ -155,7 +190,7 @@ public final class ColorFormatter {
         if (input == null || input.isEmpty()) return null;
 
         // MiniMessage -> legacy so existing scanner sees &#RRGGBB etc.
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
 
         String currentHex = null;
@@ -238,7 +273,7 @@ public final class ColorFormatter {
         }
 
         // 0) MiniMessage -> legacy first
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
         // Expand hex &#RRGGBB -> §x§R§R§G§G§B§B
         Matcher matcher = HEX_PATTERN.matcher(input);
@@ -255,6 +290,21 @@ public final class ColorFormatter {
 
         // Convert & → §
         return buffer.toString().replace('&', '§');
+    }
+
+    /**
+     * Normalize config/user color markup for packet glyph parsing.
+     *
+     * Glyph rendering has its own color parser because it maps text colors to
+     * model tint effects. Keep hex in a compact form so visible-length clamping
+     * and per-character parsing can preserve color state without inflating text.
+     */
+    public static String colorizeForGlyphNameplate(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        return colorizeCompact(input);
     }
 
     public static String toMiniMessage(String input) {
@@ -435,7 +485,7 @@ public final class ColorFormatter {
     public static String extractFirstHexColor(String input) {
         if (input == null || input.isEmpty()) return null;
 
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
         // 0) Plain "#RRGGBB" anywhere in the string
         Matcher hashMatcher = HASH_HEX_PATTERN.matcher(input);
@@ -506,7 +556,7 @@ public final class ColorFormatter {
         }
 
         // MiniMessage -> legacy so existing parsing handles everything
-        text = MiniMessageSupport.miniToLegacy(text);
+        text = colorizeCompact(text);
 
         Color currentColor = baseColor != null ? baseColor : DEFAULT_COLOR;
         boolean bold = false;
