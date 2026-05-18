@@ -45,15 +45,16 @@ Supported formats:
 
 * Legacy `&` color codes
 * Hex colors (`&#RRGGBB`)
+* MiniMessage subset colors and gradients
 
-⚠ **Nameplate coloring is NOT currently possible** due to Hytale API limitations.
 Colors apply to:
 
 * Chat
 * UI previews
+* Glyph nameplates
 * Placeholders
 
-Nameplates are automatically stripped to plain text.
+Native fallback nameplates are still plain text because that path is limited by Hytale's nameplate API.
 
 ---
 
@@ -120,6 +121,18 @@ nameplatesEnabled = true
 
 * When `false`, MysticNameTags restores vanilla nameplates.
 * Safe to toggle and reload.
+
+---
+
+### Player Self-View Nameplate Toggle
+
+Players can hide only their own packet glyph nameplate, which helps when the third-person camera gets blocked by the nameplate:
+
+```
+/mnametags nameplate <on|off|toggle|status>
+```
+
+This only affects what the player sees above themself. Other players still see their nameplate normally.
 
 ---
 
@@ -262,27 +275,29 @@ Designed for large servers.
 
 ---
 
-## ⚠ MiniMessage (Not Supported)
-
-MysticNameTags does NOT support MiniMessage.
+## MiniMessage Subset
 
 Supported:
 
 * `&` colors
 * `&#RRGGBB` hex
+* `<#RRGGBB>` colors
+* named colors such as `<red>`, `<gold>`, `<aqua>`
+* `<bold>`, `<italic>`, `<reset>`
+* `<gradient:#RRGGBB:#RRGGBB[:#RRGGBB...]>text</gradient>`
 
 Unsupported:
 
-* `<gradient>`
 * `<rainbow>`
-* `<color>`
-* `<bold>`
-* Any MiniMessage syntax
+* click/hover events
+* full Adventure MiniMessage syntax
 
-MiniMessage is intentionally excluded to ensure:
+MiniMessage support is intentionally a small config-friendly subset so tags stay predictable across:
 
 * Predictable formatting
-* Zero parsing overhead
+* Glyph nameplates
+* Custom UI previews
+* Chat placeholders
 * Hytale UI compatibility
 
 ---
