@@ -479,6 +479,7 @@ public final class LanguageManager {
         defaults.put("cmd.help.line.reload", "&7/tags reload &8- &fReload configuration");
         defaults.put("cmd.help.line.ui", "&7/tags ui &8- &fOpen the dashboard UI");
         defaults.put("cmd.help.line.tags", "&7/tags tags &8- &fOpen the tag selection UI");
+        defaults.put("cmd.help.line.nameplate", "&7/mnametags nameplate <on|off|toggle|status> &8- &fToggle your own nameplate view");
         defaults.put("cmd.help.footer", "&b========================");
 
         defaults.put("cmd.reload.no_permission", "&cYou do not have permission to use this command.");
@@ -502,6 +503,12 @@ public final class LanguageManager {
         defaults.put("cmd.tags.owned_disabled", "&cThe owned tags menu is disabled in settings.");
         defaults.put("cmd.tags.owned_opening", "&7[&bMysticNameTags&7] &fOpening &bOwned Tags&f...");
         defaults.put("cmd.tags.owned_open_error", "&cError opening owned tags selector: &7{error}");
+
+        defaults.put("cmd.nameplate.usage", "&cUsage: &f/mnametags nameplate <on|off|toggle|status>");
+        defaults.put("cmd.nameplate.visible", "&aYour own packet nameplate is now visible again.");
+        defaults.put("cmd.nameplate.hidden", "&7Your own packet nameplate is now hidden for your view. &8Other players can still see it.");
+        defaults.put("cmd.nameplate.status_visible", "&aYour own packet nameplate is currently visible.");
+        defaults.put("cmd.nameplate.status_hidden", "&7Your own packet nameplate is currently hidden for your view. &8Other players can still see it.");
 
         defaults.put("cmd.info.not_loaded", "&cMysticNameTags plugin instance not available.");
         defaults.put("cmd.info.separator", "&7&m------------------------------");
