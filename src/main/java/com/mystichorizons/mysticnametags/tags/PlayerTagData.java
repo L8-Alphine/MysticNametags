@@ -7,6 +7,7 @@ public class PlayerTagData {
 
     private Set<String> owned = new HashSet<>();
     private String equipped;
+    private boolean ownNameplateVisible = true;
 
     public Set<String> getOwned() {
         return owned;
@@ -26,5 +27,13 @@ public class PlayerTagData {
 
     public void addOwned(String id) {
         owned.add(id);
+    }
+
+    public boolean isOwnNameplateVisible() {
+        return ownNameplateVisible;
+    }
+
+    public void setOwnNameplateVisible(boolean ownNameplateVisible) {
+        this.ownNameplateVisible = ownNameplateVisible;
     }
 }
