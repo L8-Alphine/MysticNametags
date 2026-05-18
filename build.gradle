@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.2.3'
+version = '1.2.4'
 
 repositories {
     mavenCentral()
@@ -75,7 +75,7 @@ dependencies {
     compileOnly files('libs/RPGLeveling-0.2.2.jar')
 
     // Endless Leveling
-    compileOnly files('libs/EndlessLeveling-6.0.5-BETA.jar')
+    compileOnly files('libs/EndlessLeveling-9.2.0.jar')
 
     // EcoQuest Support - Adds support for adventurer ranks like E -> SS rank
     compileOnly files('libs/EcoTaleQuests-1.5.2.jar')
