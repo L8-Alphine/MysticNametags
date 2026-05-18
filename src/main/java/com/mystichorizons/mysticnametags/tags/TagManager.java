@@ -437,6 +437,25 @@ public class TagManager {
         return tagList.size();
     }
 
+    public boolean isOwnNameplateVisible(@Nonnull UUID uuid) {
+        return getOrLoad(uuid).isOwnNameplateVisible();
+    }
+
+    public boolean setOwnNameplateVisible(@Nonnull UUID uuid, boolean visible) {
+        PlayerTagData data = getOrLoad(uuid);
+        data.setOwnNameplateVisible(visible);
+        savePlayerData(uuid);
+        return visible;
+    }
+
+    public boolean toggleOwnNameplateVisible(@Nonnull UUID uuid) {
+        PlayerTagData data = getOrLoad(uuid);
+        boolean visible = !data.isOwnNameplateVisible();
+        data.setOwnNameplateVisible(visible);
+        savePlayerData(uuid);
+        return visible;
+    }
+
     @Nullable
     public TagDefinition getTag(String id) {
         if (id == null) return null;
@@ -1068,8 +1087,9 @@ public class TagManager {
             return "";
         }
 
-        // Keep &#RRGGBB intact because this chat system supports that format
-        return ColorFormatter.translateAlternateColorCodes('§', display);
+        // Keep compact &#RRGGBB intact for chat/placeholder consumers while
+        // still converting MiniMessage tags and gradients from tags.json.
+        return ColorFormatter.colorizeForChat(display);
     }
 
     public String getMiniMessageActiveTag(@Nonnull UUID uuid) {

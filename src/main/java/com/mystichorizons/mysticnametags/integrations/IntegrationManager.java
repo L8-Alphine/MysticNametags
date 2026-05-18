@@ -1,8 +1,5 @@
 package com.mystichorizons.mysticnametags.integrations;
 
-import com.airijko.endlessleveling.EndlessLeveling;
-import com.airijko.endlessleveling.data.PlayerData;
-import com.airijko.endlessleveling.managers.PlayerDataManager;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
@@ -984,9 +981,9 @@ public class IntegrationManager {
 //        return statProvider != null;
 //    }
 //
-//    public boolean isEndlessLevelingNameplateAttached() {
-//        return endlessNameplateSystem != null;
-//    }
+    public boolean isEndlessLevelingNameplateAttached() {
+        return endlessNameplateSystem != null;
+    }
 //
 //    public boolean isCoinsAndMarketsAvailable() {
 //        return coinsAndMarketsBackend != null && coinsAndMarketsBackend.isAvailable();
