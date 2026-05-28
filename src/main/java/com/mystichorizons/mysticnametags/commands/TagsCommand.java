@@ -23,7 +23,7 @@ public class TagsCommand extends AbstractPlayerCommand {
     public TagsCommand() {
         super("tags", "Open the tag selection UI");
         this.addAliases("tag");
-        this.setPermissionGroup(null);
+        this.setPermissionGroups();
     }
 
     @Override

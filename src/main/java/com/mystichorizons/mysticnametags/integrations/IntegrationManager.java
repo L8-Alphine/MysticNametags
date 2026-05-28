@@ -1,11 +1,8 @@
 package com.mystichorizons.mysticnametags.integrations;
 
-import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
-import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.economy.*;
 import com.mystichorizons.mysticnametags.integrations.ecoquests.EcoQuestsCompat;
@@ -13,12 +10,13 @@ import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLev
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingStatBridge;
 import com.mystichorizons.mysticnametags.integrations.permissions.*;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingStatBridge;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
-import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -759,6 +757,7 @@ public class IntegrationManager {
      * Supports:
      *  - Internal PlayerStatManager-backed keys (e.g. "custom.damage_dealt")
      *  - EndlessLeveling-backed keys (keys starting with "endlessleveling.")
+     *  - RPGLeveling-backed keys (keys starting with "rpgleveling.")
      */
     @Nullable
     public Integer getStatValue(@Nonnull UUID uuid, @Nonnull String key) {
@@ -783,7 +782,22 @@ public class IntegrationManager {
             }
         }
 
-        // 2) Primary StatProvider (internal PlayerStatManager)
+        // 2) RPGLeveling bridge (prefix-based)
+        if (trimmed.startsWith("rpgleveling.")) {
+            try {
+                Integer val = RPGLevelingStatBridge.getStatValue(uuid, trimmed);
+                if (val != null) {
+                    return val;
+                }
+            } catch (Throwable t) {
+                LOGGER.at(Level.FINE)
+                        .withCause(t)
+                        .log("[MysticNameTags] RPGLeveling stat bridge error for %s (key=%s)", uuid, trimmed);
+                // Fall through to internal stats if RPGLeveling is missing or fails
+            }
+        }
+
+        // 3) Primary StatProvider (internal PlayerStatManager)
         StatProvider provider = this.statProvider;
         if (provider == null) {
             return null;
@@ -1100,19 +1114,12 @@ public class IntegrationManager {
         }
 
         try {
-            RPGLevelingAPI api = RPGLevelingAPI.get();
-            if (api == null) return "";
-
-            Ref<EntityStore> ref = playerRef.getReference();
-            if (ref == null || !ref.isValid()) return "";
-
-            Store<EntityStore> store = ref.getStore();
-            RPGLevelingAPI.PlayerLevelInfo info = api.getPlayerLevelInfo(playerRef, store);
-            if (info == null || info.getLevel() <= 0) {
+            int level = RPGLevelingCompat.getPlayerLevel(playerRef);
+            if (level <= 0) {
                 return "";
             }
 
-            return String.valueOf(info.getLevel());
+            return String.valueOf(level);
         } catch (Throwable ignored) {
             return "";
         }

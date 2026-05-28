@@ -80,7 +80,7 @@ public final class ConsoleCommandRunner {
         private static final UUID CONSOLE_UUID = new UUID(0L, 0L);
 
         @Override
-        public String getDisplayName() {
+        public String getUsername() {
             return "Console";
         }
 

@@ -414,6 +414,16 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
                 msgKey = "tags.not_enough_money";
                 vars = Map.of();
             }
+            case UNAVAILABLE -> {
+                String custom = cleanAvailabilityMessage(def);
+                if (!custom.isBlank()) {
+                    msgKey = null;
+                    vars = Map.of("message", custom);
+                } else {
+                    msgKey = "tags.unavailable";
+                    vars = Map.of();
+                }
+            }
             case TRANSACTION_FAILED -> {
                 msgKey = "tags.transaction_failed";
                 vars = Map.of();
@@ -428,7 +438,7 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
             }
         }
 
-        String msg = lang.tr(msgKey, vars);
+        String msg = msgKey == null ? vars.getOrDefault("message", "") : lang.tr(msgKey, vars);
 
         MysticNotificationUtil.send(
                 playerRef.getPacketHandler(),
@@ -436,5 +446,13 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
                 ColorFormatter.colorize(tagOrDefault(msg)),
                 NotificationStyle.Default
         );
+    }
+
+    @Nonnull
+    private static String cleanAvailabilityMessage(TagDefinition def) {
+        if (def == null || def.getAvailabilityMessage() == null) {
+            return "";
+        }
+        return ColorFormatter.stripFormatting(def.getAvailabilityMessage()).trim();
     }
 }

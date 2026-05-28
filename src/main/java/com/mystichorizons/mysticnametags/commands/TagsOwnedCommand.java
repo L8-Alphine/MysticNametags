@@ -25,7 +25,7 @@ public class TagsOwnedCommand extends AbstractPlayerCommand {
         // subcommand under your /tags root, depending on your command tree.
         super("tagsowned", "Open the owned-tags selection UI");
         this.addAliases("mytags");
-        this.setPermissionGroup(null);
+        this.setPermissionGroups();
     }
 
     @Override

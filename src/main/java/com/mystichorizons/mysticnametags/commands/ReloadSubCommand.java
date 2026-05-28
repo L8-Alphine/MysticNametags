@@ -20,7 +20,7 @@ public class ReloadSubCommand extends CommandBase {
 
     public ReloadSubCommand() {
         super("reload", "Reload MysticNameTags configuration and tags");
-        this.setPermissionGroup(null);
+        this.setPermissionGroups();
     }
 
     @Override

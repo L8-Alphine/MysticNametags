@@ -522,6 +522,10 @@ public class TagManager {
                                                @Nonnull TagDefinition def,
                                                @Nonnull String normalizedId) {
 
+        if (!def.isCurrentlyAvailable() && (uuid == null || !ownsTag(uuid, normalizedId))) {
+            return false;
+        }
+
         boolean fullGate = Settings.get().isFullPermissionGateEnabled();
         boolean permissionGate = Settings.get().isPermissionGateEnabled();
         String perm = def.getPermission();
@@ -795,6 +799,12 @@ public class TagManager {
         }
         String keyId = rawId.toLowerCase(Locale.ROOT);
 
+        PlayerTagData data = getOrLoad(uuid);
+
+        if (!data.owns(keyId) && !def.isCurrentlyAvailable()) {
+            return TagPurchaseResult.UNAVAILABLE;
+        }
+
         boolean fullGate = Settings.get().isFullPermissionGateEnabled();
         boolean permissionGate = Settings.get().isPermissionGateEnabled();
         String perm = def.getPermission();
@@ -813,8 +823,6 @@ public class TagManager {
         if (reqFail != null) {
             return reqFail;
         }
-
-        PlayerTagData data = getOrLoad(uuid);
 
         if (data.owns(keyId)) {
             data.setEquipped(keyId);
@@ -1025,6 +1033,7 @@ public class TagManager {
         UNEQUIPPED,
         NO_ECONOMY,
         NOT_ENOUGH_MONEY,
+        UNAVAILABLE,
         REQUIREMENTS_NOT_MET,
         TRANSACTION_FAILED
     }

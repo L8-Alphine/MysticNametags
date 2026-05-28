@@ -6,6 +6,82 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
+## [1.2.5] - 2026-05-27
+
+### Hytale Update 5 Compatibility
+
+This update migrates MysticNameTags to **Hytale Update 5 / 0.5.x**.
+
+> **Important:** This version only works on Hytale `0.5.x+`.
+> It is not compatible with older dated Hytale server builds such as `2026.03.26-*`.
+
+### Changed
+
+- Updated the project to compile against Hytale Server `0.5.0`.
+- Updated the plugin manifest server version range to `>=0.5.0 <0.6.0`.
+- Updated RPGLeveling support to compile against `RPGLeveling-0.3.6.jar`.
+- Replaced deprecated command permission APIs with the new permission group API.
+- Updated command sender display name usage for Update 5 compatibility.
+- Updated inventory integration code for the newer Update 5 inventory component access patterns.
+- Updated vector and rotation usage for the new Update 5 math APIs.
+
+### RPGLeveling Compatibility
+
+- Added an RPGLeveling compatibility bridge for Update 5 / RPGLeveling `0.3.6`.
+- Added RPGLeveling-backed tag requirement keys:
+    - `rpgleveling.lvl`
+    - `rpgleveling.skills.<stat>`
+    - `rpgleveling.skills.available`
+    - `rpgleveling.skills.total`
+    - `rpgleveling.classes`
+    - `rpgleveling.classes.<classId>`
+    - `rpgleveling.classes.tier`
+    - `rpgleveling.classes.tier.<classId>`
+    - `rpgleveling.progression`
+    - `rpgleveling.progression.xp`
+    - `rpgleveling.progression.required_xp`
+    - `rpgleveling.progression.class_kills`
+- Preserved earlier aliases such as `rpgleveling.level`, `rpgleveling.class.*`, and `rpgleveling.class_tier.*`.
+- RPGLeveling nameplate refresh now routes through the compatibility helper instead of calling the API directly from the scheduler.
+
+### Packet Glyph Nameplate Improvements
+
+- Reworked packet glyph rotation handling for Hytale Update 5.
+- Updated glyph yaw math to use Update 5's radians-based rotation system.
+- Improved mounted packet glyph behavior so nameplates stay attached to players more smoothly.
+- Reduced packet correction behavior that could cause visible snapping or unstable nameplate rotation.
+- Improved self-view packet glyph handling for third-person comfort.
+
+### Fixed
+
+- Fixed compile errors caused by removed or changed Hytale Update 5 APIs.
+- Fixed command permission API compatibility issues.
+- Fixed console/player command sender compatibility problems.
+- Fixed inventory requirement checks after Update 5 inventory API changes.
+- Fixed packet glyph rotation math using the wrong rotation unit.
+- Fixed several nameplate rendering issues caused by Update 5 transform and mount behavior changes.
+
+### Upgrade Notes
+
+Before updating, back up:
+
+```text
+settings.json
+tags.json
+playerdata
+```
+
+After installing the new jar:
+
+1. Make sure your server is running Hytale `0.5.x+`.
+2. Restart the server.
+3. Confirm MysticNameTags loads without compatibility errors.
+4. Test `/mnametags nameplate status`.
+5. Equip a packet glyph tag and verify self-view and other-player nameplates render correctly.
+6. If you use RPGLeveling requirements, verify tags using `rpgleveling.lvl`, `rpgleveling.skills.*`, `rpgleveling.classes.*`, and `rpgleveling.progression.*`.
+
+---
+
 ## [1.0.1] - 2026-01-28
 
 ### Added

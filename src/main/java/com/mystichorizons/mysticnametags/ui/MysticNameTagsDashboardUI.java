@@ -20,7 +20,9 @@ import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
+import com.mystichorizons.mysticnametags.tags.TagConfigValidator;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
@@ -28,10 +30,13 @@ import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.RuntimeMXBean;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -167,6 +172,81 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
     @Nonnull
     private static String yesNo(boolean value) {
         return value ? "Yes" : "No";
+    }
+
+    @Nonnull
+    private static DashboardHealth captureDashboardHealth(@Nonnull Settings settings,
+                                                          @Nonnull IntegrationManager integrations,
+                                                          @Nonnull File dataFolder) {
+        TagConfigValidator.Report report = TagConfigValidator.validateDefault(settings, integrations);
+        int storageErrors = inspectStorageErrors(settings, dataFolder);
+        List<String> integrationWarnings = inspectIntegrationWarnings(settings, integrations);
+
+        int errors = report.count(TagConfigValidator.Severity.ERROR) + storageErrors;
+        int warnings = report.count(TagConfigValidator.Severity.WARNING) + integrationWarnings.size();
+        String status = errors > 0 ? "ISSUES FOUND" : (warnings > 0 ? "WARNINGS" : "HEALTHY");
+        String color = errors > 0 ? "#ff6b6b" : (warnings > 0 ? "#f0b429" : "#55d68a");
+
+        List<String> lines = new ArrayList<>();
+        lines.add("Doctor status: " + status + " (" + errors + " errors, " + warnings + " warnings)");
+        lines.add("Tags: " + report.getRawTagCount() + " raw, " + report.getUniqueTagCount()
+                + " unique, " + report.getCategoryCount() + " categories");
+        lines.add("Validation: " + report.count(TagConfigValidator.Severity.ERROR) + " errors, "
+                + report.count(TagConfigValidator.Severity.WARNING) + " warnings, "
+                + report.count(TagConfigValidator.Severity.INFO) + " info");
+        lines.add("Storage: " + StorageBackend.fromString(settings.getStorageBackendRaw()).name()
+                + (storageErrors > 0 ? " needs attention" : " OK"));
+
+        for (String warning : integrationWarnings) {
+            lines.add("Integration warning: " + warning);
+        }
+
+        for (TagConfigValidator.Finding finding : report.getFindingsUpTo(2)) {
+            lines.add(finding.getSeverity().name() + ": " + finding.getLocation()
+                    + " - " + finding.getMessage());
+        }
+
+        while (lines.size() < 6) {
+            lines.add(lines.size() == 4
+                    ? "No tag config findings."
+                    : "Run /tagsadmin doctor for the full health report.");
+        }
+
+        return new DashboardHealth("Health: " + status, color, lines);
+    }
+
+    private static int inspectStorageErrors(@Nonnull Settings settings,
+                                            @Nonnull File dataFolder) {
+        StorageBackend backend = StorageBackend.fromString(settings.getStorageBackendRaw());
+        return switch (backend) {
+            case FILE -> {
+                File playerDataFolder = new File(dataFolder, "playerdata");
+                yield (playerDataFolder.isDirectory() && playerDataFolder.canWrite()) ? 0 : 1;
+            }
+            case SQLITE -> {
+                File sqliteFile = new File(dataFolder, settings.getSqliteFile());
+                File parent = sqliteFile.getAbsoluteFile().getParentFile();
+                yield (parent != null && parent.canWrite()) ? 0 : 1;
+            }
+            case MYSQL -> 0;
+        };
+    }
+
+    @Nonnull
+    private static List<String> inspectIntegrationWarnings(@Nonnull Settings settings,
+                                                           @Nonnull IntegrationManager integrations) {
+        List<String> warnings = new ArrayList<>();
+        if (settings.isEconomySystemEnabled() && !integrations.hasAnyEconomy()) {
+            warnings.add("economy enabled but no backend is available");
+        }
+        if (settings.isRpgLevelingNameplatesEnabled() && !RPGLevelingCompat.isAvailable()) {
+            warnings.add("RPGLeveling nameplates enabled but RPGLeveling is unavailable");
+        }
+        if (settings.isEndlessLevelingNameplatesEnabled()
+                && !integrations.isEndlessLevelingNameplateAttached()) {
+            warnings.add("Endless Leveling bridge is not attached");
+        }
+        return warnings;
     }
 
     @Override
@@ -653,7 +733,24 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
         commands.set("#PlaceholderBackendsLabel.Text", placeholderText.toString());
 
+        DashboardHealth health = captureDashboardHealth(settings, integrations, plugin.getDataDirectory().toFile());
+        commands.set("#HealthLabel.Text", health.label);
+        commands.set("#HealthLabel.Style.TextColor", health.color);
+        populateDoctorDebugLines(commands, health);
+
         populateResourceStats(commands);
+    }
+
+    private void populateDoctorDebugLines(@Nonnull UICommandBuilder commands,
+                                          @Nonnull DashboardHealth health) {
+        commands.set("#DebugHeader.Text", "DOCTOR / DEBUG");
+        commands.set("#DebugLine0.Text", health.line(0));
+        commands.set("#DebugLine1.Text", health.line(1));
+        commands.set("#DebugLine2.Text", health.line(2));
+        commands.set("#DebugLine3.Text", health.line(3));
+        commands.set("#DebugLine4.Text", health.line(4));
+        commands.set("#DebugLine5.Text", health.line(5));
+        commands.set("#DebugLine6.Text", "Use /tagsadmin doctor for full details.");
     }
 
     private void applyTabSelection(@Nonnull UICommandBuilder commands,
@@ -719,6 +816,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 || invokeBooleanMethodIfPresent(integrations, "isStatProviderAvailable");
         boolean itemHandler = invokeBooleanMethodIfPresent(integrations, "isItemRequirementHandlerAvailable");
         boolean endlessNameplate = invokeBooleanMethodIfPresent(integrations, "isEndlessLevelingNameplateAttached");
+        boolean glyphNameplates = settings.isExperimentalGlyphNameplatesEnabled();
 
         String playtimeProviderName = getPlaytimeProviderName(integrations);
         String activePermissionBackend = getActivePermissionBackendName(integrations);
@@ -755,9 +853,13 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#PlaceholdersCardStatus.Text", "WiFlow: " + yesNo(wiflow));
         commands.set("#PlaceholdersCardMeta.Text", "Helpch: " + yesNo(helpch));
 
-        commands.set("#NameplateCardStatus.Text", "EndlessLeveling: " + yesNo(endlessNameplate));
+        commands.set("#NameplateCardStatus.Text",
+                "Glyph: " + yesNo(glyphNameplates) + " | EndlessLeveling: " + yesNo(endlessNameplate));
         commands.set("#NameplateCardMeta.Text",
-                endlessNameplate ? "Extended rendering active" : "Standard rendering active");
+                "Preset: " + settings.getNameplatePreset()
+                        + (glyphNameplates
+                        ? " | Glyph font: " + settings.getExperimentalGlyphFont()
+                        : (endlessNameplate ? " | Extended rendering active" : " | Standard rendering active")));
 
         commands.set("#PermissionsLine0.Text", "Active backend: " + activePermissionBackend);
         commands.set("#PermissionsLine1.Text", "LuckPerms detected: " + yesNo(luckPerms)
@@ -917,6 +1019,28 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         double cpuPercent;
         int availableProcessors;
         long uptimeMillis;
+    }
+
+    private static final class DashboardHealth {
+        final String label;
+        final String color;
+        final List<String> lines;
+
+        DashboardHealth(@Nonnull String label,
+                        @Nonnull String color,
+                        @Nonnull List<String> lines) {
+            this.label = label;
+            this.color = color;
+            this.lines = List.copyOf(lines);
+        }
+
+        @Nonnull
+        String line(int index) {
+            if (index < 0 || index >= lines.size()) {
+                return "";
+            }
+            return lines.get(index);
+        }
     }
 
     public static class UIEventData {

@@ -28,7 +28,7 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractCommand {
 
     protected AbstractTagsAdminSubCommand(@Nonnull String name, @Nonnull String description) {
         super(name, description);
-        this.setPermissionGroup(null);
+        this.setPermissionGroups();
     }
 
     @Override

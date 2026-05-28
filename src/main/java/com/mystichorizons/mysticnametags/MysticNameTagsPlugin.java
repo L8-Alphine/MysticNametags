@@ -11,10 +11,12 @@ import com.mystichorizons.mysticnametags.commands.TagsCommand;
 import com.mystichorizons.mysticnametags.commands.TagsOwnedCommand;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.generated.HStatsIdentity;
 import com.mystichorizons.mysticnametags.hstats.HStats;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.*;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
@@ -103,8 +105,11 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         // Synchronous is fine here; if you prefer async, wrap in your scheduler.
         this.updateChecker.checkForUpdates();
 
-        // Start HStats
-        new HStats("b2740b4b-b730-4693-9ec4-e39a1ac5b661", version);
+        // Start HStats when a runtime or bundled UUID is available.
+        String hstatsModUuid = resolveHStatsModUuid();
+        if (hstatsModUuid != null) {
+            new HStats(hstatsModUuid, version);
+        }
 
         // ------------------------------------------------------
         // Playtime service (60s interval; adjust if you add config)
@@ -138,6 +143,26 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         registerEcsSystems();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Setup complete!");
+    }
+
+    private String resolveHStatsModUuid() {
+        String propertyValue = System.getProperty("mysticnametags.hstats.uuid");
+        if (propertyValue != null && !propertyValue.isBlank()) {
+            return propertyValue.trim();
+        }
+
+        String environmentValue = System.getenv("MYSTICNAMETAGS_HSTATS_UUID");
+        if (environmentValue != null && !environmentValue.isBlank()) {
+            return environmentValue.trim();
+        }
+
+        String bundledValue = HStatsIdentity.getModUuid();
+        if (bundledValue != null && !bundledValue.isBlank()) {
+            return bundledValue.trim();
+        }
+
+        LOGGER.at(Level.INFO).log("[MysticNameTags] HStats disabled; no UUID was provided or bundled.");
+        return null;
     }
 
     private void registerCommands() {
@@ -325,13 +350,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
     public static boolean isRpgLevelingAvailable() {
         try {
-            if (!Settings.get().isRpgLevelingNameplatesEnabled()) {
-                return false;
-            }
-
-            // Safe probe of the API
-            org.zuxaw.plugin.api.RPGLevelingAPI api = org.zuxaw.plugin.api.RPGLevelingAPI.get();
-            return api != null;
+            return RPGLevelingCompat.isAvailable();
         } catch (Throwable t) {
             return false;
         }

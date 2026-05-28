@@ -14,7 +14,7 @@ public class HelpSubCommand extends CommandBase {
 
     public HelpSubCommand() {
         super("help", "Show available commands");
-        this.setPermissionGroup(null);
+        this.setPermissionGroups();
     }
 
     @Override

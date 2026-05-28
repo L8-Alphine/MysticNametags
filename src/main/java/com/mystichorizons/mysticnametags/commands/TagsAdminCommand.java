@@ -22,6 +22,7 @@ public class TagsAdminCommand extends AbstractCommandCollection {
         this.addSubCommand(new TagsAdminGiveTagSubCommand());
         this.addSubCommand(new TagsAdminRemoveTagSubCommand());
         this.addSubCommand(new TagsAdminResetSubCommand());
+        this.addSubCommand(new TagsAdminDoctorSubCommand());
         this.addSubCommand(new TagsAdminDebugStorageSubCommand());
         this.addSubCommand(new TagsAdminStorageSubCommand());
         this.addSubCommand(new TagsAdminStatsSubCommand());

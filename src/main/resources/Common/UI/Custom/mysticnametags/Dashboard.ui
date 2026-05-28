@@ -204,7 +204,8 @@ $C.@PageOverlay {
             Label #IntegrationsLabel { Text: "Integrations: (detecting...)"; Anchor: (Height: 22); Style: @StatValue; }
             Label #TagCountLabel { Text: "Loaded Tags: 0"; Anchor: (Height: 22); Style: @StatValue; }
             Label #StorageLabel { Text: "Storage: File"; Anchor: (Height: 22); Style: @StatValue; }
-            Label #PlaceholderBackendsLabel { Text: "Placeholders: none"; Anchor: (Height: 22, Bottom: 10); Style: @StatValue; }
+            Label #PlaceholderBackendsLabel { Text: "Placeholders: none"; Anchor: (Height: 22); Style: @StatValue; }
+            Label #HealthLabel { Text: "Health: checking..."; Anchor: (Height: 22, Bottom: 10); Style: @StatValue; }
 
             Group {
               Anchor: (Height: 1, Bottom: 10);

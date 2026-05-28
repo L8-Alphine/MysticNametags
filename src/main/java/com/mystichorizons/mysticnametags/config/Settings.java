@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphAssets;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
@@ -32,6 +33,7 @@ public final class Settings {
 
     // Core Settings
     private String nameplateFormat = "{rank} {name} {tag}";
+    private String nameplatePreset = "CUSTOM";
     private boolean stripExtraSpaces = true;
     private String language = "en_US";
 
@@ -137,6 +139,7 @@ public final class Settings {
     // --- Experimental glyph / hologram nameplates ----------------------------
 
     private boolean experimentalGlyphNameplatesEnabled = false;
+    private String experimentalGlyphFont = GlyphAssets.DEFAULT_FONT;
     private int experimentalGlyphMaxChars = 32;
     private int experimentalGlyphUpdateTicks = 1; // 1 tick -> smooth per-viewer billboarding
     private int experimentalGlyphMaxEntitiesPerPlayer = 40;
@@ -187,6 +190,7 @@ public final class Settings {
             if (loaded != null) {
                 // Core
                 this.nameplateFormat = nonBlankOr(loaded.nameplateFormat, this.nameplateFormat);
+                this.nameplatePreset = nonBlankOr(loaded.nameplatePreset, this.nameplatePreset);
                 this.stripExtraSpaces = loaded.stripExtraSpaces;
                 this.language = nonBlankOr(loaded.language, this.language);
                 this.tagDelaysecs = Math.max(0, loaded.tagDelaysecs);
@@ -248,6 +252,7 @@ public final class Settings {
 
                 // Glyph
                 this.experimentalGlyphNameplatesEnabled = loaded.experimentalGlyphNameplatesEnabled;
+                this.experimentalGlyphFont = nonBlankOr(loaded.experimentalGlyphFont, this.experimentalGlyphFont);
                 this.experimentalGlyphMaxChars = loaded.experimentalGlyphMaxChars;
                 this.experimentalGlyphUpdateTicks = loaded.experimentalGlyphUpdateTicks;
                 this.experimentalGlyphMaxEntitiesPerPlayer = loaded.experimentalGlyphMaxEntitiesPerPlayer;
@@ -317,6 +322,14 @@ public final class Settings {
         int oldGlyphChars = this.experimentalGlyphMaxChars;
         this.experimentalGlyphMaxChars = Math.max(8, this.experimentalGlyphMaxChars);
         if (oldGlyphChars != this.experimentalGlyphMaxChars) dirty = true;
+
+        before = this.nameplatePreset;
+        this.nameplatePreset = getNameplatePreset();
+        if (!safeEquals(before, this.nameplatePreset)) dirty = true;
+
+        before = this.experimentalGlyphFont;
+        this.experimentalGlyphFont = GlyphAssets.normalizeFont(this.experimentalGlyphFont);
+        if (!safeEquals(before, this.experimentalGlyphFont)) dirty = true;
 
         int oldGlyphTicks = this.experimentalGlyphUpdateTicks;
         this.experimentalGlyphUpdateTicks = Math.max(1, this.experimentalGlyphUpdateTicks);
@@ -415,12 +428,16 @@ public final class Settings {
 
                 addInfoBlock(out, "__core",
                         "Core nameplate settings.",
+                        "nameplatePreset = CUSTOM / COMPACT / TAG_ONLY / TWO_LINE / RPG / ENDLESS",
+                        "When nameplatePreset is CUSTOM, nameplateFormat is used directly.",
                         "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {endless_primary_class}, {endless_secondary_class}, {rpg_level}, {ecoquests_rank}",
-                        "nameplateFormat supports /n for a new line",
+                        "nameplateFormat supports /n, \\n, {nl}, {newline}, and <br> for a new line.",
+                        "Native Hytale nameplates may render as one line; glyph nameplates are the reliable multiline path.",
                         "stripExtraSpaces = condense multiple spaces",
                         "language = locale bundle (e.g. en_US)",
                         "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = off)"
                 );
+                copy.accept("nameplatePreset");
                 copy.accept("nameplateFormat");
                 copy.accept("stripExtraSpaces");
                 copy.accept("language");
@@ -495,6 +512,7 @@ public final class Settings {
                         "⚠ EXPERIMENTAL ⚠",
                         "Glyph nameplates packet-spawn models and mount them to the player.",
                         "Keep disabled unless testing with low player counts.",
+                        "experimentalGlyphFont = default / sans / serif / comic / cursive / impact / mono / thin",
                         "experimentalGlyphUpdateTicks = billboard refresh cadence; 1 is smoothest",
                         "experimentalGlyphViewerActivationDistance = activate nearest-viewer billboard inside this radius",
                         "experimentalGlyphViewerDropDistance = keep current viewer until they leave this larger radius",
@@ -508,6 +526,7 @@ public final class Settings {
                         "experimentalGlyphTintStrength = glyph color brightness multiplier (0.0 - 1.0, lower = dimmer/less glow)"
                 );
                 copy.accept("experimentalGlyphNameplatesEnabled");
+                copy.accept("experimentalGlyphFont");
                 copy.accept("experimentalGlyphMaxChars");
                 copy.accept("experimentalGlyphUpdateTicks");
                 copy.accept("experimentalGlyphMaxEntitiesPerPlayer");
@@ -610,9 +629,34 @@ public final class Settings {
 
     @Nonnull
     public String getNameplateFormatRaw() {
+        String preset = getNameplatePreset();
+        if (!"CUSTOM".equals(preset)) {
+            return switch (preset) {
+                case "COMPACT" -> "{rank} {name} {tag}";
+                case "TAG_ONLY" -> "{tag}";
+                case "TWO_LINE" -> "{rank} {name}\\n{tag}";
+                case "RPG" -> "{rank} {name}\\n{tag} Lv.{rpg_level}";
+                case "ENDLESS" -> "{rank} {name}\\n{tag} Lv.{endless_level} {endless_prestige}";
+                default -> "{rank} {name} {tag}";
+            };
+        }
+
         return (nameplateFormat == null || nameplateFormat.isBlank())
                 ? "{rank} {name} {tag}"
                 : nameplateFormat;
+    }
+
+    @Nonnull
+    public String getNameplatePreset() {
+        String value = nameplatePreset;
+        if (value == null || value.isBlank()) {
+            return "CUSTOM";
+        }
+
+        return switch (value.trim().toUpperCase()) {
+            case "COMPACT", "TAG_ONLY", "TWO_LINE", "RPG", "ENDLESS" -> value.trim().toUpperCase();
+            default -> "CUSTOM";
+        };
     }
 
     public boolean isStripExtraSpacesEnabled() {
@@ -749,6 +793,11 @@ public final class Settings {
 
     public boolean isExperimentalGlyphNameplatesEnabled() {
         return experimentalGlyphNameplatesEnabled;
+    }
+
+    @Nonnull
+    public String getExperimentalGlyphFont() {
+        return GlyphAssets.normalizeFont(experimentalGlyphFont);
     }
 
     public int getExperimentalGlyphMaxChars() {

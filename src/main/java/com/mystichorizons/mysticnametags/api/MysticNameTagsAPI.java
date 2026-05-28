@@ -7,6 +7,7 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
@@ -327,6 +328,26 @@ public final class MysticNameTagsAPI {
     @Nullable
     public static Integer getEndlessLevelingStat(@Nullable UUID uuid, @Nullable String key) {
         if (uuid == null || key == null || !key.trim().startsWith("endlessleveling.")) {
+            return null;
+        }
+        return integrations().getStatValue(uuid, key);
+    }
+
+    /**
+     * Returns true when the RPGLeveling public API is present.
+     */
+    public static boolean isRpgLevelingAvailable() {
+        return RPGLevelingCompat.isAvailable();
+    }
+
+    /**
+     * Reads an RPGLeveling stat key such as {@code rpgleveling.lvl},
+     * {@code rpgleveling.skills.damage}, {@code rpgleveling.classes.archery}, or
+     * {@code rpgleveling.progression}.
+     */
+    @Nullable
+    public static Integer getRpgLevelingStat(@Nullable UUID uuid, @Nullable String key) {
+        if (uuid == null || key == null || !key.trim().startsWith("rpgleveling.")) {
             return null;
         }
         return integrations().getStatValue(uuid, key);

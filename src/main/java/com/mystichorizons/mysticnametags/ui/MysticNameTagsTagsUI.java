@@ -30,6 +30,9 @@ import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -54,6 +57,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     private static final String COLOR_TEXT_CATEGORY = "#cbd5f5";
     private static final String COLOR_OUTLINE_ROW = "#3a3a3a";
     private static final String COLOR_OUTLINE_SELECT = "#58a6ff";
+    private static final DateTimeFormatter AVAILABILITY_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'").withZone(ZoneOffset.UTC);
     /**
      * Last time (ms) a tag was successfully EQUIPPED for each player.
      * Used for enforcing the configurable equip cooldown.
@@ -294,9 +299,14 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         for (TagDefinition def : all) {
             if (def == null) continue;
+            boolean owns = uuid != null && def.getId() != null && tagManager.ownsTag(uuid, def.getId());
+
+            if (!def.isCurrentlyAvailable() && !owns && !debugShowHidden) {
+                continue;
+            }
 
             if (ownedOnly) {
-                if (uuid == null || def.getId() == null || !tagManager.ownsTag(uuid, def.getId())) {
+                if (!owns) {
                     continue;
                 }
             }
@@ -1052,6 +1062,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String status;
         if (isEquipped) {
             status = lang.tr("ui.tags.detail_status_active");
+        } else if (!def.isCurrentlyAvailable() && !owns) {
+            status = lang.tr("ui.tags.status_unavailable");
         } else if (isLocked(def, canUse, owns)) {
             if (hasCost && !owns) {
                 status = lang.tr("ui.tags.status_locked_not_purchased");
@@ -1072,6 +1084,8 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String selectButtonText;
         if (isEquipped) {
             selectButtonText = lang.tr("ui.tags.button_unequip");
+        } else if (!def.isCurrentlyAvailable() && !owns) {
+            selectButtonText = lang.tr("ui.tags.button_no_access");
         } else if (!def.isPurchasable() || def.getPrice() <= 0.0D) {
             selectButtonText = owns
                     ? lang.tr("ui.tags.button_equip")
@@ -1171,6 +1185,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             return new RowBadge(lang.tr("ui.tags.badge_active"), "#3fb950");
         }
 
+        if (!def.isCurrentlyAvailable() && !owns) {
+            return new RowBadge(lang.tr("ui.tags.badge_unavailable"), "#f0b429");
+        }
+
         if (isLocked(def, canUse, owns)) {
             return new RowBadge(lang.tr("ui.tags.badge_locked"), "#f85149");
         }
@@ -1188,6 +1206,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private boolean isLocked(TagDefinition def, boolean canUse, boolean owns) {
         if (def == null) return false;
+
+        if (!def.isCurrentlyAvailable() && !owns) {
+            return true;
+        }
 
         boolean lockedByReq = hasAnyRequirements(def) && !canUse;
         boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
@@ -1209,6 +1231,21 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String perm = def.getPermission();
         boolean permissionGate = Settings.get().isPermissionGateEnabled();
         boolean fullGate = Settings.get().isFullPermissionGateEnabled();
+
+        if (def.hasAvailabilityWindow()) {
+            String availabilityLine = buildAvailabilityLine(def, lang);
+            if (!availabilityLine.isBlank()) {
+                lines.add(lang.tr("ui.tags.req_availability_title") + ": " + availabilityLine);
+            }
+
+            if (!def.isCurrentlyAvailable() && !owns) {
+                String message = cleanAvailabilityMessage(def);
+                if (message.isBlank()) {
+                    message = lang.tr("ui.tags.req_availability_unavailable");
+                }
+                lines.add(message);
+            }
+        }
 
         if (perm != null && !perm.isEmpty() && !canUse) {
             String gateSuffix = "";
@@ -1340,6 +1377,47 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     }
 
     @Nonnull
+    private String buildAvailabilityLine(@Nonnull TagDefinition def,
+                                         @Nonnull LanguageManager lang) {
+        Instant from = def.getActiveFromInstant();
+        Instant until = def.getActiveUntilInstant();
+
+        if (from != null && until != null) {
+            return lang.tr("ui.tags.req_availability_window", Map.of(
+                    "from", formatAvailabilityInstant(from),
+                    "until", formatAvailabilityInstant(until)
+            ));
+        }
+
+        if (from != null) {
+            return lang.tr("ui.tags.req_availability_from", Map.of(
+                    "from", formatAvailabilityInstant(from)
+            ));
+        }
+
+        if (until != null) {
+            return lang.tr("ui.tags.req_availability_until", Map.of(
+                    "until", formatAvailabilityInstant(until)
+            ));
+        }
+
+        return "";
+    }
+
+    @Nonnull
+    private static String formatAvailabilityInstant(@Nonnull Instant instant) {
+        return AVAILABILITY_DATE_FORMAT.format(instant);
+    }
+
+    @Nonnull
+    private static String cleanAvailabilityMessage(@Nullable TagDefinition def) {
+        if (def == null || def.getAvailabilityMessage() == null) {
+            return "";
+        }
+        return ColorFormatter.stripFormatting(def.getAvailabilityMessage()).trim();
+    }
+
+    @Nonnull
     private List<String> buildHelpLines(@Nonnull TagDefinition def,
                                         boolean canUse,
                                         boolean owns,
@@ -1391,6 +1469,20 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             lines.add(lang.tr("ui.tags.howitworks.category_line", Map.of(
                     "category", category
             )));
+        }
+
+        String season = def.getSeason();
+        if (season != null && !season.isBlank()) {
+            lines.add(lang.tr("ui.tags.season_line", Map.of(
+                    "season", season.trim()
+            )));
+        }
+
+        if (def.hasAvailabilityWindow()) {
+            String availabilityLine = buildAvailabilityLine(def, lang);
+            if (!availabilityLine.isBlank()) {
+                lines.add(lang.tr("ui.tags.req_availability_title") + ": " + availabilityLine);
+            }
         }
 
         String rawDesc = def.getDescription();
@@ -1611,6 +1703,96 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             return prettifyId(tail);
         }
 
+        if (key.startsWith("rpgleveling.")) {
+            String tail = key.substring("rpgleveling.".length());
+
+            if (tail.equalsIgnoreCase("lvl") || tail.equalsIgnoreCase("level")) {
+                return lang.tr("ui.stats.rpgleveling.level");
+            }
+
+            if (tail.equalsIgnoreCase("xp") || tail.equalsIgnoreCase("progression.xp")) {
+                return lang.tr("ui.stats.rpgleveling.xp");
+            }
+
+            String lowerTail = tail.toLowerCase(Locale.ROOT);
+            if (lowerTail.equals("skills")) {
+                return lang.tr("ui.stats.rpgleveling.skills");
+            }
+
+            if (lowerTail.equals("skills.available") || lowerTail.equals("skills.unspent")) {
+                return lang.tr("ui.stats.rpgleveling.skills_available");
+            }
+
+            if (lowerTail.startsWith("skills.")) {
+                String rawSkill = tail.substring("skills.".length());
+                String pretty = prettifyId(rawSkill);
+
+                String label = lang.tr(
+                        "ui.stats.rpgleveling.skills_prefix",
+                        Map.of("name", pretty)
+                );
+
+                if (!label.equals("ui.stats.rpgleveling.skills_prefix")) {
+                    return label;
+                }
+                return "RPG Skill: " + pretty;
+            }
+
+            if (lowerTail.equals("classes") || lowerTail.equals("class")) {
+                return lang.tr("ui.stats.rpgleveling.classes");
+            }
+
+            if (lowerTail.equals("classes.tier") || lowerTail.equals("class_tier")) {
+                return lang.tr("ui.stats.rpgleveling.classes_tier");
+            }
+
+            if (lowerTail.startsWith("classes.tier.") || lowerTail.startsWith("class_tier.")) {
+                String prefix = lowerTail.startsWith("classes.tier.") ? "classes.tier." : "class_tier.";
+                String rawClass = tail.substring(prefix.length());
+                String pretty = prettifyId(rawClass);
+
+                String label = lang.tr(
+                        "ui.stats.rpgleveling.classes_tier_prefix",
+                        Map.of("name", pretty)
+                );
+
+                if (!label.equals("ui.stats.rpgleveling.classes_tier_prefix")) {
+                    return label;
+                }
+                return "RPG Class Tier: " + pretty;
+            }
+
+            if (lowerTail.startsWith("classes.") || lowerTail.startsWith("class.")) {
+                String prefix = lowerTail.startsWith("classes.") ? "classes." : "class.";
+                String rawClass = tail.substring(prefix.length());
+                String pretty = prettifyId(rawClass);
+
+                String label = lang.tr(
+                        "ui.stats.rpgleveling.classes_prefix",
+                        Map.of("name", pretty)
+                );
+
+                if (!label.equals("ui.stats.rpgleveling.classes_prefix")) {
+                    return label;
+                }
+                return "RPG Class: " + pretty;
+            }
+
+            if (lowerTail.equals("progression") || lowerTail.equals("progression.percent")) {
+                return lang.tr("ui.stats.rpgleveling.progression");
+            }
+
+            if (lowerTail.equals("progression.required_xp") || lowerTail.equals("progression.xp_needed")) {
+                return lang.tr("ui.stats.rpgleveling.progression_xp_needed");
+            }
+
+            if (lowerTail.equals("progression.class_kills")) {
+                return lang.tr("ui.stats.rpgleveling.progression_class_kills");
+            }
+
+            return prettifyId(tail);
+        }
+
         if (key.startsWith("custom.")) {
             String statPart = key.substring("custom.".length());
             String langKey = "ui.stats.custom." + statPart;
@@ -1714,6 +1896,16 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 msgKey = "tags.not_enough_money";
                 vars = Map.of();
             }
+            case UNAVAILABLE -> {
+                String custom = cleanAvailabilityMessage(def);
+                if (!custom.isBlank()) {
+                    msgKey = null;
+                    vars = Map.of("message", custom);
+                } else {
+                    msgKey = "tags.unavailable";
+                    vars = Map.of();
+                }
+            }
             case TRANSACTION_FAILED -> {
                 msgKey = "tags.transaction_failed";
                 vars = Map.of();
@@ -1728,7 +1920,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             }
         }
 
-        String msg = lang.tr(msgKey, vars);
+        String msg = msgKey == null ? vars.getOrDefault("message", "") : lang.tr(msgKey, vars);
 
         String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
         String parsedMsg = WiFlowPlaceholderSupport.apply(playerRef, msg);

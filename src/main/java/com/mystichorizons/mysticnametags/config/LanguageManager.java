@@ -338,6 +338,7 @@ public final class LanguageManager {
 
         defaults.put("ui.tags.badge_active", "ACTIVE");
         defaults.put("ui.tags.badge_locked", "LOCKED");
+        defaults.put("ui.tags.badge_unavailable", "EVENT");
         defaults.put("ui.tags.badge_owned", "OWNED");
         defaults.put("ui.tags.badge_buy", "BUY");
         defaults.put("ui.tags.badge_free", "FREE");
@@ -358,6 +359,13 @@ public final class LanguageManager {
         defaults.put("ui.tags.status_locked_requirements", "Status: LOCKED (requirements not met)");
         defaults.put("ui.tags.status_locked_not_purchased", "Status: LOCKED (not purchased)");
         defaults.put("ui.tags.status_available", "Status: AVAILABLE");
+        defaults.put("ui.tags.status_unavailable", "Unavailable");
+        defaults.put("ui.tags.req_availability_title", "Availability");
+        defaults.put("ui.tags.req_availability_unavailable", "This tag is not currently available.");
+        defaults.put("ui.tags.req_availability_window", "Window: {from} - {until}");
+        defaults.put("ui.tags.req_availability_from", "Starts: {from}");
+        defaults.put("ui.tags.req_availability_until", "Ends: {until}");
+        defaults.put("ui.tags.season_line", "Season: {season}");
 
         defaults.put("ui.tags.detail_status_active", "Active");
         defaults.put("ui.tags.detail_status_owned", "Owned");
@@ -399,6 +407,18 @@ public final class LanguageManager {
         defaults.put("ui.stats.endlessleveling.level", "Endless Level");
         defaults.put("ui.stats.endlessleveling.xp", "Endless XP");
         defaults.put("ui.stats.endlessleveling.skill_prefix", "Skill Level: {name}");
+        defaults.put("ui.stats.rpgleveling.level", "RPG Level");
+        defaults.put("ui.stats.rpgleveling.xp", "RPG XP");
+        defaults.put("ui.stats.rpgleveling.skills", "RPG Skill Points");
+        defaults.put("ui.stats.rpgleveling.skills_available", "RPG Skill Points Available");
+        defaults.put("ui.stats.rpgleveling.skills_prefix", "RPG Skill: {name}");
+        defaults.put("ui.stats.rpgleveling.classes", "RPG Class Selected");
+        defaults.put("ui.stats.rpgleveling.classes_prefix", "RPG Class: {name}");
+        defaults.put("ui.stats.rpgleveling.classes_tier", "RPG Class Tier");
+        defaults.put("ui.stats.rpgleveling.classes_tier_prefix", "RPG Class Tier: {name}");
+        defaults.put("ui.stats.rpgleveling.progression", "RPG Level Progress");
+        defaults.put("ui.stats.rpgleveling.progression_xp_needed", "RPG XP Needed");
+        defaults.put("ui.stats.rpgleveling.progression_class_kills", "RPG Class Tier Kills");
         defaults.put("ui.stats.prefix.kills", "Kills: {name}");
         defaults.put("ui.stats.prefix.mined", "Blocks Mined: {name}");
         defaults.put("ui.stats.prefix.placed", "Blocks Placed: {name}");
@@ -611,6 +631,7 @@ public final class LanguageManager {
         defaults.put("tags.unequipped", "Unequipped {tag}.");
         defaults.put("tags.no_economy", "Economy plugin is not configured.");
         defaults.put("tags.not_enough_money", "You cannot afford that tag.");
+        defaults.put("tags.unavailable", "That tag is not currently available.");
         defaults.put("tags.transaction_failed", "Transaction failed. Please try again.");
         defaults.put("tags.requirements_not_met", "You do not meet the requirements for that tag.");
         defaults.put("tags.equip_cooldown", "You must wait {seconds}s before equipping another tag.");

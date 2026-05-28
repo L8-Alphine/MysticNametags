@@ -2,25 +2,58 @@ package com.mystichorizons.mysticnametags.nameplate.glyph;
 
 import javax.annotation.Nullable;
 import java.awt.Color;
+import java.util.Locale;
 
 public final class GlyphAssets {
 
 
     public static final String NAMESPACE = "mysticnametags";
+    public static final String DEFAULT_FONT = "default";
 
     private GlyphAssets() {}
 
     public static String modelId(String safeCharId) {
+        return modelId(DEFAULT_FONT, safeCharId);
+    }
+
+    public static String modelId(String font, String safeCharId) {
         // e.g. mysticnametags:Glyph_lo_a
+        String normalizedFont = normalizeFont(font);
+        if (!DEFAULT_FONT.equals(normalizedFont)) {
+            return NAMESPACE + ":Glyph_" + normalizedFont + "_" + safeCharId;
+        }
+
         return NAMESPACE + ":Glyph_" + safeCharId;
     }
 
     public static String texturePath(char ch, String safeCharId) {
+        return texturePath(ch, safeCharId, DEFAULT_FONT);
+    }
+
+    public static String texturePath(char ch, String safeCharId, String font) {
+        String normalizedFont = normalizeFont(font);
+        String prefix = DEFAULT_FONT.equals(normalizedFont)
+                ? "NPC/MysticNameTags/"
+                : "NPC/MysticNameTags/" + normalizedFont + "/";
+
         if (ch >= 'A' && ch <= 'Z') {
-            return "NPC/MysticNameTags/glyph_up_" + ch + ".png";
+            return prefix + "glyph_up_" + ch + ".png";
         }
 
-        return "NPC/MysticNameTags/glyph_" + safeCharId + ".png";
+        return prefix + "glyph_" + safeCharId + ".png";
+    }
+
+    public static String normalizeFont(@Nullable String font) {
+        if (font == null || font.isBlank()) {
+            return DEFAULT_FONT;
+        }
+
+        String value = font.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        return switch (value) {
+            case "base", "root", "default" -> DEFAULT_FONT;
+            case "comic", "cursive", "impact", "mono", "sans", "serif", "thin" -> value;
+            default -> DEFAULT_FONT;
+        };
     }
 
     public static String slotModelPath(int offsetPx) {
