@@ -22,6 +22,7 @@ import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.integrations.MysticVanishSupport;
 import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphAssets;
 import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphInfoCompat;
 import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphIdFactory;
@@ -623,6 +624,15 @@ public final class GlyphNameplateManager {
                     UUID viewerUuid = packetViewer.getUuid();
                     if (viewerUuid == null) {
                         LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph skipped: viewer UUID was null.");
+                        continue;
+                    }
+
+                    // Vanished subject: viewers below the subject's vanish level are
+                    // skipped and left out of activeViewerIds, so
+                    // cleanupDroppedPacketViewers() despawns any glyphs they already
+                    // received. Once the subject unvanishes the glyphs respawn via
+                    // the normal missing-entity path.
+                    if (!selfView && !MysticVanishSupport.canSee(viewerUuid, uuid)) {
                         continue;
                     }
 
@@ -1319,6 +1329,7 @@ public final class GlyphNameplateManager {
 
     private static final class SimpleColorParser {
         private static final Map<Character, Color> LEGACY_COLORS = new HashMap<>();
+        private static final Map<String, Color> MINI_MESSAGE_COLORS = new HashMap<>();
 
         static {
             LEGACY_COLORS.put('0', Color.BLACK);
@@ -1337,6 +1348,28 @@ public final class GlyphNameplateManager {
             LEGACY_COLORS.put('d', new Color(0xFF, 0x60, 0xFF));
             LEGACY_COLORS.put('e', new Color(0xFF, 0xFF, 0x60));
             LEGACY_COLORS.put('f', Color.WHITE);
+
+            MINI_MESSAGE_COLORS.put("black", Color.BLACK);
+            MINI_MESSAGE_COLORS.put("dark_blue", new Color(0x00, 0x00, 0xA0));
+            MINI_MESSAGE_COLORS.put("dark_green", new Color(0x00, 0xA0, 0x00));
+            MINI_MESSAGE_COLORS.put("dark_aqua", new Color(0x00, 0xA0, 0xA0));
+            MINI_MESSAGE_COLORS.put("dark_red", new Color(0xA0, 0x00, 0x00));
+            MINI_MESSAGE_COLORS.put("dark_purple", new Color(0xA0, 0x00, 0xA0));
+            MINI_MESSAGE_COLORS.put("gold", new Color(0xFF, 0xA0, 0x00));
+            MINI_MESSAGE_COLORS.put("gray", new Color(0xA0, 0xA0, 0xA0));
+            MINI_MESSAGE_COLORS.put("grey", new Color(0xA0, 0xA0, 0xA0));
+            MINI_MESSAGE_COLORS.put("dark_gray", new Color(0x60, 0x60, 0x60));
+            MINI_MESSAGE_COLORS.put("dark_grey", new Color(0x60, 0x60, 0x60));
+            MINI_MESSAGE_COLORS.put("blue", new Color(0x60, 0x60, 0xFF));
+            MINI_MESSAGE_COLORS.put("green", new Color(0x60, 0xFF, 0x60));
+            MINI_MESSAGE_COLORS.put("aqua", new Color(0x60, 0xFF, 0xFF));
+            MINI_MESSAGE_COLORS.put("red", new Color(0xFF, 0x60, 0x60));
+            MINI_MESSAGE_COLORS.put("light_purple", new Color(0xFF, 0x60, 0xFF));
+            MINI_MESSAGE_COLORS.put("purple", new Color(0xFF, 0x60, 0xFF));
+            MINI_MESSAGE_COLORS.put("magenta", new Color(0xFF, 0x60, 0xFF));
+            MINI_MESSAGE_COLORS.put("pink", new Color(0xFF, 0x60, 0xFF));
+            MINI_MESSAGE_COLORS.put("yellow", new Color(0xFF, 0xFF, 0x60));
+            MINI_MESSAGE_COLORS.put("white", Color.WHITE);
         }
 
         static List<ColoredChar> parse(String text) {
@@ -1402,14 +1435,38 @@ public final class GlyphNameplateManager {
                     int end = text.indexOf('>', i);
                     if (end > i) {
                         String tag = text.substring(i + 1, end).trim().toLowerCase(Locale.ROOT);
-                        if (tag.startsWith("#") && tag.length() == 7) {
-                            Color parsed = GlyphAssets.tryParseHex6(tag.substring(1));
+                        if (tag.startsWith("/") || tag.equals("reset")) {
+                            current = Color.WHITE;
+                            i = end;
+                            continue;
+                        }
+
+                        if (tag.equals("bold") || tag.equals("b")
+                                || tag.equals("strong")
+                                || tag.equals("italic") || tag.equals("i")
+                                || tag.equals("em")
+                                || tag.equals("underlined") || tag.equals("underline")
+                                || tag.equals("u")
+                                || tag.equals("strikethrough") || tag.equals("strike")
+                                || tag.equals("st")
+                                || tag.equals("obfuscated") || tag.equals("obfuscate")
+                                || tag.equals("obf")
+                                || tag.startsWith("gradient:")) {
+                            i = end;
+                            continue;
+                        }
+
+                        String hexTag = normalizeMiniMessageHexTag(tag);
+                        if (hexTag != null) {
+                            Color parsed = GlyphAssets.tryParseHex6(hexTag);
                             if (parsed != null) current = parsed;
                             i = end;
                             continue;
                         }
-                        if (tag.equals("/") || tag.equals("reset")) {
-                            current = Color.WHITE;
+
+                        Color named = MINI_MESSAGE_COLORS.get(tag);
+                        if (named != null) {
+                            current = named;
                             i = end;
                             continue;
                         }
@@ -1426,6 +1483,31 @@ public final class GlyphNameplateManager {
             return (c >= '0' && c <= '9')
                     || (c >= 'a' && c <= 'f')
                     || (c >= 'A' && c <= 'F');
+        }
+
+        @Nullable
+        private static String normalizeMiniMessageHexTag(@Nonnull String tag) {
+            String value = tag;
+            int colon = tag.indexOf(':');
+            if (colon >= 0) {
+                String prefix = tag.substring(0, colon);
+                if ("color".equals(prefix) || "colour".equals(prefix) || "c".equals(prefix)) {
+                    value = tag.substring(colon + 1).trim();
+                }
+            }
+
+            if (!value.startsWith("#")) {
+                return null;
+            }
+
+            String hex = value.substring(1);
+            if (hex.matches("[0-9a-fA-F]{3}")) {
+                return "" + hex.charAt(0) + hex.charAt(0)
+                        + hex.charAt(1) + hex.charAt(1)
+                        + hex.charAt(2) + hex.charAt(2);
+            }
+
+            return hex.matches("[0-9a-fA-F]{6}") ? hex : null;
         }
     }
 

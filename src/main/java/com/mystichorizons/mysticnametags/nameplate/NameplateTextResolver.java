@@ -48,13 +48,16 @@ public final class NameplateTextResolver {
     public static final class ResolvedNameplateText {
         private final String raw;
         private final String colored;
+        private final String glyphColored;
         private final String plain;
 
         public ResolvedNameplateText(@Nonnull String raw,
                                      @Nonnull String colored,
+                                     @Nonnull String glyphColored,
                                      @Nonnull String plain) {
             this.raw = raw;
             this.colored = colored;
+            this.glyphColored = glyphColored;
             this.plain = plain;
         }
 
@@ -66,6 +69,11 @@ public final class NameplateTextResolver {
         @Nonnull
         public String getColored() {
             return colored;
+        }
+
+        @Nonnull
+        public String getGlyphColored() {
+            return glyphColored;
         }
 
         @Nonnull
@@ -300,13 +308,18 @@ public final class NameplateTextResolver {
             colored = "";
         }
 
-        String plain = ColorFormatter.stripFormatting(colored);
+        String glyphColored = ColorFormatter.colorizeForGlyphNameplate(raw);
+        if (glyphColored == null) {
+            glyphColored = "";
+        }
+
+        String plain = ColorFormatter.stripFormatting(glyphColored);
         if (plain == null) {
             plain = "";
         }
         plain = collapseWhitespacePreserveLines(plain);
 
-        return new ResolvedNameplateText(raw, colored, plain);
+        return new ResolvedNameplateText(raw, colored, glyphColored, plain);
     }
 
     /**

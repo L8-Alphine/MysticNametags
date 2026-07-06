@@ -72,6 +72,12 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractCommand {
                 || integrations.hasPermission(sender, subPerm);
     }
 
+    @Nonnull
+    protected String actorName(@Nonnull CommandContext context) {
+        CommandSender sender = context.sender();
+        return sender == null ? "unknown" : sender.toString();
+    }
+
     @Nullable
     protected PlayerRef findOnlinePlayer(String inputName) {
         if (inputName == null || inputName.isEmpty()) {

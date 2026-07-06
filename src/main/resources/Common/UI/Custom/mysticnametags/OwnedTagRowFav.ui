@@ -1,0 +1,9 @@
+// MysticNameTags - Owned tag row: favorite toggle button (child [1])
+
+$M = "MysticCommon.ui";
+
+TextButton {
+  Text: "FAVORITE";
+  Anchor: (Width: 116, Height: 28, Vertical: 0, Right: 8);
+  Style: $M.@SlateBtnStyle;
+}

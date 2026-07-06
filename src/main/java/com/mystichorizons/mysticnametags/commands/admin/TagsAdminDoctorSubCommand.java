@@ -6,6 +6,7 @@ import com.mystichorizons.mysticnametags.commands.AbstractTagsAdminSubCommand;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeCompat;
 import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
 import com.mystichorizons.mysticnametags.tags.TagConfigValidator;
@@ -175,6 +176,12 @@ public class TagsAdminDoctorSubCommand extends AbstractTagsAdminSubCommand {
                 .append("&r\n");
         sb.append("&7Endless nameplate bridge: ")
                 .append(integrations.isEndlessLevelingNameplateAttached() ? "&aattached" : "&7not attached")
+                .append("&r\n");
+        sb.append("&7MMOSkillTree stat bridge: ")
+                .append(MMOSkillTreeCompat.isAvailable() ? "&aavailable" : "&7not detected")
+                .append("&r\n");
+        sb.append("&7MysticVanish vanish hook: ")
+                .append(integrations.isMysticVanishAvailable() ? "&aactive" : "&7not detected")
                 .append("&r\n");
 
         for (String warning : warnings) {

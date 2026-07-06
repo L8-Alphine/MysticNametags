@@ -6,6 +6,166 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
+## [1.2.7] - 2026-07-06
+
+### Added
+
+- Added player favorite tag support:
+    - `/mnametags favorite add <tagId>`
+    - `/mnametags favorite remove <tagId>`
+    - `/mnametags favorite toggle <tagId>`
+    - `/mnametags favorite list`
+    - Aliases: `/mnametags fav`, `/mnametags favorites`
+- Added random tag equip support:
+    - `/mnametags randomtag owned`
+    - `/mnametags randomtag favorites`
+    - Aliases: `/mnametags random`, `/mnametags tagrandom`
+- Added player tag loadouts:
+    - `/mnametags loadout save <name>`
+    - `/mnametags loadout equip <name>`
+    - `/mnametags loadout delete <name>`
+    - `/mnametags loadout list`
+    - Aliases: `/mnametags tagloadout`, `/mnametags loadouts`
+- Added a quick loadout flow in the tag selector UI for saving, equipping, and deleting a quick tag loadout.
+- Added favorite, random owned, and random favorite actions to the tag selector UI.
+- Added an in-game tag editor for creating, updating, previewing, and deleting simple tag definitions.
+- Added an editor tab to the dashboard UI.
+- Added a standalone tag editor UI with searchable tag list, live draft capture, preview, save, delete, and new-tag actions.
+- Added tag pack import/export support:
+    - `/tagsadmin importpack <file.json> [append|upsert|replace]`
+    - `/tagsadmin exportpack <file.json> [category]`
+    - Tag packs are read from and written to `plugins/MysticNameTags/tagpacks`.
+    - Import modes support append-only, upsert, and full replace behavior.
+    - Imports create backups of the current `tags.json` before writing.
+- Added an in-game tag pack manager UI for listing packs, importing selected packs, choosing import mode, exporting loaded tags, and filtering exports by category.
+- Added admin audit logging for tag actions, including favorite changes, loadouts, player grants/removals/resets, tag editor changes, and tag pack import/export.
+- Added `/tagsadmin audit [lines]` to show recent audit entries.
+- Added an audit-tail action to the dashboard Debug tab.
+- Added debug snapshot file output from the dashboard, with the saved file name shown back in the UI.
+- Added a public MysticNameTags event API:
+    - `MysticNameTagsAPI.listen(...)`
+    - `MysticNameTagsAPI.unlisten(...)`
+    - `MysticNameTagsAPI.getEventListenerCount()`
+    - Events for equip, unequip, unlock, purchase, favorite add/remove, loadout save/equip/delete, pack import/export, tag create/update/delete, admin grant/remove/reset.
+- Added public API helpers for tag definition writes:
+    - `MysticNameTagsAPI.createOrUpdateSimpleTag(...)`
+    - `MysticNameTagsAPI.deleteTag(...)`
+- Added optional MMOSkillTree support.
+- Added MMOSkillTree-backed requirement/stat keys:
+    - `mmoskilltree.total_level`
+    - `mmoskilltree.total_xp`
+    - `mmoskilltree.level.<skillId>`
+    - `mmoskilltree.skill.<skillId>`
+    - `mmoskilltree.xp.<skillId>`
+    - `mmoskilltree.progress.<skillId>`
+    - `mmoskilltree.level_progress.<skillId>`
+    - `mmoskilltree.achievement.<id>`
+    - `mmoskilltree.achievement.unlocked.<id>`
+    - `mmoskilltree.achievement_progress.<id>`
+    - `mmoskilltree.achievement.progress.<id>`
+    - `mmoskilltree.achievement_points`
+    - `mmoskilltree.stat.<canonicalKey>`
+    - `mmoskilltree.statistics.<canonicalKey>`
+- Added optional MysticVanish support for packet glyph nameplates, so vanished players' glyph nameplates follow MysticVanish visibility rules.
+- Added dashboard and doctor diagnostics for MMOSkillTree and MysticVanish.
+- Added `autoUnlockPermissionTags` to `settings.json`.
+    - When enabled, free tags with permission nodes are treated as unlocked while the player holds the permission.
+    - Removing the permission revokes access again because the unlock is not persisted as owned data.
+- Added persisted player data fields for favorites and loadouts.
+- Added shared UI templates for common MysticNameTags controls and rows:
+    - `MysticCommon.ui`
+    - `TagRow.ui`
+    - `EditorTagRow.ui`
+    - `PackRow.ui`
+    - `OwnedTagRowMain.ui`
+    - `OwnedTagRowEquip.ui`
+    - `OwnedTagRowFav.ui`
+
+### Changed
+
+- Bumped plugin version from `1.2.6` to `1.2.7`.
+- Updated Hytale Server compile target from `0.5.0` to `0.5.6`.
+- Updated VaultUnlocked compile target from `2.18.3` to `2.20.0` and disabled transitive dependency resolution for it.
+- Added `Ziggfreed:MMOSkillTree` as an optional dependency in `manifest.json`.
+- Reworked the economy backend chain so backends are checked live instead of being permanently pruned during startup.
+- Moved VaultUnlocked to the front of the ledger economy chain.
+- Added a startup retry probe for VaultUnlocked providers that register after MysticNameTags starts.
+- Updated economy status output to report the active backend more accurately.
+- Updated `/mnametags info` economy display so VaultUnlocked appears as the preferred backend when available.
+- Updated `/tagsadmin doctor` diagnostics with MMOSkillTree and MysticVanish status lines.
+- Updated admin give/remove/reset operations to record the acting command sender in audit logs and public events.
+- Updated admin remove/reset logic to also clean favorites and loadouts that reference removed tags.
+- Updated the tag selector UI to use dynamic row templates instead of a fixed set of manually addressed row elements.
+- Updated the tag selector and tag editor search handling to capture live text values without fighting the player's typing.
+- Updated owned-tags UI rows to use separate reusable templates for main rows, equip actions, and favorite indicators.
+- Updated dashboard styling and layout with new actions for tag editing, pack import/export, and audit viewing.
+- Updated tag rendering logic so permission-auto-unlocked tags are treated as effectively owned in player-facing UI and equip flows.
+- Updated glyph nameplate rendering to use glyph-specific colored text rather than chat-formatted text.
+- Updated placeholder output to preserve compact hex colors for placeholder consumers.
+- Expanded MiniMessage color parsing support for glyphs, UI, placeholders, and formatting utilities.
+- Expanded MiniMessage aliases for colors and decorations, including short hex colors, `color:`/`colour:`/`c:` tags, gray/grey aliases, purple/magenta/pink aliases, underline, strikethrough, and obfuscated decorations.
+- Changed chat/placeholder color handling so expanded hex is only used where the consumer can safely parse it.
+- Updated tag config writes to rebuild tag indexes, refresh caches, and refresh online nameplates after tag editor and pack operations.
+
+### Fixed
+
+- Fixed VaultUnlocked providers that register late being missed permanently after startup.
+- Fixed VaultUnlocked providers that work but report `isEnabled()` unexpectedly being treated as unavailable.
+- Fixed balance, purchase, and backend availability checks using stale economy detection.
+- Fixed debug snapshot actions only writing to logs by also saving a snapshot file when possible.
+- Fixed dashboard, pack manager, tag selector, and tag editor text fields losing or overwriting live typed values during refreshes.
+- Fixed tag selector search so filtering applies live and clearing the search box intentionally resets the visible field.
+- Fixed tag editor draft fields so preview updates do not interrupt typing.
+- Fixed pack manager export name capture so exporting uses the current typed filename.
+- Fixed fixed-row UI behavior that could leave stale tag rows visible or make dynamic row event bindings unreliable.
+- Fixed owned/favorite/loadout cleanup when tags are removed by admins or deleted from the tag editor.
+- Fixed player reset not clearing favorites and loadouts.
+- Fixed permission-auto-unlocked tags showing as unavailable even when the player currently has the required permission.
+- Fixed compact hex colors such as `&#4f5c63` being partially interpreted by legacy parsers as `&4` plus literal text.
+- Fixed placeholder color output leaking expanded `&x&...` sequences into consumers that expect compact hex.
+- Fixed glyph nameplate color parsing for MiniMessage named colors, reset tags, short hex tags, and `color:#hex` style tags.
+- Fixed vanished players' packet glyph nameplates remaining visible to viewers who should not see them.
+- Fixed economy labels that still described EconomySystem as "primary" even when another backend was active.
+
+### Developer API
+
+- Added `MysticNameTagsEvent`, `MysticNameTagsEventBus`, `MysticNameTagsEventListener`, and `MysticNameTagsEventType`.
+- Added event publishing for user, admin, editor, and pack operations.
+- Added `TagEditResult` / `TagEditStatus` for create, update, and delete workflows.
+- Added `FavoriteResult`, `LoadoutResult`, and `LoadoutEquipResult`.
+- Added `TagPackImportResult`, `TagPackExportResult`, and `TagPackImportMode`.
+- Added public MMOSkillTree helpers:
+    - `MysticNameTagsAPI.isMMOSkillTreeAvailable()`
+    - `MysticNameTagsAPI.getMMOSkillTreeStat(...)`
+- Added `IntegrationManager.getActiveEconomyBackendName()`.
+- Added `IntegrationManager.refreshEconomyBackends(...)`.
+- Added `IntegrationManager.isVaultApiAvailable()`.
+- Added `IntegrationManager.isMMOSkillTreeAvailable()`.
+- Added `IntegrationManager.isMysticVanishAvailable()`.
+
+### Upgrade Notes
+
+Before updating, back up:
+
+```text
+settings.json
+tags.json
+playerdata
+tagpacks
+```
+
+After installing the new jar:
+
+1. Make sure your server is running Hytale `0.5.6+`.
+2. Restart the server.
+3. Run `/tagsadmin doctor` and confirm economy, MMOSkillTree, and MysticVanish integrations show the expected status.
+4. If you use permission-only free tags, decide whether to enable `autoUnlockPermissionTags` in `settings.json`.
+5. If you use tag packs, create or copy JSON packs into `plugins/MysticNameTags/tagpacks`.
+6. Test `/mnametags favorite list`, `/mnametags randomtag owned`, and `/mnametags loadout list` with a normal player account.
+7. Open `/tags ui`, verify the dashboard Tag Editor and Pack Manager actions, then test `/tagsadmin audit`.
+
+---
+
 ## [1.2.5] - 2026-05-27
 
 ### Hytale Update 5 Compatibility

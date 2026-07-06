@@ -98,8 +98,8 @@ public final class ColorFormatter {
     /**
      * Normalize config/user color markup without expanding compact hex.
      *
-     * This is the safest form for systems that understand the plugin's normal
-     * config syntax directly, such as chat placeholders:
+     * This is the safest form for systems that understand the plugin's compact
+     * config syntax directly, such as glyph parsing:
      * - MiniMessage subset -> legacy/hex codes
      * - bare #RRGGBB -> &#RRGGBB
      * - § codes -> & codes
@@ -118,6 +118,40 @@ public final class ColorFormatter {
 
     public static String colorizeForChat(String input) {
         return colorizeCompact(input);
+    }
+
+    /**
+     * Normalize placeholder output while preserving true hex colors. Expanded
+     * hex leaks into some chat placeholder consumers as visible "&x&f&f..."
+     * text, so placeholders use the compact &#RRGGBB form instead.
+     */
+    public static String colorizeForPlaceholder(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        String out = colorizeCompact(input);
+
+        Matcher expanded = EXPANDED_HEX_AMP.matcher(out);
+        StringBuffer expandedBuffer = new StringBuffer();
+        while (expanded.find()) {
+            String hex = unpackExpandedHex(expanded.group(), '&');
+            String replacement = hex != null ? "&#" + hex.toUpperCase(Locale.ROOT) : expanded.group();
+            expanded.appendReplacement(expandedBuffer, Matcher.quoteReplacement(replacement));
+        }
+        expanded.appendTail(expandedBuffer);
+        out = expandedBuffer.toString();
+
+        Matcher sectionExpanded = EXPANDED_HEX_SECT.matcher(out);
+        StringBuffer sectionBuffer = new StringBuffer();
+        while (sectionExpanded.find()) {
+            String hex = unpackExpandedHex(sectionExpanded.group(), '§');
+            String replacement = hex != null ? "&#" + hex.toUpperCase(Locale.ROOT) : sectionExpanded.group();
+            sectionExpanded.appendReplacement(sectionBuffer, Matcher.quoteReplacement(replacement));
+        }
+        sectionExpanded.appendTail(sectionBuffer);
+
+        return sectionBuffer.toString();
     }
 
     /**
@@ -699,10 +733,15 @@ public final class ColorFormatter {
             NAMED.put("yellow", new Color(0xFFFF55));
             NAMED.put("gold", new Color(0xFFAA00));
             NAMED.put("light_purple", new Color(0xFF55FF));
+            NAMED.put("purple", new Color(0xFF55FF));
+            NAMED.put("magenta", new Color(0xFF55FF));
+            NAMED.put("pink", new Color(0xFF55FF));
             NAMED.put("dark_purple", new Color(0xAA00AA));
+            NAMED.put("grey", new Color(0xAAAAAA));
+            NAMED.put("dark_grey", new Color(0x555555));
         }
 
-        private static final Pattern HEX_TAG = Pattern.compile("^#([0-9A-Fa-f]{6})$");
+        private static final Pattern HEX_TAG = Pattern.compile("^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$");
         private static final Pattern GRADIENT_OPEN = Pattern.compile("^gradient:(.+)$");
 
         private static final class State {
@@ -765,33 +804,36 @@ public final class ColorFormatter {
                             continue;
                         }
 
-                        // <bold>, <italic>
-                        if ("bold".equals(tag)) {
+                        // <bold>/<b>, <italic>/<i>
+                        if (isBoldTag(tag)) {
                             stack.push(state.copy());
                             state.bold = true;
                             i = close + 1;
                             textStart = i;
                             continue;
                         }
-                        if ("italic".equals(tag)) {
+                        if (isItalicTag(tag)) {
                             stack.push(state.copy());
                             state.italic = true;
                             i = close + 1;
                             textStart = i;
                             continue;
                         }
+                        if (isNoopDecorationTag(tag)) {
+                            stack.push(state.copy());
+                            i = close + 1;
+                            textStart = i;
+                            continue;
+                        }
 
-                        // <#RRGGBB>
-                        Matcher hexM = HEX_TAG.matcher(tag);
-                        if (hexM.matches()) {
-                            Color c = parseHexColor(hexM.group(1));
-                            if (c != null) {
-                                stack.push(state.copy());
-                                state.color = c;
-                                i = close + 1;
-                                textStart = i;
-                                continue;
-                            }
+                        // <#RRGGBB>, <#RGB>, <color:#RRGGBB>
+                        Color tagColor = parseTagColor(tag);
+                        if (tagColor != null) {
+                            stack.push(state.copy());
+                            state.color = tagColor;
+                            i = close + 1;
+                            textStart = i;
+                            continue;
                         }
 
                         // <red> <green> etc.
@@ -874,22 +916,28 @@ public final class ColorFormatter {
                             continue;
                         }
 
-                        if ("bold".equals(tag)) {
+                        if (isBoldTag(tag)) {
                             tagStack.push("&l");
                             out.append("&l");
                             i = close + 1;
                             continue;
                         }
-                        if ("italic".equals(tag)) {
+                        if (isItalicTag(tag)) {
                             tagStack.push("&o");
                             out.append("&o");
                             i = close + 1;
                             continue;
                         }
+                        String legacyDecoration = legacyDecorationCode(tag);
+                        if (legacyDecoration != null) {
+                            tagStack.push(legacyDecoration);
+                            out.append(legacyDecoration);
+                            i = close + 1;
+                            continue;
+                        }
 
-                        Matcher hexM = HEX_TAG.matcher(tag);
-                        if (hexM.matches()) {
-                            String hex = hexM.group(1).toUpperCase(Locale.ROOT);
+                        String hex = parseTagHex(tag);
+                        if (hex != null) {
                             String legacy = "&#" + hex;
                             tagStack.push(legacy);
                             out.append(legacy);
@@ -955,7 +1003,8 @@ public final class ColorFormatter {
             for (String part : raw) {
                 String p = part.trim();
                 if (p.startsWith("#")) p = p.substring(1);
-                if (p.matches("[0-9A-Fa-f]{6}")) {
+                if (p.matches("[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}")) {
+                    p = expandHex(p);
                     Color c = parseHexColor(p);
                     if (c != null) colors.add(c);
                 } else {
@@ -1029,6 +1078,63 @@ public final class ColorFormatter {
 
         private static int clamp255(int v) {
             return Math.max(0, Math.min(255, v));
+        }
+
+        private static boolean isBoldTag(String tag) {
+            return "bold".equals(tag) || "b".equals(tag) || "strong".equals(tag);
+        }
+
+        private static boolean isItalicTag(String tag) {
+            return "italic".equals(tag) || "i".equals(tag) || "em".equals(tag);
+        }
+
+        private static boolean isNoopDecorationTag(String tag) {
+            return legacyDecorationCode(tag) != null;
+        }
+
+        private static String legacyDecorationCode(String tag) {
+            if ("underlined".equals(tag) || "underline".equals(tag) || "u".equals(tag)) {
+                return "&n";
+            }
+            if ("strikethrough".equals(tag) || "strike".equals(tag) || "st".equals(tag)) {
+                return "&m";
+            }
+            if ("obfuscated".equals(tag) || "obfuscate".equals(tag) || "obf".equals(tag)) {
+                return "&k";
+            }
+            return null;
+        }
+
+        private static Color parseTagColor(String tag) {
+            String hex = parseTagHex(tag);
+            return hex == null ? null : parseHexColor(hex);
+        }
+
+        private static String parseTagHex(String tag) {
+            String value = tag;
+            int colon = tag.indexOf(':');
+            if (colon >= 0) {
+                String prefix = tag.substring(0, colon);
+                if ("color".equals(prefix) || "colour".equals(prefix) || "c".equals(prefix)) {
+                    value = tag.substring(colon + 1).trim();
+                }
+            }
+
+            Matcher hexM = HEX_TAG.matcher(value);
+            if (!hexM.matches()) {
+                return null;
+            }
+
+            return expandHex(hexM.group(1)).toUpperCase(Locale.ROOT);
+        }
+
+        private static String expandHex(String hex) {
+            if (hex != null && hex.length() == 3) {
+                return "" + hex.charAt(0) + hex.charAt(0)
+                        + hex.charAt(1) + hex.charAt(1)
+                        + hex.charAt(2) + hex.charAt(2);
+            }
+            return hex;
         }
     }
 

@@ -10,6 +10,9 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEvent;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventBus;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventType;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.nameplate.GlyphNameplateManager;
@@ -27,6 +30,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -349,6 +355,45 @@ public class TagManager {
         }
     }
 
+    private void rebuildTagIndexesFromMap() {
+        tagList = List.copyOf(tags.values());
+
+        Set<String> catSet = new LinkedHashSet<>();
+        for (TagDefinition def : tags.values()) {
+            if (def == null) continue;
+            String cat = def.getCategory();
+            if (cat == null) continue;
+            cat = cat.trim();
+            if (!cat.isEmpty()) {
+                catSet.add(cat);
+            }
+        }
+        categories = List.copyOf(catSet);
+        clearCanUseCache();
+    }
+
+    private void saveCurrentTagConfig() {
+        saveConfig(new ArrayList<>(tags.values()));
+    }
+
+    private static void publishEvent(@Nonnull MysticNameTagsEventType type,
+                                     @Nullable String actor,
+                                     @Nullable UUID playerUuid,
+                                     @Nullable String playerName,
+                                     @Nullable String tagId,
+                                     @Nullable String result,
+                                     @Nullable Map<String, String> details) {
+        MysticNameTagsEventBus.publish(new MysticNameTagsEvent(
+                type,
+                actor,
+                playerUuid,
+                playerName,
+                tagId,
+                result,
+                details
+        ));
+    }
+
     private void saveDefaultConfig() {
         try (OutputStreamWriter writer =
                      new OutputStreamWriter(
@@ -462,11 +507,405 @@ public class TagManager {
         return tags.get(id.toLowerCase(Locale.ROOT));
     }
 
+    @Nonnull
+    public TagEditResult upsertSimpleTag(@Nullable String id,
+                                         @Nullable String display,
+                                         @Nullable String description,
+                                         @Nullable String category,
+                                         @Nullable String priceRaw,
+                                         @Nullable String permission,
+                                         @Nullable String actor) {
+        String keyId = normalizeTagId(id);
+        if (keyId == null || !keyId.matches("[a-z0-9_:\\-.]{1,64}")) {
+            return TagEditResult.of(TagEditStatus.INVALID_ID, null,
+                    "Tag ids must be 1-64 characters using letters, numbers, _, -, ., or :");
+        }
+
+        double price = 0.0D;
+        if (priceRaw != null && !priceRaw.isBlank()) {
+            try {
+                price = Double.parseDouble(priceRaw.trim());
+            } catch (NumberFormatException ignored) {
+                return TagEditResult.of(TagEditStatus.INVALID_PRICE, null, "Price must be a number.");
+            }
+            if (price < 0.0D) {
+                return TagEditResult.of(TagEditStatus.INVALID_PRICE, null, "Price cannot be negative.");
+            }
+        }
+
+        boolean created = !tags.containsKey(keyId);
+        TagDefinition def = created ? new TagDefinition() : tags.get(keyId);
+        if (def == null) {
+            return TagEditResult.of(TagEditStatus.FAILED, null, "Could not load or create tag definition.");
+        }
+
+        def.id = keyId;
+        def.display = cleanOrDefault(display, "&7[" + prettifyIdForConfig(keyId) + "]");
+        def.description = cleanOrDefault(description, "&7Created in-game.");
+        def.category = cleanOrDefault(category, DEFAULT_CATEGORY);
+        def.price = price;
+        def.purchasable = price > 0.0D;
+        def.permission = cleanNullable(permission);
+
+        tags.put(keyId, def);
+        rebuildTagIndexesFromMap();
+        saveCurrentTagConfig();
+        refreshAllOnlineNameplates();
+
+        TagEditStatus status = created ? TagEditStatus.CREATED : TagEditStatus.UPDATED;
+        TagAuditLogger.log(created ? "tag_editor_create" : "tag_editor_update",
+                actor,
+                null,
+                null,
+                keyId,
+                status.name().toLowerCase(Locale.ROOT),
+                Map.of("category", def.getCategory(), "price", price));
+        publishEvent(created ? MysticNameTagsEventType.TAG_CREATED : MysticNameTagsEventType.TAG_UPDATED,
+                actor,
+                null,
+                null,
+                keyId,
+                status.name(),
+                Map.of("category", def.getCategory(), "price", String.valueOf(price)));
+
+        return TagEditResult.of(status, def, null);
+    }
+
+    @Nonnull
+    public TagEditResult deleteTagDefinition(@Nullable String id,
+                                             @Nullable String actor) {
+        String keyId = normalizeTagId(id);
+        if (keyId == null) {
+            return TagEditResult.of(TagEditStatus.INVALID_ID, null, "Tag id is required.");
+        }
+
+        TagDefinition removed = tags.remove(keyId);
+        if (removed == null) {
+            return TagEditResult.of(TagEditStatus.NOT_FOUND, null, "Tag not found.");
+        }
+
+        for (Map.Entry<UUID, PlayerTagData> entry : playerData.entrySet()) {
+            PlayerTagData data = entry.getValue();
+            if (data == null) continue;
+            boolean changed = data.getOwned().remove(keyId);
+            changed = data.removeFavorite(keyId) || changed;
+            changed = data.getLoadouts().entrySet().removeIf(e -> keyId.equalsIgnoreCase(e.getValue())) || changed;
+            if (keyId.equalsIgnoreCase(data.getEquipped())) {
+                data.setEquipped(null);
+                changed = true;
+            }
+            if (changed) {
+                savePlayerData(entry.getKey());
+            }
+        }
+
+        rebuildTagIndexesFromMap();
+        saveCurrentTagConfig();
+        refreshAllOnlineNameplates();
+
+        TagAuditLogger.log("tag_editor_delete", actor, null, null, keyId, "deleted", null);
+        publishEvent(MysticNameTagsEventType.TAG_DELETED,
+                actor,
+                null,
+                null,
+                keyId,
+                "deleted",
+                null);
+
+        return TagEditResult.of(TagEditStatus.DELETED, removed, null);
+    }
+
     public boolean ownsTag(@Nullable UUID uuid, @Nullable String id) {
         if (uuid == null || id == null) {
             return false;
         }
         return getOrLoad(uuid).owns(id.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * True when the autoUnlockPermissionTags setting treats this tag as
+     * unlocked for the player: the tag is not paid, declares a permission
+     * node, and the player currently holds that permission. Because the
+     * check is live, losing the permission revokes access again.
+     */
+    public boolean isAutoUnlockedByPermission(@Nullable PlayerRef playerRef,
+                                              @Nullable TagDefinition def) {
+        if (playerRef == null || def == null) {
+            return false;
+        }
+        if (!Settings.get().isAutoUnlockPermissionTagsEnabled()) {
+            return false;
+        }
+        if (def.isPurchasable() && def.getPrice() > 0.0D) {
+            return false;
+        }
+
+        String perm = def.getPermission();
+        if (perm == null || perm.isEmpty()) {
+            return false;
+        }
+
+        try {
+            return integrations.hasPermission(playerRef, perm);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Persistent ownership OR permission-based auto-unlock (see
+     * {@link #isAutoUnlockedByPermission}).
+     */
+    public boolean effectivelyOwnsTag(@Nullable PlayerRef playerRef,
+                                      @Nullable UUID uuid,
+                                      @Nullable TagDefinition def) {
+        if (def == null || def.getId() == null) {
+            return false;
+        }
+        if (uuid != null && ownsTag(uuid, def.getId())) {
+            return true;
+        }
+        return isAutoUnlockedByPermission(playerRef, def);
+    }
+
+    @Nonnull
+    public Set<String> getFavoriteTags(@Nonnull UUID uuid) {
+        PlayerTagData data = getOrLoad(uuid);
+        data.clearUnavailableFavorites();
+        return Set.copyOf(data.getFavorites());
+    }
+
+    public FavoriteResult setFavorite(@Nonnull UUID uuid,
+                                      @Nonnull String id,
+                                      boolean favorite,
+                                      @Nullable String actor) {
+        String keyId = normalizeTagId(id);
+        if (keyId == null || getTag(keyId) == null) {
+            return FavoriteResult.NOT_FOUND;
+        }
+
+        PlayerTagData data = getOrLoad(uuid);
+        if (!data.owns(keyId)) {
+            return FavoriteResult.NOT_OWNED;
+        }
+
+        boolean changed = favorite ? data.addFavorite(keyId) : data.removeFavorite(keyId);
+        savePlayerData(uuid);
+
+        TagAuditLogger.log(favorite ? "favorite_add" : "favorite_remove",
+                actor,
+                uuid,
+                null,
+                keyId,
+                changed ? "changed" : "unchanged",
+                null);
+        publishEvent(favorite ? MysticNameTagsEventType.TAG_FAVORITE_ADDED : MysticNameTagsEventType.TAG_FAVORITE_REMOVED,
+                actor,
+                uuid,
+                null,
+                keyId,
+                changed ? "changed" : "unchanged",
+                null);
+
+        return favorite ? FavoriteResult.ADDED : FavoriteResult.REMOVED;
+    }
+
+    public FavoriteResult toggleFavorite(@Nonnull UUID uuid,
+                                         @Nonnull String id,
+                                         @Nullable String actor) {
+        String keyId = normalizeTagId(id);
+        if (keyId == null || getTag(keyId) == null) {
+            return FavoriteResult.NOT_FOUND;
+        }
+
+        PlayerTagData data = getOrLoad(uuid);
+        if (!data.owns(keyId)) {
+            return FavoriteResult.NOT_OWNED;
+        }
+
+        boolean added;
+        if (data.isFavorite(keyId)) {
+            data.removeFavorite(keyId);
+            added = false;
+        } else {
+            data.addFavorite(keyId);
+            added = true;
+        }
+        savePlayerData(uuid);
+
+        TagAuditLogger.log(added ? "favorite_add" : "favorite_remove",
+                actor,
+                uuid,
+                null,
+                keyId,
+                "changed",
+                null);
+        publishEvent(added ? MysticNameTagsEventType.TAG_FAVORITE_ADDED : MysticNameTagsEventType.TAG_FAVORITE_REMOVED,
+                actor,
+                uuid,
+                null,
+                keyId,
+                "changed",
+                null);
+
+        return added ? FavoriteResult.ADDED : FavoriteResult.REMOVED;
+    }
+
+    public TagPurchaseResult equipRandomTag(@Nonnull PlayerRef playerRef,
+                                            @Nonnull UUID uuid,
+                                            boolean favoritesOnly) {
+        PlayerTagData data = getOrLoad(uuid);
+        List<String> candidates = new ArrayList<>();
+        Set<String> source = favoritesOnly ? data.getFavorites() : data.getOwned();
+
+        for (String id : source) {
+            if (id == null || id.isBlank()) continue;
+            TagDefinition def = getTag(id);
+            if (def == null) continue;
+            if (!data.owns(id)) continue;
+            if (!canUseTag(playerRef, uuid, def)) continue;
+            candidates.add(id.toLowerCase(Locale.ROOT));
+        }
+
+        if (candidates.isEmpty()) {
+            return TagPurchaseResult.NOT_FOUND;
+        }
+
+        String selected = candidates.get(new Random().nextInt(candidates.size()));
+        TagPurchaseResult result = purchaseAndEquip(playerRef, uuid, selected);
+        TagAuditLogger.log("random_equip",
+                playerRef.getUsername(),
+                uuid,
+                playerRef.getUsername(),
+                selected,
+                result.name(),
+                Map.of("favoritesOnly", favoritesOnly));
+        return result;
+    }
+
+    @Nonnull
+    public Map<String, String> getLoadouts(@Nonnull UUID uuid) {
+        return Map.copyOf(getOrLoad(uuid).getLoadouts());
+    }
+
+    public LoadoutResult saveLoadout(@Nonnull UUID uuid,
+                                     @Nonnull String name,
+                                     @Nullable String actor) {
+        String normalizedName = normalizeLoadoutName(name);
+        if (normalizedName == null) {
+            return LoadoutResult.INVALID_NAME;
+        }
+
+        PlayerTagData data = getOrLoad(uuid);
+        String equipped = data.getEquipped();
+        if (equipped == null || equipped.isBlank() || !data.owns(equipped)) {
+            return LoadoutResult.NO_EQUIPPED_TAG;
+        }
+
+        data.putLoadout(normalizedName, equipped.toLowerCase(Locale.ROOT));
+        savePlayerData(uuid);
+        TagAuditLogger.log("loadout_save", actor, uuid, null, equipped, "saved",
+                Map.of("loadout", normalizedName));
+        publishEvent(MysticNameTagsEventType.LOADOUT_SAVED,
+                actor,
+                uuid,
+                null,
+                equipped,
+                "saved",
+                Map.of("loadout", normalizedName));
+        return LoadoutResult.SAVED;
+    }
+
+    public LoadoutResult saveLoadoutTag(@Nonnull UUID uuid,
+                                        @Nonnull String name,
+                                        @Nonnull String tagId,
+                                        @Nullable String actor) {
+        String normalizedName = normalizeLoadoutName(name);
+        if (normalizedName == null) {
+            return LoadoutResult.INVALID_NAME;
+        }
+
+        String keyId = normalizeTagId(tagId);
+        if (keyId == null || getTag(keyId) == null) {
+            return LoadoutResult.NOT_FOUND;
+        }
+
+        PlayerTagData data = getOrLoad(uuid);
+        if (!data.owns(keyId)) {
+            return LoadoutResult.NO_EQUIPPED_TAG;
+        }
+
+        data.putLoadout(normalizedName, keyId);
+        savePlayerData(uuid);
+        TagAuditLogger.log("loadout_save", actor, uuid, null, keyId, "saved",
+                Map.of("loadout", normalizedName, "source", "ui_selected_tag"));
+        publishEvent(MysticNameTagsEventType.LOADOUT_SAVED,
+                actor,
+                uuid,
+                null,
+                keyId,
+                "saved",
+                Map.of("loadout", normalizedName, "source", "ui_selected_tag"));
+        return LoadoutResult.SAVED;
+    }
+
+    public LoadoutEquipResult equipLoadout(@Nonnull PlayerRef playerRef,
+                                           @Nonnull UUID uuid,
+                                           @Nonnull String name) {
+        String normalizedName = normalizeLoadoutName(name);
+        if (normalizedName == null) {
+            return new LoadoutEquipResult(LoadoutResult.INVALID_NAME, TagPurchaseResult.NOT_FOUND, null);
+        }
+
+        PlayerTagData data = getOrLoad(uuid);
+        String tagId = data.getLoadouts().get(normalizedName);
+        if (tagId == null || tagId.isBlank()) {
+            return new LoadoutEquipResult(LoadoutResult.NOT_FOUND, TagPurchaseResult.NOT_FOUND, null);
+        }
+
+        TagPurchaseResult result = purchaseAndEquip(playerRef, uuid, tagId);
+        TagAuditLogger.log("loadout_equip",
+                playerRef.getUsername(),
+                uuid,
+                playerRef.getUsername(),
+                tagId,
+                result.name(),
+                Map.of("loadout", normalizedName));
+        publishEvent(MysticNameTagsEventType.LOADOUT_EQUIPPED,
+                playerRef.getUsername(),
+                uuid,
+                playerRef.getUsername(),
+                tagId,
+                result.name(),
+                Map.of("loadout", normalizedName));
+        return new LoadoutEquipResult(LoadoutResult.EQUIPPED, result, tagId);
+    }
+
+    public LoadoutResult deleteLoadout(@Nonnull UUID uuid,
+                                       @Nonnull String name,
+                                       @Nullable String actor) {
+        String normalizedName = normalizeLoadoutName(name);
+        if (normalizedName == null) {
+            return LoadoutResult.INVALID_NAME;
+        }
+
+        PlayerTagData data = getOrLoad(uuid);
+        boolean removed = data.removeLoadout(normalizedName);
+        if (!removed) {
+            return LoadoutResult.NOT_FOUND;
+        }
+
+        savePlayerData(uuid);
+        TagAuditLogger.log("loadout_delete", actor, uuid, null, null, "deleted",
+                Map.of("loadout", normalizedName));
+        publishEvent(MysticNameTagsEventType.LOADOUT_DELETED,
+                actor,
+                uuid,
+                null,
+                null,
+                "deleted",
+                Map.of("loadout", normalizedName));
+        return LoadoutResult.DELETED;
     }
 
     @Nullable
@@ -779,6 +1218,20 @@ public class TagManager {
             savePlayerData(uuid);
             clearCanUseCache(uuid);
             refreshIfOnline(uuid);
+            TagAuditLogger.log("player_unequip",
+                    playerRef.getUsername(),
+                    uuid,
+                    playerRef.getUsername(),
+                    keyId,
+                    TagPurchaseResult.UNEQUIPPED.name(),
+                    null);
+            publishEvent(MysticNameTagsEventType.TAG_UNEQUIPPED,
+                    playerRef.getUsername(),
+                    uuid,
+                    playerRef.getUsername(),
+                    keyId,
+                    TagPurchaseResult.UNEQUIPPED.name(),
+                    null);
             return TagPurchaseResult.UNEQUIPPED;
         }
 
@@ -824,11 +1277,27 @@ public class TagManager {
             return reqFail;
         }
 
-        if (data.owns(keyId)) {
+        // Permission-based auto-unlock equips directly WITHOUT persisting
+        // ownership, so removing the permission revokes the tag again.
+        if (data.owns(keyId) || isAutoUnlockedByPermission(playerRef, def)) {
             data.setEquipped(keyId);
             savePlayerData(uuid);
             clearCanUseCache(uuid);
             refreshIfOnline(uuid);
+            TagAuditLogger.log("player_equip",
+                    playerRef.getUsername(),
+                    uuid,
+                    playerRef.getUsername(),
+                    keyId,
+                    TagPurchaseResult.EQUIPPED_ALREADY_OWNED.name(),
+                    null);
+            publishEvent(MysticNameTagsEventType.TAG_EQUIPPED,
+                    playerRef.getUsername(),
+                    uuid,
+                    playerRef.getUsername(),
+                    keyId,
+                    TagPurchaseResult.EQUIPPED_ALREADY_OWNED.name(),
+                    null);
             return TagPurchaseResult.EQUIPPED_ALREADY_OWNED;
         }
 
@@ -849,6 +1318,20 @@ public class TagManager {
 
             clearCanUseCache(uuid);
             refreshIfOnline(uuid);
+            TagAuditLogger.log("player_unlock",
+                    playerRef.getUsername(),
+                    uuid,
+                    playerRef.getUsername(),
+                    keyId,
+                    TagPurchaseResult.UNLOCKED_FREE.name(),
+                    Map.of("price", 0));
+            publishEvent(MysticNameTagsEventType.TAG_UNLOCKED,
+                    playerRef.getUsername(),
+                    uuid,
+                    playerRef.getUsername(),
+                    keyId,
+                    TagPurchaseResult.UNLOCKED_FREE.name(),
+                    Map.of("price", "0"));
             return TagPurchaseResult.UNLOCKED_FREE;
         }
 
@@ -880,6 +1363,20 @@ public class TagManager {
 
         clearCanUseCache(uuid);
         refreshIfOnline(uuid);
+        TagAuditLogger.log("player_purchase",
+                playerRef.getUsername(),
+                uuid,
+                playerRef.getUsername(),
+                keyId,
+                TagPurchaseResult.UNLOCKED_PAID.name(),
+                Map.of("price", def.getPrice()));
+        publishEvent(MysticNameTagsEventType.TAG_PURCHASED,
+                playerRef.getUsername(),
+                uuid,
+                playerRef.getUsername(),
+                keyId,
+                TagPurchaseResult.UNLOCKED_PAID.name(),
+                Map.of("price", String.valueOf(def.getPrice())));
         return TagPurchaseResult.UNLOCKED_PAID;
     }
 
@@ -957,13 +1454,14 @@ public class TagManager {
         NameplateTextResolver.ResolvedNameplateText resolved = NameplateTextResolver.resolve(ctx);
 
         String resolvedColored = resolved.getColored();
+        String resolvedGlyphColored = resolved.getGlyphColored();
         String plainFallback = resolved.getPlain();
 
         boolean glyphEnabled = settings.isExperimentalGlyphNameplatesEnabled();
-        String compareKey = glyphEnabled ? resolvedColored : plainFallback;
+        String compareKey = glyphEnabled ? resolvedGlyphColored : plainFallback;
 
         String finalBaseName = baseName;
-        String finalResolvedColored = resolvedColored;
+        String finalResolvedColored = glyphEnabled ? resolvedGlyphColored : resolvedColored;
         String finalPlainFallback = plainFallback;
 
         world.execute(() -> applyNameplateNow(
@@ -1038,6 +1536,215 @@ public class TagManager {
         TRANSACTION_FAILED
     }
 
+    public enum FavoriteResult {
+        ADDED,
+        REMOVED,
+        NOT_FOUND,
+        NOT_OWNED
+    }
+
+    public enum LoadoutResult {
+        SAVED,
+        EQUIPPED,
+        DELETED,
+        NOT_FOUND,
+        INVALID_NAME,
+        NO_EQUIPPED_TAG
+    }
+
+    public static final class LoadoutEquipResult {
+        private final LoadoutResult loadoutResult;
+        private final TagPurchaseResult tagResult;
+        private final String tagId;
+
+        private LoadoutEquipResult(@Nonnull LoadoutResult loadoutResult,
+                                   @Nonnull TagPurchaseResult tagResult,
+                                   @Nullable String tagId) {
+            this.loadoutResult = loadoutResult;
+            this.tagResult = tagResult;
+            this.tagId = tagId;
+        }
+
+        @Nonnull
+        public LoadoutResult getLoadoutResult() {
+            return loadoutResult;
+        }
+
+        @Nonnull
+        public TagPurchaseResult getTagResult() {
+            return tagResult;
+        }
+
+        @Nullable
+        public String getTagId() {
+            return tagId;
+        }
+    }
+
+    public enum TagPackImportMode {
+        APPEND,
+        UPSERT,
+        REPLACE;
+
+        @Nonnull
+        public static TagPackImportMode from(@Nullable String value) {
+            if (value == null || value.isBlank()) {
+                return APPEND;
+            }
+            return switch (value.trim().toLowerCase(Locale.ROOT)) {
+                case "upsert", "merge", "update" -> UPSERT;
+                case "replace", "overwrite" -> REPLACE;
+                default -> APPEND;
+            };
+        }
+    }
+
+    public enum TagEditStatus {
+        CREATED,
+        UPDATED,
+        DELETED,
+        NOT_FOUND,
+        INVALID_ID,
+        INVALID_PRICE,
+        FAILED
+    }
+
+    public static final class TagEditResult {
+        private final TagEditStatus status;
+        private final TagDefinition tag;
+        private final String message;
+
+        private TagEditResult(@Nonnull TagEditStatus status,
+                              @Nullable TagDefinition tag,
+                              @Nullable String message) {
+            this.status = status;
+            this.tag = tag;
+            this.message = message;
+        }
+
+        @Nonnull
+        public static TagEditResult of(@Nonnull TagEditStatus status,
+                                       @Nullable TagDefinition tag,
+                                       @Nullable String message) {
+            return new TagEditResult(status, tag, message);
+        }
+
+        @Nonnull
+        public TagEditStatus getStatus() {
+            return status;
+        }
+
+        @Nullable
+        public TagDefinition getTag() {
+            return tag;
+        }
+
+        @Nullable
+        public String getMessage() {
+            return message;
+        }
+
+        public boolean isSuccess() {
+            return status == TagEditStatus.CREATED
+                    || status == TagEditStatus.UPDATED
+                    || status == TagEditStatus.DELETED;
+        }
+    }
+
+    public static final class TagPackImportResult {
+        private final boolean success;
+        private final File file;
+        private final int added;
+        private final int replaced;
+        private final int skipped;
+        private final String error;
+
+        private TagPackImportResult(boolean success,
+                                    @Nullable File file,
+                                    int added,
+                                    int replaced,
+                                    int skipped,
+                                    @Nullable String error) {
+            this.success = success;
+            this.file = file;
+            this.added = added;
+            this.replaced = replaced;
+            this.skipped = skipped;
+            this.error = error;
+        }
+
+        @Nonnull
+        private static TagPackImportResult invalid(@Nonnull String error) {
+            return new TagPackImportResult(false, null, 0, 0, 0, error);
+        }
+
+        public boolean isSuccess() {
+            return success;
+        }
+
+        @Nullable
+        public File getFile() {
+            return file;
+        }
+
+        public int getAdded() {
+            return added;
+        }
+
+        public int getReplaced() {
+            return replaced;
+        }
+
+        public int getSkipped() {
+            return skipped;
+        }
+
+        @Nullable
+        public String getError() {
+            return error;
+        }
+    }
+
+    public static final class TagPackExportResult {
+        private final boolean success;
+        private final File file;
+        private final int exported;
+        private final String error;
+
+        private TagPackExportResult(boolean success,
+                                    @Nullable File file,
+                                    int exported,
+                                    @Nullable String error) {
+            this.success = success;
+            this.file = file;
+            this.exported = exported;
+            this.error = error;
+        }
+
+        @Nonnull
+        private static TagPackExportResult invalid(@Nonnull String error) {
+            return new TagPackExportResult(false, null, 0, error);
+        }
+
+        public boolean isSuccess() {
+            return success;
+        }
+
+        @Nullable
+        public File getFile() {
+            return file;
+        }
+
+        public int getExported() {
+            return exported;
+        }
+
+        @Nullable
+        public String getError() {
+            return error;
+        }
+    }
+
     public IntegrationManager getIntegrations() {
         return integrations;
     }
@@ -1096,8 +1803,8 @@ public class TagManager {
             return "";
         }
 
-        // Keep compact &#RRGGBB intact for chat/placeholder consumers while
-        // still converting MiniMessage tags and gradients from tags.json.
+        // Expand hex for chat/placeholder consumers so legacy parsers do not
+        // partially consume compact hex like "&#4f5c63" as "&4" + literal text.
         return ColorFormatter.colorizeForChat(display);
     }
 
@@ -1208,6 +1915,284 @@ public class TagManager {
         }
     }
 
+    @Nonnull
+    public TagPackImportResult importTagPack(@Nonnull String requestedPack,
+                                             @Nonnull TagPackImportMode mode,
+                                             @Nullable String actor) {
+        String packName = requestedPack.trim();
+        if (packName.isEmpty()
+                || packName.contains("..")
+                || packName.contains("/")
+                || packName.contains("\\")) {
+            return TagPackImportResult.invalid("Pack name must be a file inside the tagpacks folder.");
+        }
+
+        if (!packName.endsWith(".json")) {
+            packName += ".json";
+        }
+
+        File dataFolder = MysticNameTagsPlugin.getInstance().getDataDirectory().toFile();
+        File packFolder = new File(dataFolder, "tagpacks");
+        packFolder.mkdirs();
+
+        Path root = packFolder.toPath().toAbsolutePath().normalize();
+        Path packPath = root.resolve(packName).normalize();
+        if (!packPath.startsWith(root)) {
+            return TagPackImportResult.invalid("Pack path must stay inside the tagpacks folder.");
+        }
+
+        File packFile = packPath.toFile();
+        if (!packFile.isFile()) {
+            return TagPackImportResult.invalid("Pack not found: " + packFile.getAbsolutePath());
+        }
+
+        try {
+            List<TagDefinition> pack = readTagList(packFile);
+            if (pack.isEmpty()) {
+                return TagPackImportResult.invalid("Pack contains no tags.");
+            }
+
+            List<TagDefinition> existing = readTagList(configFile);
+            Map<String, TagDefinition> merged = new LinkedHashMap<>();
+
+            if (mode != TagPackImportMode.REPLACE) {
+                for (TagDefinition def : existing) {
+                    String key = normalizeDefinitionId(def);
+                    if (key != null) {
+                        merged.put(key, def);
+                    }
+                }
+            }
+
+            int added = 0;
+            int replaced = 0;
+            int skipped = 0;
+
+            for (TagDefinition def : pack) {
+                String key = normalizeDefinitionId(def);
+                if (key == null) {
+                    skipped++;
+                    continue;
+                }
+
+                if (merged.containsKey(key)) {
+                    if (mode == TagPackImportMode.APPEND) {
+                        skipped++;
+                        continue;
+                    }
+                    replaced++;
+                } else {
+                    added++;
+                }
+
+                merged.put(key, def);
+            }
+
+            List<TagDefinition> out = new ArrayList<>(merged.values());
+            backupTagsFile();
+            saveConfig(out);
+            loadConfig();
+            clearCanUseCache();
+            refreshAllOnlineNameplates();
+
+            TagAuditLogger.log("tagpack_import", actor, null, null, null, "imported",
+                    Map.of(
+                            "pack", packName,
+                            "mode", mode.name().toLowerCase(Locale.ROOT),
+                            "added", added,
+                            "replaced", replaced,
+                            "skipped", skipped
+                    ));
+            publishEvent(MysticNameTagsEventType.TAG_PACK_IMPORTED,
+                    actor,
+                    null,
+                    null,
+                    null,
+                    "imported",
+                    Map.of(
+                            "pack", packName,
+                            "mode", mode.name().toLowerCase(Locale.ROOT),
+                            "added", String.valueOf(added),
+                            "replaced", String.valueOf(replaced),
+                            "skipped", String.valueOf(skipped)
+                    ));
+
+            return new TagPackImportResult(true, packFile, added, replaced, skipped, null);
+        } catch (Exception e) {
+            LOGGER.at(Level.WARNING).withCause(e)
+                    .log("[MysticNameTags] Failed to import tag pack " + packName);
+            return TagPackImportResult.invalid(e.getMessage() == null ? "Import failed." : e.getMessage());
+        }
+    }
+
+    /**
+     * Export the currently loaded tag definitions to a JSON pack inside the
+     * tagpacks folder. The written file is directly compatible with
+     * {@link #importTagPack(String, TagPackImportMode, String)}.
+     *
+     * @param requestedPack file name inside the tagpacks folder (".json" is
+     *                      appended when missing; path separators are rejected)
+     * @param category      optional category filter; when non-blank only tags
+     *                      of that category (case-insensitive) are exported
+     * @param actor         name recorded in the audit log and API event
+     */
+    @Nonnull
+    public TagPackExportResult exportTagPack(@Nonnull String requestedPack,
+                                             @Nullable String category,
+                                             @Nullable String actor) {
+        String packName = requestedPack.trim();
+        if (packName.isEmpty()
+                || packName.contains("..")
+                || packName.contains("/")
+                || packName.contains("\\")) {
+            return TagPackExportResult.invalid("Pack name must be a file inside the tagpacks folder.");
+        }
+
+        if (!packName.endsWith(".json")) {
+            packName += ".json";
+        }
+
+        File dataFolder = MysticNameTagsPlugin.getInstance().getDataDirectory().toFile();
+        File packFolder = new File(dataFolder, "tagpacks");
+        packFolder.mkdirs();
+
+        Path root = packFolder.toPath().toAbsolutePath().normalize();
+        Path packPath = root.resolve(packName).normalize();
+        if (!packPath.startsWith(root)) {
+            return TagPackExportResult.invalid("Pack path must stay inside the tagpacks folder.");
+        }
+
+        String categoryFilter = (category == null || category.isBlank()) ? null : category.trim();
+
+        List<TagDefinition> out = new ArrayList<>();
+        for (TagDefinition def : tagList) {
+            if (def == null) continue;
+            if (categoryFilter != null) {
+                String defCat = def.getCategory();
+                if (defCat == null || !defCat.equalsIgnoreCase(categoryFilter)) continue;
+            }
+            out.add(def);
+        }
+
+        if (out.isEmpty()) {
+            return TagPackExportResult.invalid(categoryFilter == null
+                    ? "There are no loaded tags to export."
+                    : "No tags found in category: " + categoryFilter);
+        }
+
+        File packFile = packPath.toFile();
+        try (OutputStreamWriter writer =
+                     new OutputStreamWriter(new FileOutputStream(packFile), StandardCharsets.UTF_8)) {
+            GSON.toJson(out, writer);
+        } catch (Exception e) {
+            LOGGER.at(Level.WARNING).withCause(e)
+                    .log("[MysticNameTags] Failed to export tag pack " + packName);
+            return TagPackExportResult.invalid(e.getMessage() == null ? "Export failed." : e.getMessage());
+        }
+
+        TagAuditLogger.log("tagpack_export", actor, null, null, null, "exported",
+                Map.of(
+                        "pack", packName,
+                        "category", categoryFilter == null ? "all" : categoryFilter,
+                        "count", out.size()
+                ));
+        publishEvent(MysticNameTagsEventType.TAG_PACK_EXPORTED,
+                actor,
+                null,
+                null,
+                null,
+                "exported",
+                Map.of(
+                        "pack", packName,
+                        "category", categoryFilter == null ? "all" : categoryFilter,
+                        "count", String.valueOf(out.size())
+                ));
+
+        return new TagPackExportResult(true, packFile, out.size(), null);
+    }
+
+    @Nonnull
+    private List<TagDefinition> readTagList(@Nonnull File file) throws Exception {
+        if (!file.exists()) {
+            return new ArrayList<>();
+        }
+        try (InputStreamReader reader =
+                     new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)) {
+            Type listType = new TypeToken<List<TagDefinition>>() {}.getType();
+            List<TagDefinition> list = GSON.fromJson(reader, listType);
+            return list == null ? new ArrayList<>() : new ArrayList<>(list);
+        }
+    }
+
+    private void backupTagsFile() throws Exception {
+        if (configFile == null || !configFile.exists()) {
+            return;
+        }
+        File backupFolder = new File(configFile.getParentFile(), "backups");
+        backupFolder.mkdirs();
+        File backup = new File(backupFolder, "tags-" + System.currentTimeMillis() + ".json");
+        Files.copy(configFile.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    @Nullable
+    private static String normalizeDefinitionId(@Nullable TagDefinition def) {
+        if (def == null || def.getId() == null || def.getId().isBlank()) {
+            return null;
+        }
+        return def.getId().trim().toLowerCase(Locale.ROOT);
+    }
+
+    @Nullable
+    private static String normalizeTagId(@Nullable String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        return id.trim().toLowerCase(Locale.ROOT);
+    }
+
+    @Nullable
+    private static String cleanNullable(@Nullable String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    @Nonnull
+    private static String cleanOrDefault(@Nullable String value,
+                                         @Nonnull String fallback) {
+        String cleaned = cleanNullable(value);
+        return cleaned == null ? fallback : cleaned;
+    }
+
+    @Nonnull
+    private static String prettifyIdForConfig(@Nonnull String id) {
+        String[] parts = id.replace(':', '_').replace('.', '_').replace('-', '_').split("_+");
+        StringBuilder out = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isBlank()) continue;
+            if (out.length() > 0) out.append(' ');
+            out.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) {
+                out.append(part.substring(1));
+            }
+        }
+        return out.length() == 0 ? id : out.toString();
+    }
+
+    @Nullable
+    private static String normalizeLoadoutName(@Nullable String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        String normalized = name.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.matches("[a-z0-9_-]{1,24}")) {
+            return null;
+        }
+        return normalized;
+    }
+
     // ============================================================
     // Admin helpers
     // ============================================================
@@ -1215,6 +2200,13 @@ public class TagManager {
     public boolean adminGiveTag(@Nonnull UUID uuid,
                                 @Nonnull String id,
                                 boolean equip) {
+        return adminGiveTag(uuid, id, equip, "admin");
+    }
+
+    public boolean adminGiveTag(@Nonnull UUID uuid,
+                                @Nonnull String id,
+                                boolean equip,
+                                @Nullable String actor) {
 
         TagDefinition def = getTag(id);
         if (def == null) {
@@ -1235,11 +2227,27 @@ public class TagManager {
 
         forceRefreshIfOnline(uuid);
 
+        TagAuditLogger.log("admin_give", actor, uuid, null, keyId, "granted",
+                Map.of("equip", equip));
+        publishEvent(MysticNameTagsEventType.PLAYER_TAG_GRANTED,
+                actor,
+                uuid,
+                null,
+                keyId,
+                "granted",
+                Map.of("equip", String.valueOf(equip)));
+
         return true;
     }
 
     public boolean adminRemoveTag(@Nonnull UUID uuid,
                                   @Nonnull String id) {
+        return adminRemoveTag(uuid, id, "admin");
+    }
+
+    public boolean adminRemoveTag(@Nonnull UUID uuid,
+                                  @Nonnull String id,
+                                  @Nullable String actor) {
 
         PlayerTagData data = getOrLoad(uuid);
         String keyId = id.toLowerCase(Locale.ROOT);
@@ -1248,6 +2256,9 @@ public class TagManager {
         if (!removed) {
             return false;
         }
+
+        data.removeFavorite(keyId);
+        data.getLoadouts().entrySet().removeIf(entry -> keyId.equalsIgnoreCase(entry.getValue()));
 
         if (keyId.equalsIgnoreCase(data.getEquipped())) {
             data.setEquipped(null);
@@ -1258,16 +2269,34 @@ public class TagManager {
 
         forceRefreshIfOnline(uuid);
 
+        TagAuditLogger.log("admin_remove", actor, uuid, null, keyId, "removed", null);
+        publishEvent(MysticNameTagsEventType.PLAYER_TAG_REMOVED,
+                actor,
+                uuid,
+                null,
+                keyId,
+                "removed",
+                null);
+
         return true;
     }
 
     public boolean adminResetTags(@Nonnull UUID uuid) {
+        return adminResetTags(uuid, "admin");
+    }
+
+    public boolean adminResetTags(@Nonnull UUID uuid, @Nullable String actor) {
         PlayerTagData data = getOrLoad(uuid);
-        if (data.getOwned().isEmpty() && data.getEquipped() == null) {
+        if (data.getOwned().isEmpty()
+                && data.getFavorites().isEmpty()
+                && data.getLoadouts().isEmpty()
+                && data.getEquipped() == null) {
             return false;
         }
 
         data.getOwned().clear();
+        data.getFavorites().clear();
+        data.getLoadouts().clear();
         data.setEquipped(null);
 
         savePlayerData(uuid);
@@ -1280,11 +2309,24 @@ public class TagManager {
 
         forceRefreshIfOnline(uuid);
 
+        TagAuditLogger.log("admin_reset", actor, uuid, null, null, "reset", null);
+        publishEvent(MysticNameTagsEventType.PLAYER_TAGS_RESET,
+                actor,
+                uuid,
+                null,
+                null,
+                "reset",
+                null);
+
         return true;
     }
 
     public boolean adminResetTagsAndPermissions(@Nonnull UUID uuid) {
-        boolean changed = adminResetTags(uuid);
+        return adminResetTagsAndPermissions(uuid, "admin");
+    }
+
+    public boolean adminResetTagsAndPermissions(@Nonnull UUID uuid, @Nullable String actor) {
+        boolean changed = adminResetTags(uuid, actor);
         if (!changed) {
             return false;
         }
@@ -1304,6 +2346,8 @@ public class TagManager {
             playerTagStore.delete(uuid);
         } catch (Throwable ignored) {
         }
+
+        TagAuditLogger.log("admin_reset_permissions", actor, uuid, null, null, "reset", null);
 
         return true;
     }
@@ -1498,13 +2542,14 @@ public class TagManager {
         NameplateTextResolver.ResolvedNameplateText resolved = NameplateTextResolver.resolve(ctx);
 
         String resolvedColored = resolved.getColored();
+        String resolvedGlyphColored = resolved.getGlyphColored();
         String plainFallback = resolved.getPlain();
 
         boolean glyphEnabled = settings.isExperimentalGlyphNameplatesEnabled();
-        String compareKey = glyphEnabled ? resolvedColored : plainFallback;
+        String compareKey = glyphEnabled ? resolvedGlyphColored : plainFallback;
 
         String finalBaseName = baseName;
-        String finalResolvedColored = resolvedColored;
+        String finalResolvedColored = glyphEnabled ? resolvedGlyphColored : resolvedColored;
         String finalPlainFallback = plainFallback;
 
         world.execute(() -> forceApplyNameplateNow(

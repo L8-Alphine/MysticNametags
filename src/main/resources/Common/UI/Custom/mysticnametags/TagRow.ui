@@ -1,0 +1,64 @@
+// MysticNameTags - Tag list row template
+// Appended dynamically into #TagList by MysticNameTagsTagsUI:
+//   cmd.append("#TagList", "mysticnametags/TagRow.ui")
+// Addressed by index: "#TagList[i] #Name.Text" etc.
+// Whole row is a Button; Activating is bound on "#TagList[i]".
+
+$M = "MysticCommon.ui";
+
+Button {
+  Anchor: (Height: 52, Bottom: 8);
+  Background: (Color: #161b22(0.92));
+  LayoutMode: Left;
+  Padding: (Left: 8, Right: 10, Top: 8, Bottom: 8);
+  Style: (
+    Hovered: (Background: #1c2430(0.95)),
+    Pressed: (Background: #10151c(0.95))
+  );
+
+  // State accent bar; OutlineColor set at runtime to the row state color.
+  Group #Accent {
+    Anchor: (Width: 4, Height: 34, Vertical: 0, Right: 10);
+    OutlineColor: #3a3a3a;
+    OutlineSize: 2;
+  }
+
+  Label #Name {
+    Style: $M.@RowNameStyle;
+    Text: "";
+    FlexWeight: 1;
+    Anchor: (Vertical: 0);
+  }
+
+  Group #CategoryPill {
+    Anchor: (Width: 92, Height: 20, Vertical: 0, Left: 8);
+    Background: (Color: #0d1117(0.9));
+    OutlineColor: #3d4450;
+    OutlineSize: 1;
+    LayoutMode: Middle;
+
+    Label #Category {
+      Text: "";
+      Style: $M.@PillLabelStyle;
+    }
+  }
+
+  Group #StatePill {
+    Anchor: (Width: 72, Height: 20, Vertical: 0, Left: 6);
+    Background: (Color: #0d1117(0.9));
+    OutlineColor: #58a6ff;
+    OutlineSize: 1;
+    LayoutMode: Middle;
+
+    Label #State {
+      Text: "";
+      Style: $M.@PillLabelStyle;
+    }
+  }
+
+  Label #Price {
+    Text: "";
+    Anchor: (Width: 86, Height: 20, Vertical: 0, Left: 8);
+    Style: $M.@PriceStyle;
+  }
+}

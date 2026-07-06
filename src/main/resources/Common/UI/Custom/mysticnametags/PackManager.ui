@@ -1,0 +1,213 @@
+// MysticNameTags - Tag Pack Manager (import/export) UI
+// Controller: MysticNameTagsPackManagerUI
+//
+// Pack rows are stamped dynamically from PackRow.ui into #PackList.
+
+$C = "../Common.ui";
+$M = "MysticCommon.ui";
+
+$C.@PageOverlay {
+  LayoutMode: Top;
+
+  SceneBlur #SceneBlur1 {}
+  SceneBlur #SceneBlur2 {}
+
+  Group {
+    LayoutMode: Middle;
+    FlexWeight: 1;
+
+    $M.@Window #PackManagerRoot {
+      Anchor: (Width: 1120, Height: 780);
+
+      $M.@TitleBanner {}
+
+      Group {
+        FlexWeight: 1;
+        LayoutMode: Left;
+
+        // ==================== PACK LIST ====================
+        $M.@Card {
+          Anchor: (Width: 520, Right: 20);
+
+          $M.@Divider {}
+
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 26, Bottom: 8);
+
+            $M.@SectionHeader #PackListTitle {
+              Text: "TAG PACKS";
+              FlexWeight: 1;
+              Anchor: (Height: 18, Vertical: 0);
+            }
+
+            $C.@SmallSecondaryTextButton #RefreshPacksButton {
+              Text: "REFRESH";
+              Anchor: (Width: 96, Height: 26, Vertical: 0);
+            }
+          }
+
+          Label #PackListEmpty {
+            Text: "No packs found in the tagpacks folder.";
+            Style: $M.@EmptyStyle;
+            Anchor: (Height: 30, Bottom: 8);
+            Visible: false;
+          }
+
+          Group #PackList {
+            FlexWeight: 1;
+            LayoutMode: TopScrolling;
+            ScrollbarStyle: $C.@DefaultScrollbarStyle;
+          }
+
+          Label #PackFolderHint {
+            Text: "Folder: plugins/MysticNameTags/tagpacks";
+            Style: $M.@HintStyle;
+            Anchor: (Height: 18);
+          }
+        }
+
+        // ==================== ACTIONS ====================
+        Group {
+          FlexWeight: 1;
+          LayoutMode: Top;
+
+          // ---- Import card ----
+          $M.@Card {
+            Anchor: (Height: 216, Bottom: 14);
+
+            $M.@Divider {}
+
+            $M.@SectionHeader #ImportSectionTitle { Text: "IMPORT"; }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 22, Bottom: 8);
+              Label #SelectedPackPrefix { Text: "Pack:"; Style: $M.@StatLabelStyle; Anchor: (Width: 80, Vertical: 0); }
+              Label #SelectedPackLabel { Text: "(none selected)"; Style: $M.@StatValueStyle; FlexWeight: 1; }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 30, Bottom: 10);
+
+              Label #ModePrefixLabel { Text: "Mode:"; Style: $M.@StatLabelStyle; Anchor: (Width: 80, Vertical: 0); }
+              Label #ModeValueLabel { Text: "UPSERT"; Style: $M.@StatValueStyle; FlexWeight: 1; Anchor: (Vertical: 0); }
+
+              $C.@SmallSecondaryTextButton #PrevModeButton {
+                Text: "<";
+                Anchor: (Width: 34, Height: 16, Vertical: 0);
+              }
+
+              Group { Anchor: (Width: 4); }
+
+              $C.@SmallSecondaryTextButton #NextModeButton {
+                Text: ">";
+                Anchor: (Width: 34, Height: 16, Vertical: 0);
+              }
+            }
+
+            Label #ModeHint {
+              Text: "";
+              Style: $M.@HintStyle;
+              Anchor: (Height: 30, Bottom: 8);
+            }
+
+            Group {
+              LayoutMode: Middle;
+              Anchor: (Height: 40);
+
+              TextButton #ImportButton {
+                Text: "IMPORT SELECTED PACK";
+                Anchor: (Width: 280, Height: 36);
+                Style: $M.@PrimaryBtnStyle;
+              }
+            }
+          }
+
+          // ---- Export card ----
+          $M.@Card {
+            Anchor: (Height: 216, Bottom: 14);
+
+            $M.@Divider {}
+
+            $M.@SectionHeader #ExportSectionTitle { Text: "EXPORT"; }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 38, Bottom: 10);
+
+              Label #ExportNamePrefix { Text: "File:"; Style: $M.@StatLabelStyle; Anchor: (Width: 80, Vertical: 0); }
+
+              $C.@TextField #ExportNameBox {
+                FlexWeight: 1;
+                Anchor: (Height: 38);
+                PlaceholderText: "export.json";
+              }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 30, Bottom: 10);
+
+              Label #ExportCategoryPrefix { Text: "Category:"; Style: $M.@StatLabelStyle; Anchor: (Width: 80, Vertical: 0); }
+              Label #ExportCategoryValue { Text: "All"; Style: $M.@StatValueStyle; FlexWeight: 1; Anchor: (Vertical: 0); }
+
+              $C.@SmallSecondaryTextButton #PrevExportCategoryButton {
+                Text: "<";
+                Anchor: (Width: 34, Height: 16, Vertical: 0);
+              }
+
+              Group { Anchor: (Width: 4); }
+
+              $C.@SmallSecondaryTextButton #NextExportCategoryButton {
+                Text: ">";
+                Anchor: (Width: 34, Height: 16, Vertical: 0);
+              }
+            }
+
+            Group {
+              LayoutMode: Middle;
+              Anchor: (Height: 40);
+
+              TextButton #ExportButton {
+                Text: "EXPORT LOADED TAGS";
+                Anchor: (Width: 280, Height: 36);
+                Style: $M.@PrimaryBtnStyle;
+              }
+            }
+          }
+
+          // ---- Results card ----
+          $M.@Card {
+            FlexWeight: 1;
+
+            $M.@Divider {}
+
+            $M.@SectionHeader #ResultsTitle { Text: "RESULTS"; }
+
+            Group {
+              FlexWeight: 1;
+              LayoutMode: TopScrolling;
+              ScrollbarStyle: $C.@DefaultScrollbarStyle;
+
+              Group {
+                LayoutMode: Top;
+
+                Label #ResultsText {
+                  Text: "";
+                  Style: $M.@BodyTextStyle;
+                  FlexWeight: 1;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      Group { Anchor: (Height: 10); }
+
+      $M.@PageFooter {}
+    }
+  }
+}

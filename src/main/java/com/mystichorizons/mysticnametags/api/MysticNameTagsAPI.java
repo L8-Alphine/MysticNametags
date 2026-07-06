@@ -7,8 +7,11 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeCompat;
 import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventBus;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventListener;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.tags.TagManager.TagPurchaseResult;
@@ -55,6 +58,31 @@ public final class MysticNameTagsAPI {
 
     private static IntegrationManager integrations() {
         return mgr().getIntegrations();
+    }
+
+    // ---------------------------------------------------------------------
+    // Public event hooks
+    // ---------------------------------------------------------------------
+
+    /**
+     * Registers a listener for MysticNameTags lifecycle events.
+     *
+     * The returned handle unregisters the listener when closed.
+     */
+    @Nonnull
+    public static AutoCloseable listen(@Nonnull MysticNameTagsEventListener listener) {
+        return MysticNameTagsEventBus.register(listener);
+    }
+
+    /**
+     * Unregisters a listener previously registered with {@link #listen(MysticNameTagsEventListener)}.
+     */
+    public static boolean unlisten(@Nonnull MysticNameTagsEventListener listener) {
+        return MysticNameTagsEventBus.unregister(listener);
+    }
+
+    public static int getEventListenerCount() {
+        return MysticNameTagsEventBus.listenerCount();
     }
 
     // ---------------------------------------------------------------------
@@ -144,6 +172,30 @@ public final class MysticNameTagsAPI {
     public static boolean ownsTag(@Nullable UUID uuid, @Nullable String id) {
         if (uuid == null || id == null) return false;
         return mgr().ownsTag(uuid, id);
+    }
+
+    /**
+     * Creates or updates a simple tag definition in tags.json.
+     * Intended for admin tools and companion plugins that need a stable write API.
+     */
+    @Nonnull
+    public static TagManager.TagEditResult createOrUpdateSimpleTag(@Nullable String id,
+                                                                   @Nullable String display,
+                                                                   @Nullable String description,
+                                                                   @Nullable String category,
+                                                                   @Nullable String price,
+                                                                   @Nullable String permission,
+                                                                   @Nullable String actor) {
+        return mgr().upsertSimpleTag(id, display, description, category, price, permission, actor);
+    }
+
+    /**
+     * Deletes a tag definition from tags.json and removes stale ownership references from loaded player data.
+     */
+    @Nonnull
+    public static TagManager.TagEditResult deleteTag(@Nullable String id,
+                                                    @Nullable String actor) {
+        return mgr().deleteTagDefinition(id, actor);
     }
 
     // ---------------------------------------------------------------------
@@ -348,6 +400,26 @@ public final class MysticNameTagsAPI {
     @Nullable
     public static Integer getRpgLevelingStat(@Nullable UUID uuid, @Nullable String key) {
         if (uuid == null || key == null || !key.trim().startsWith("rpgleveling.")) {
+            return null;
+        }
+        return integrations().getStatValue(uuid, key);
+    }
+
+    /**
+     * Returns true when the MMOSkillTree public API is present.
+     */
+    public static boolean isMMOSkillTreeAvailable() {
+        return MMOSkillTreeCompat.isAvailable();
+    }
+
+    /**
+     * Reads an MMOSkillTree stat key such as {@code mmoskilltree.total_level},
+     * {@code mmoskilltree.level.mining}, {@code mmoskilltree.xp.mining}, or
+     * {@code mmoskilltree.achievement.first_steps}.
+     */
+    @Nullable
+    public static Integer getMMOSkillTreeStat(@Nullable UUID uuid, @Nullable String key) {
+        if (uuid == null || key == null || !key.trim().startsWith("mmoskilltree.")) {
             return null;
         }
         return integrations().getStatValue(uuid, key);

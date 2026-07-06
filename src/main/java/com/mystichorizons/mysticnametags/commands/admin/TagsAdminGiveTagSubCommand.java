@@ -52,7 +52,7 @@ public class TagsAdminGiveTagSubCommand extends AbstractTagsAdminSubCommand {
 
         UUID targetUuid = targetRef.getUuid();
 
-        boolean success = TagManager.get().adminGiveTag(targetUuid, tagId, true);
+        boolean success = TagManager.get().adminGiveTag(targetUuid, tagId, true, actorName(context));
         if (!success) {
             context.sender().sendMessage(colored(lang.tr("cmd.admin.givetag.unknown_tag", Map.of(
                     "tagId", tagId

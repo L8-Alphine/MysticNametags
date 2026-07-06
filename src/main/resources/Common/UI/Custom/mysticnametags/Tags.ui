@@ -1,147 +1,12 @@
-// MysticNameTags - Full upgraded Tags UI pass
+// MysticNameTags - Tag Selection UI (v2 template redesign)
 // Controller: MysticNameTagsTagsUI
+//
+// Tag rows are stamped dynamically from TagRow.ui into #TagList
+// (cmd.clear + cmd.append, addressed as "#TagList[i] ...").
 
 $C = "../Common.ui";
+$M = "MysticCommon.ui";
 
-// ==================== STYLES ====================
-@TitleStyle = LabelStyle(
-  FontSize: 18,
-  RenderUppercase: true,
-  RenderBold: true,
-  TextColor: #f0b429,
-  HorizontalAlignment: Center,
-  VerticalAlignment: Center
-);
-
-@SectionTitle = LabelStyle(
-  FontSize: 12,
-  RenderBold: true,
-  RenderUppercase: true,
-  TextColor: #b0b8c0
-);
-
-@StatLabel = LabelStyle(
-  FontSize: 11,
-  TextColor: #8b949e,
-  VerticalAlignment: Center
-);
-
-@StatValue = LabelStyle(
-  FontSize: 12,
-  TextColor: #e6edf3,
-  RenderBold: true,
-  VerticalAlignment: Center
-);
-
-@TagNameStyle = LabelStyle(
-  FontSize: 13,
-  TextColor: #e6edf3,
-  RenderBold: true,
-  VerticalAlignment: Center
-);
-
-@DetailNameStyle = LabelStyle(
-  FontSize: 22,
-  RenderBold: true,
-  RenderUppercase: true,
-  TextColor: #41f1ff
-);
-
-@DetailDescStyle = LabelStyle(
-  FontSize: 12,
-  TextColor: #c9d1d9,
-  Wrap: true
-);
-
-@DimStyle = LabelStyle(
-  FontSize: 10,
-  TextColor: #6e7681
-);
-
-@EmptyStyle = LabelStyle(
-  FontSize: 14,
-  TextColor: #6e7681,
-  HorizontalAlignment: Center,
-  VerticalAlignment: Center
-);
-
-@BulletTextStyle = LabelStyle(
-  FontSize: 12,
-  TextColor: #cbd5f5,
-  Wrap: true
-);
-
-@EntryBtnStyle = TextButtonStyle(
-  Default: (
-    LabelStyle: (FontSize: 1, TextColor: #00000000)
-  ),
-  Hovered: (
-    Background: (Color: #ffffff(0.05)),
-    LabelStyle: (FontSize: 1, TextColor: #00000000)
-  ),
-  Pressed: (
-    Background: (Color: #ffffff(0.08)),
-    LabelStyle: (FontSize: 1, TextColor: #00000000)
-  )
-);
-
-@ConfirmBtnStyle = TextButtonStyle(
-  Default: (
-    Background: (Color: #1f6f43),
-    LabelStyle: (
-      FontSize: 12,
-      TextColor: #d9fff0,
-      RenderBold: true,
-      RenderUppercase: true,
-      HorizontalAlignment: Center,
-      VerticalAlignment: Center
-    )
-  ),
-  Hovered: (
-    Background: (Color: #278a53),
-    LabelStyle: (
-      FontSize: 12,
-      TextColor: #ffffff,
-      RenderBold: true,
-      RenderUppercase: true,
-      HorizontalAlignment: Center,
-      VerticalAlignment: Center
-    )
-  ),
-  Pressed: (
-    Background: (Color: #175735),
-    LabelStyle: (
-      FontSize: 12,
-      TextColor: #d9fff0,
-      RenderBold: true,
-      RenderUppercase: true,
-      HorizontalAlignment: Center,
-      VerticalAlignment: Center
-    )
-  ),
-  Disabled: (
-    Background: (Color: #2a2a2a),
-    LabelStyle: (
-      FontSize: 12,
-      TextColor: #6e7681,
-      RenderBold: true,
-      RenderUppercase: true,
-      HorizontalAlignment: Center,
-      VerticalAlignment: Center
-    )
-  )
-);
-
-@SimplePillLabel = LabelStyle(
-  FontSize: 9,
-  RenderUppercase: true,
-  RenderBold: true,
-  TextColor: #ffffff,
-  HorizontalAlignment: Center,
-  VerticalAlignment: Center
-);
-
-// ==================== PAGE ====================
 $C.@PageOverlay {
   LayoutMode: Top;
 
@@ -152,106 +17,54 @@ $C.@PageOverlay {
     LayoutMode: Middle;
     FlexWeight: 1;
 
-    Group #MainContent {
+    $M.@Window #MainContent {
       Anchor: (Width: 1380, Height: 950);
-      Background: (Color: #101010(0.78));
-      OutlineColor: #2f2f2f;
-      OutlineSize: 3;
-      LayoutMode: Top;
-      Padding: (Top: 18, Bottom: 18, Left: 20, Right: 20);
 
-      Group {
-        Anchor: (Height: 52, Bottom: 14);
-        LayoutMode: Middle;
-
-        Group {
-          Anchor: (Width: 260, Height: 34);
-          Background: (TexturePath: "../Common/PopupTitle.png", HorizontalBorder: 50, VerticalBorder: 0);
-          LayoutMode: Center;
-          Padding: (Top: 4);
-
-          Label #TitleLabel {
-            Style: @TitleStyle;
-            Text: "TAG SELECTION";
-          }
-        }
-      }
+      $M.@TitleBanner {}
 
       Group {
         FlexWeight: 1;
         LayoutMode: Left;
 
+        // ==================== LEFT COLUMN ====================
         Group #LeftMainPanel {
           Anchor: (Width: 470, Right: 28);
           LayoutMode: Top;
 
-          Group {
+          // ---- Player + filters card ----
+          $M.@Card {
             Anchor: (Height: 278, Bottom: 18);
-            Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
-            Padding: 12;
-            LayoutMode: Top;
 
-            Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+            $M.@Divider {}
 
-            Label #PlayerSectionTitle {
-              Text: "PLAYER";
-              Style: @SectionTitle;
-              Anchor: (Height: 18, Bottom: 8);
+            $M.@SectionHeader #PlayerSectionTitle { Text: "PLAYER"; }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 20, Bottom: 6);
+              Label #PlayerLabel { Text: "Player:"; Style: $M.@StatLabelStyle; Anchor: (Width: 92, Vertical: 0); }
+              Label #PlayerNameLabel { Text: "Player"; Style: $M.@StatValueStyle; FlexWeight: 1; }
             }
 
             Group {
               LayoutMode: Left;
               Anchor: (Height: 20, Bottom: 6);
-              Label #PlayerLabel { Text: "Player:"; Style: @StatLabel; Anchor: (Width: 92, Vertical: 0); }
-              Label #PlayerNameLabel { Text: "Player"; Style: @StatValue; FlexWeight: 1; }
-            }
-
-            Group {
-              LayoutMode: Left;
-              Anchor: (Height: 20, Bottom: 6);
-              Label #BalancePrefixLabel { Text: "Balance:"; Style: @StatLabel; Anchor: (Width: 92, Vertical: 0); }
-              Label #BalanceLabel { Text: "Loading..."; Style: @StatValue; FlexWeight: 1; }
+              Label #BalancePrefixLabel { Text: "Balance:"; Style: $M.@StatLabelStyle; Anchor: (Width: 92, Vertical: 0); }
+              Label #BalanceLabel { Text: "Loading..."; Style: $M.@StatValueStyle; FlexWeight: 1; }
             }
 
             Group {
               LayoutMode: Left;
               Anchor: (Height: 20, Bottom: 12);
-              Label #CurrentTagPrefixLabel { Text: "Current Tag:"; Style: @StatLabel; Anchor: (Width: 92, Vertical: 0); }
-              Label #CurrentNameplateLabel { Text: "(loading...)"; Style: @StatValue; FlexWeight: 1; }
+              Label #CurrentTagPrefixLabel { Text: "Current Tag:"; Style: $M.@StatLabelStyle; Anchor: (Width: 92, Vertical: 0); }
+              Label #CurrentNameplateLabel { Text: "(loading...)"; Style: $M.@StatValueStyle; FlexWeight: 1; }
             }
 
-            Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+            $M.@Divider {}
 
-            Label #FiltersSectionTitle {
-              Text: "FILTERS";
-              Style: @SectionTitle;
-              Anchor: (Height: 18, Bottom: 8);
-            }
+            $M.@SectionHeader #FiltersSectionTitle { Text: "FILTERS"; }
 
-            Group {
-              LayoutMode: Left;
-              Anchor: (Height: 38, Bottom: 10);
-
-              $C.@TextField #TagSearchBox {
-                FlexWeight: 1;
-                Anchor: (Height: 38);
-                PlaceholderText: "Search tags...";
-              }
-
-              Group { Anchor: (Width: 6); }
-
-              $C.@SmallSecondaryTextButton #ApplyFilterButton {
-                Text: "APPLY";
-                Anchor: (Width: 86, Height: 32);
-              }
-
-              Group { Anchor: (Width: 4); }
-
-              $C.@SmallSecondaryTextButton #ClearFilterButton {
-                Text: "CLEAR";
-                Anchor: (Width: 86, Height: 32);
-              }
-            }
+            $M.@SearchBar {}
 
             Group {
               LayoutMode: Left;
@@ -259,13 +72,13 @@ $C.@PageOverlay {
 
               Label #CategoryPrefixLabel {
                 Text: "Category:";
-                Style: @StatLabel;
+                Style: $M.@StatLabelStyle;
                 Anchor: (Width: 76, Vertical: 0);
               }
 
               Label #CategoryValueLabel {
                 Text: "All";
-                Style: @StatValue;
+                Style: $M.@StatValueStyle;
                 FlexWeight: 1;
                 Anchor: (Vertical: 0);
               }
@@ -284,170 +97,40 @@ $C.@PageOverlay {
             }
           }
 
-          Group {
+          // ---- Tag list card ----
+          $M.@Card {
             FlexWeight: 1;
-            Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
-            Padding: 12;
-            LayoutMode: Top;
 
-            Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+            $M.@Divider {}
 
-            Label #AvailableTagsTitle {
-              Text: "AVAILABLE TAGS";
-              Style: @SectionTitle;
-              Anchor: (Height: 18, Bottom: 8);
+            $M.@SectionHeader #AvailableTagsTitle { Text: "AVAILABLE TAGS"; }
+
+            Label #TagListEmpty {
+              Text: "No tags match your filters.";
+              Style: $M.@EmptyStyle;
+              Anchor: (Height: 30, Bottom: 8);
+              Visible: false;
             }
 
-            Group {
+            Group #TagList {
               FlexWeight: 1;
               LayoutMode: TopScrolling;
               ScrollbarStyle: $C.@DefaultScrollbarStyle;
-
-              Group {
-                LayoutMode: Top;
-
-                Group #TagRow0Card {
-                  Anchor: (Height: 48, Bottom: 8);
-                  Background: (Color: #1b1b1b);
-                  OutlineColor: #555555;
-                  OutlineSize: 2;
-                  Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow0Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow0CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow0Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow0StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow0State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow0Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow0Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow1Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow1Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow1CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow1Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow1StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow1State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow1Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow1Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow2Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow2Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow2CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow2Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow2StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow2State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow2Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow2Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow3Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow3Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow3CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow3Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow3StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow3State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow3Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow3Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow4Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow4Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow4CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow4Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow4StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow4State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow4Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow4Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow5Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow5Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow5CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow5Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow5StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow5State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow5Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow5Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow6Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow6Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow6CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow6Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow6StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow6State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow6Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow6Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow7Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow7Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow7CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow7Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow7StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow7State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow7Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow7Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow8Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow8Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow8CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow8Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow8StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow8State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow8Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow8Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-
-                Group #TagRow9Card { Anchor: (Height: 48, Bottom: 8); Background: (Color: #1b1b1b); OutlineColor: #555555; OutlineSize: 2; Visible: false;
-                  Group { Anchor: (Full: 0); LayoutMode: Left; Padding: (Left: 10, Right: 10, Top: 7, Bottom: 7);
-                    Label #TagRow9Name { Style: @TagNameStyle; Text: ""; FlexWeight: 1; Anchor: (Vertical: 0); }
-                    Group #TagRow9CategoryPill { Anchor: (Width: 86, Height: 18, Vertical: 0, Left: 8); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow9Category { Text: "Category"; Style: @SimplePillLabel; } }
-                    Group #TagRow9StateBadge { Anchor: (Width: 62, Height: 18, Vertical: 0, Left: 6); Background: (TexturePath: "../Common/DropdownBox.png"); LayoutMode: Middle; Label #TagRow9State { Text: ""; Style: @SimplePillLabel; } }
-                    Label #TagRow9Price { Text: ""; Anchor: (Width: 90, Height: 18, Vertical: 0, Left: 8); Style: (FontSize: 11, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center); }
-                  }
-                  TextButton #TagRow9Button { Text: ""; Anchor: (Full: 0); Style: @EntryBtnStyle; }
-                }
-              }
             }
 
             Group { Anchor: (Height: 12); }
 
-            Group {
-              LayoutMode: Left;
-              Anchor: (Height: 32);
-
-              $C.@SmallSecondaryTextButton #PrevPageButton {
-                Text: "PREV";
-                Anchor: (Width: 96, Height: 32);
-              }
-
-              Group { FlexWeight: 1; }
-
-              Label #PageLabel {
-                Text: "Page 1/1";
-                Anchor: (Width: 130, Height: 22);
-                Style: (FontSize: 12, TextColor: #96a9be, HorizontalAlignment: Center, VerticalAlignment: Center);
-              }
-
-              Group { FlexWeight: 1; }
-
-              $C.@SmallSecondaryTextButton #NextPageButton {
-                Text: "NEXT";
-                Anchor: (Width: 96, Height: 32);
-              }
-            }
+            $M.@PagerFooter {}
           }
         }
 
+        // ==================== DETAIL PANEL ====================
         Group #DetailPanel {
           FlexWeight: 1;
           LayoutMode: Top;
 
           Label #DetailEmpty {
-            Style: @EmptyStyle;
+            Style: $M.@EmptyStyle;
             Text: "Select a tag to view details";
             FlexWeight: 1;
             Visible: true;
@@ -458,13 +141,11 @@ $C.@PageOverlay {
             FlexWeight: 1;
             Visible: false;
 
-            Group {
+            $M.@Card {
               Anchor: (Height: 420, Bottom: 18);
-              Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
               Padding: (Full: 20);
-              LayoutMode: Top;
 
-              Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+              $M.@Divider {}
 
               Group {
                 LayoutMode: Left;
@@ -481,13 +162,13 @@ $C.@PageOverlay {
                   Anchor: (Vertical: 0);
 
                   Label #DetailName {
-                    Style: @DetailNameStyle;
+                    Style: (FontSize: 22, RenderBold: true, RenderUppercase: true, TextColor: #41f1ff);
                     Text: "";
                     Anchor: (Height: 28, Bottom: 2);
                   }
 
                   Label #DetailLore {
-                    Style: @DimStyle;
+                    Style: (FontSize: 10, TextColor: #6e7681);
                     Text: "";
                     Anchor: (Height: 18);
                   }
@@ -499,70 +180,62 @@ $C.@PageOverlay {
                 }
               }
 
-             Group {
-               Anchor: (Height: 60, Bottom: 16);
-               LayoutMode: Top;
+              Group {
+                Anchor: (Height: 60, Bottom: 16);
+                LayoutMode: Top;
 
-               Group {
-                 Anchor: (Full: 1);
-                 LayoutMode: TopScrolling;
-                 ScrollbarStyle: $C.@DefaultScrollbarStyle;
+                Group {
+                  Anchor: (Full: 1);
+                  LayoutMode: TopScrolling;
+                  ScrollbarStyle: $C.@DefaultScrollbarStyle;
 
-                 Group {
-                   LayoutMode: Top;
+                  Group {
+                    LayoutMode: Top;
 
-                   Label #DetailDesc {
-                     Style: @DetailDescStyle;
-                     Text: "";
-                     FlexWeight: 1;
-                   }
-                 }
-               }
-             }
+                    Label #DetailDesc {
+                      Style: (FontSize: 12, TextColor: #c9d1d9, Wrap: true);
+                      Text: "";
+                      FlexWeight: 1;
+                    }
+                  }
+                }
+              }
 
-              Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+              $M.@Divider {}
 
-              Label #DetailSectionTitle {
-                Text: "DETAILS";
-                Style: @SectionTitle;
-                Anchor: (Height: 18, Bottom: 10);
+              $M.@SectionHeader #DetailSectionTitle { Text: "DETAILS"; Anchor: (Height: 18, Bottom: 10); }
+
+              Group {
+                LayoutMode: Left;
+                Anchor: (Height: 24, Bottom: 6);
+                Label #DetailCategoryPrefix { Text: "Category"; Style: $M.@StatLabelStyle; Anchor: (Width: 90, Vertical: 0); }
+                Label #DetailCategory { Text: "None"; Style: $M.@StatValueStyle; FlexWeight: 1; }
               }
 
               Group {
                 LayoutMode: Left;
                 Anchor: (Height: 24, Bottom: 6);
-                Label #DetailCategoryPrefix { Text: "Category"; Style: @StatLabel; Anchor: (Width: 90, Vertical: 0); }
-                Label #DetailCategory { Text: "None"; Style: @StatValue; FlexWeight: 1; }
+                Label #DetailPricePrefix { Text: "Price"; Style: $M.@StatLabelStyle; Anchor: (Width: 90, Vertical: 0); }
+                Label #DetailPrice { Text: "Free"; Style: $M.@StatValueStyle; FlexWeight: 1; }
               }
 
               Group {
                 LayoutMode: Left;
                 Anchor: (Height: 24, Bottom: 6);
-                Label #DetailPricePrefix { Text: "Price"; Style: @StatLabel; Anchor: (Width: 90, Vertical: 0); }
-                Label #DetailPrice { Text: "Free"; Style: @StatValue; FlexWeight: 1; }
-              }
-
-              Group {
-                LayoutMode: Left;
-                Anchor: (Height: 24, Bottom: 6);
-                Label #DetailStatusPrefix { Text: "Status"; Style: @StatLabel; Anchor: (Width: 90, Vertical: 0); }
-                Label #DetailStatus { Text: "Available"; Style: @StatValue; FlexWeight: 1; }
+                Label #DetailStatusPrefix { Text: "Status"; Style: $M.@StatLabelStyle; Anchor: (Width: 90, Vertical: 0); }
+                Label #DetailStatus { Text: "Available"; Style: $M.@StatValueStyle; FlexWeight: 1; }
               }
 
               Group {
                 LayoutMode: Left;
                 Anchor: (Height: 24, Bottom: 10);
-                Label #DetailPreviewPrefix { Text: "Preview"; Style: @StatLabel; Anchor: (Width: 90, Vertical: 0); }
-                Label #DetailPreview { Text: ""; Style: @StatValue; FlexWeight: 1; }
+                Label #DetailPreviewPrefix { Text: "Preview"; Style: $M.@StatLabelStyle; Anchor: (Width: 90, Vertical: 0); }
+                Label #DetailPreview { Text: ""; Style: $M.@StatValueStyle; FlexWeight: 1; }
               }
 
-              Group { Anchor: (Height: 8, Bottom: 8); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+              $M.@Divider {}
 
-              Label #ProgressSectionTitle {
-                Text: "PROGRESS";
-                Style: @SectionTitle;
-                Anchor: (Height: 18, Bottom: 8);
-              }
+              $M.@SectionHeader #ProgressSectionTitle { Text: "PROGRESS"; }
 
               $C.@ProgressBar #DetailProgressBar {
                 @Anchor = (Bottom: 6, Left: 0, Right: 40);
@@ -588,13 +261,9 @@ $C.@PageOverlay {
                 LayoutMode: Top;
                 Visible: false;
 
-                Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+                $M.@Divider {}
 
-                Label #RequirementsTitle {
-                  Text: "REQUIREMENTS";
-                  Style: @SectionTitle;
-                  Anchor: (Height: 18, Bottom: 8);
-                }
+                $M.@SectionHeader #RequirementsTitle { Text: "REQUIREMENTS"; }
 
                 Group {
                   FlexWeight: 1;
@@ -606,7 +275,7 @@ $C.@PageOverlay {
 
                     Label #RequirementsText {
                       Text: "";
-                      Style: @BulletTextStyle;
+                      Style: $M.@BodyTextStyle;
                       FlexWeight: 1;
                     }
                   }
@@ -621,7 +290,7 @@ $C.@PageOverlay {
                 LayoutMode: Top;
                 Visible: false;
 
-                Group { Anchor: (Height: 8, Bottom: 10); Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png"); }
+                $M.@Divider {}
 
                 Group {
                   LayoutMode: Left;
@@ -629,7 +298,7 @@ $C.@PageOverlay {
 
                   Label #HowItWorksTitle {
                     Text: "HOW IT WORKS";
-                    Style: @SectionTitle;
+                    Style: $M.@SectionTitleStyle;
                     FlexWeight: 1;
                   }
 
@@ -649,7 +318,7 @@ $C.@PageOverlay {
 
                     Label #HowItWorksText {
                       Text: "";
-                      Style: @BulletTextStyle;
+                      Style: $M.@BodyTextStyle;
                       FlexWeight: 1;
                     }
                   }
@@ -673,32 +342,16 @@ $C.@PageOverlay {
               TextButton #SelectBtn {
                 Text: "SELECT TAG";
                 Anchor: (Width: 250, Height: 42);
-                Style: @ConfirmBtnStyle;
-              }
-            }
-
-            Group {
-              LayoutMode: Middle;
-              Anchor: (Height: 30);
-
-              $C.@SmallSecondaryTextButton #BottomCloseButton {
-                Text: "CLOSE";
-                Anchor: (Width: 120, Height: 32);
+                Style: $M.@PrimaryBtnStyle;
               }
             }
           }
         }
       }
 
-      Group {
-        Anchor: (Height: 28, Left: 0, Right: 0);
-        LayoutMode: Middle;
+      Group { Anchor: (Height: 10); }
 
-        Label #FooterCloseHint {
-          Style: (FontSize: 11, TextColor: #6e7681, HorizontalAlignment: Center, VerticalAlignment: Center);
-          Text: "Press ESC to close";
-        }
-      }
+      $M.@PageFooter {}
     }
   }
 }

@@ -60,17 +60,17 @@ $C = "../Common.ui";
 
 @PrimaryButton = TextButtonStyle(
   Default: (
-    Background: (Color: #3a7bd5),
+    Background: (Color: #1f6f43),
     LabelStyle: (
       FontSize: 13,
-      TextColor: #ffffff,
+      TextColor: #d9fff0,
       RenderBold: true,
       HorizontalAlignment: Center,
       VerticalAlignment: Center
     )
   ),
   Hovered: (
-    Background: (Color: #4a8be5),
+    Background: (Color: #278a53),
     LabelStyle: (
       FontSize: 13,
       TextColor: #ffffff,
@@ -80,10 +80,10 @@ $C = "../Common.ui";
     )
   ),
   Pressed: (
-    Background: (Color: #2a6bc5),
+    Background: (Color: #175735),
     LabelStyle: (
       FontSize: 13,
-      TextColor: #ffffff,
+      TextColor: #d9fff0,
       RenderBold: true,
       HorizontalAlignment: Center,
       VerticalAlignment: Center
@@ -137,7 +137,7 @@ $C.@PageOverlay {
 
     Group #MainContent {
       Anchor: (Width: 1380, Height: 950);
-      Background: (Color: #101010(0.78));
+      Background: (Color: #0d1117(0.85));
       OutlineColor: #2f2f2f;
       OutlineSize: 3;
       LayoutMode: Top;
@@ -259,6 +259,27 @@ $C.@PageOverlay {
               LayoutMode: Left;
               Anchor: (Height: 46, Bottom: 10);
 
+              TextButton #OpenEditorButton {
+                Text: "Tag Editor";
+                FlexWeight: 1;
+                Anchor: (Height: 40);
+                Style: @SecondaryButton;
+              }
+
+              Group { Anchor: (Width: 10); }
+
+              TextButton #ExportPackButton {
+                Text: "Export Pack";
+                FlexWeight: 1;
+                Anchor: (Height: 40);
+                Style: @SecondaryButton;
+              }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 46, Bottom: 10);
+
               TextButton #RefreshNameplateButton {
                 Text: "Refresh Nameplate";
                 FlexWeight: 1;
@@ -270,6 +291,27 @@ $C.@PageOverlay {
 
               TextButton #DebugSnapshotButton {
                 Text: "Debug Snapshot";
+                FlexWeight: 1;
+                Anchor: (Height: 40);
+                Style: @SecondaryButton;
+              }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 46, Bottom: 10);
+
+              TextButton #AuditTailButton {
+                Text: "Audit Tail";
+                FlexWeight: 1;
+                Anchor: (Height: 40);
+                Style: @SecondaryButton;
+              }
+
+              Group { Anchor: (Width: 10); }
+
+              TextButton #ImportPackButton {
+                Text: "Import Pack";
                 FlexWeight: 1;
                 Anchor: (Height: 40);
                 Style: @SecondaryButton;
@@ -351,6 +393,12 @@ $C.@PageOverlay {
                 Icon: "../Common/RecipesIcon.png";
                 TooltipText: "Debug & Support";
                 Id: "Debug";
+              }
+
+              TabButton #EditorTabButton {
+                Icon: "../Common/RecipesIcon.png";
+                TooltipText: "Tag Editor";
+                Id: "Editor";
               }
 
               TabButton #SupportTabButton {
@@ -778,6 +826,172 @@ $C.@PageOverlay {
                     Label #DebugLine4 { Text: ""; Anchor: (Height: 20); Style: @BodyLineMuted; }
                     Label #DebugLine5 { Text: ""; Anchor: (Height: 20); Style: @BodyLineMuted; }
                     Label #DebugLine6 { Text: ""; Anchor: (Height: 20); Style: @BodyLineMuted; }
+                  }
+
+                  // ===================== TAG EDITOR =====================
+                  Group #TabEditorPanel {
+                    LayoutMode: Top;
+                    Anchor: (Full: 1);
+                    Visible: false;
+
+                    Label #EditorHeader {
+                      Text: "TAG EDITOR";
+                      Anchor: (Height: 18, Bottom: 10);
+                      Style: @SectionTitle;
+                    }
+
+                    Label #EditorHelpLine {
+                      Text: "";
+                      Anchor: (Height: 32, Bottom: 12);
+                      Style: @BodyLineMuted;
+                    }
+
+                    Group {
+                      LayoutMode: Left;
+                      Anchor: (Height: 48, Bottom: 8);
+
+                      Label #EditorIdLabel {
+                        Text: "ID";
+                        Anchor: (Width: 130, Height: 34, Vertical: 0);
+                        Style: @StatLabel;
+                      }
+
+                      $C.@TextField #EditorTagIdBox {
+                        FlexWeight: 1;
+                        Anchor: (Height: 38);
+                        PlaceholderText: "event.summer_sun";
+                      }
+                    }
+
+                    Group {
+                      LayoutMode: Left;
+                      Anchor: (Height: 48, Bottom: 8);
+
+                      Label #EditorDisplayLabel {
+                        Text: "Display";
+                        Anchor: (Width: 130, Height: 34, Vertical: 0);
+                        Style: @StatLabel;
+                      }
+
+                      $C.@TextField #EditorDisplayBox {
+                        FlexWeight: 1;
+                        Anchor: (Height: 38);
+                        PlaceholderText: "&#FFAA00&l[Sunborn]";
+                      }
+                    }
+
+                    Group {
+                      LayoutMode: Left;
+                      Anchor: (Height: 48, Bottom: 8);
+
+                      Label #EditorDescriptionLabel {
+                        Text: "Description";
+                        Anchor: (Width: 130, Height: 34, Vertical: 0);
+                        Style: @StatLabel;
+                      }
+
+                      $C.@TextField #EditorDescriptionBox {
+                        FlexWeight: 1;
+                        Anchor: (Height: 38);
+                        PlaceholderText: "&7A limited event tag.";
+                      }
+                    }
+
+                    Group {
+                      LayoutMode: Left;
+                      Anchor: (Height: 48, Bottom: 8);
+
+                      Label #EditorCategoryLabel {
+                        Text: "Category";
+                        Anchor: (Width: 130, Height: 34, Vertical: 0);
+                        Style: @StatLabel;
+                      }
+
+                      $C.@TextField #EditorCategoryBox {
+                        FlexWeight: 1;
+                        Anchor: (Height: 38);
+                        PlaceholderText: "Events";
+                      }
+                    }
+
+                    Group {
+                      LayoutMode: Left;
+                      Anchor: (Height: 48, Bottom: 8);
+
+                      Label #EditorPriceLabel {
+                        Text: "Price";
+                        Anchor: (Width: 130, Height: 34, Vertical: 0);
+                        Style: @StatLabel;
+                      }
+
+                      $C.@TextField #EditorPriceBox {
+                        FlexWeight: 1;
+                        Anchor: (Height: 38);
+                        PlaceholderText: "0";
+                      }
+                    }
+
+                    Group {
+                      LayoutMode: Left;
+                      Anchor: (Height: 48, Bottom: 12);
+
+                      Label #EditorPermissionLabel {
+                        Text: "Permission";
+                        Anchor: (Width: 130, Height: 34, Vertical: 0);
+                        Style: @StatLabel;
+                      }
+
+                      $C.@TextField #EditorPermissionBox {
+                        FlexWeight: 1;
+                        Anchor: (Height: 38);
+                        PlaceholderText: "mysticnametags.tag.example";
+                      }
+                    }
+
+                    Label #EditorPreviewLine {
+                      Text: "";
+                      Anchor: (Height: 26, Bottom: 12);
+                      Style: @BodyLineMuted;
+                    }
+
+                    Group {
+                      LayoutMode: Left;
+                      Anchor: (Height: 46);
+
+                      TextButton #EditorLoadButton {
+                        Text: "Load";
+                        FlexWeight: 1;
+                        Anchor: (Height: 40);
+                        Style: @SecondaryButton;
+                      }
+
+                      Group { Anchor: (Width: 10); }
+
+                      TextButton #EditorSaveButton {
+                        Text: "Save";
+                        FlexWeight: 1;
+                        Anchor: (Height: 40);
+                        Style: @PrimaryButton;
+                      }
+
+                      Group { Anchor: (Width: 10); }
+
+                      TextButton #EditorDeleteButton {
+                        Text: "Delete";
+                        FlexWeight: 1;
+                        Anchor: (Height: 40);
+                        Style: @SecondaryButton;
+                      }
+
+                      Group { Anchor: (Width: 10); }
+
+                      TextButton #EditorClearButton {
+                        Text: "Clear";
+                        FlexWeight: 1;
+                        Anchor: (Height: 40);
+                        Style: @SecondaryButton;
+                      }
+                    }
                   }
 
                   // ===================== SUPPORT =====================

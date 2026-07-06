@@ -51,8 +51,8 @@ public class TagsAdminResetSubCommand extends AbstractTagsAdminSubCommand {
         if (flag != null) resetPerms = flag;
 
         boolean changed = resetPerms
-                ? TagManager.get().adminResetTagsAndPermissions(targetUuid)
-                : TagManager.get().adminResetTags(targetUuid);
+                ? TagManager.get().adminResetTagsAndPermissions(targetUuid, actorName(context))
+                : TagManager.get().adminResetTags(targetUuid, actorName(context));
 
         if (!changed) {
             context.sender().sendMessage(colored(lang.tr("cmd.admin.reset.none_to_reset", Map.of(

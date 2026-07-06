@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.2.6'
+version = '1.2.7'
 
 repositories {
     mavenCentral()
@@ -24,7 +24,7 @@ repositories {
 
 dependencies {
     // Hytale Server API from official Maven repository
-    compileOnly 'com.hypixel.hytale:Server:0.5.0'
+    compileOnly 'com.hypixel.hytale:Server:0.5.6'
 
     // JSR305 annotations (@Nonnull, @Nullable)
     compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
@@ -42,7 +42,9 @@ dependencies {
     compileOnly files('libs/PlaceholderAPI-1.0.3-CurseForge.jar')
 
     // VaultUnlocked Support
-    compileOnly 'net.cfh.vault:VaultUnlocked:2.18.3'
+    compileOnly('net.cfh.vault:VaultUnlocked:2.20.0') {
+        transitive = false
+    }
 
     // EliteEssentials Support
     compileOnly files('libs/EliteEssentials-1.1.6.jar')
@@ -76,6 +78,9 @@ dependencies {
 
     // Endless Leveling
     compileOnly files('libs/EndlessLeveling.jar')
+
+    // MMOSkills
+    compileOnly files('libs/MMOSkillTree-1.4.1.jar')
 
     // EcoQuest Support - Adds support for adventurer ranks like E -> SS rank
     compileOnly files('libs/EcoTaleQuests-1.5.2.jar')

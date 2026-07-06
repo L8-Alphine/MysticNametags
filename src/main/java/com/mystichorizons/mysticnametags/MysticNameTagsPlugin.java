@@ -16,6 +16,7 @@ import com.mystichorizons.mysticnametags.hstats.HStats;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
+import com.mystichorizons.mysticnametags.integrations.economy.VaultUnlockedSupport;
 import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.*;
@@ -48,6 +49,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
     private ScheduledExecutorService levelScheduler;
     private ScheduledExecutorService glyphScheduler;
+    private ScheduledExecutorService economyProbeScheduler;
 
     private IntegrationManager integrations;
     private UpdateChecker updateChecker;
@@ -276,6 +278,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
                     .log("[MysticNameTags][Debug] EconomySystem API not reachable at startup");
         }
 
+        startVaultEconomyProbeIfNeeded();
+
         // RPGLeveling nameplate refresher (lazy-guarded by config + API checks)
         startLevelSchedulerIfNeeded();
 
@@ -306,6 +310,11 @@ public class MysticNameTagsPlugin extends JavaPlugin {
     protected void shutdown() {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Shutting down...");
 
+        try {
+            stopEconomyProbeScheduler();
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop economy probe scheduler");
+        }
         try {
             stopLevelScheduler();
         } catch (Throwable ignored) {
@@ -533,6 +542,78 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             try { glyphScheduler.shutdownNow(); } catch (Throwable ignored) {}
             glyphScheduler = null;
             LOGGER.at(Level.INFO).log("[MysticNameTags] Stopped glyph follow scheduler.");
+        }
+    }
+
+    private void startVaultEconomyProbeIfNeeded() {
+        if (!Settings.get().isEconomySystemEnabled()) {
+            return;
+        }
+
+        if (!VaultUnlockedSupport.isApiAvailable()) {
+            LOGGER.at(Level.INFO).log("[MysticNameTags] VaultUnlocked API not detected at startup.");
+            return;
+        }
+
+        if (VaultUnlockedSupport.isAvailable()) {
+            LOGGER.at(Level.INFO).log("[MysticNameTags] VaultUnlocked economy provider detected at startup.");
+            return;
+        }
+
+        LOGGER.at(Level.INFO).log(
+                "[MysticNameTags] VaultUnlocked API detected, but no economy provider is registered yet. "
+                        + "Retrying provider detection for 60s.");
+
+        stopEconomyProbeScheduler();
+        economyProbeScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "MysticNameTags-EconomyProbe");
+            t.setDaemon(true);
+            return t;
+        });
+
+        final int[] attempts = {0};
+        economyProbeScheduler.scheduleAtFixedRate(() -> {
+            try {
+                attempts[0]++;
+                if (integrations != null) {
+                    integrations.refreshEconomyBackends("VaultUnlocked startup retry");
+                    if (integrations.hasAnyEconomy()) {
+                        stopEconomyProbeScheduler();
+                        return;
+                    }
+                }
+
+                if (VaultUnlockedSupport.isAvailable()) {
+                    LOGGER.at(Level.INFO).log(
+                            "[MysticNameTags] VaultUnlocked economy provider detected after startup. "
+                                    + "Providers=" + VaultUnlockedSupport.getProviderNames());
+                    stopEconomyProbeScheduler();
+                    return;
+                }
+
+                if (attempts[0] >= 12) {
+                    LOGGER.at(Level.WARNING).log(
+                            "[MysticNameTags] VaultUnlocked API is loaded, but no VaultUnlocked economy provider "
+                                    + "registered after 60s. Providers=" + VaultUnlockedSupport.getProviderNames()
+                                    + ". Check that your economy plugin supports/registers with VaultUnlocked "
+                                    + "and starts before purchases are used.");
+                    stopEconomyProbeScheduler();
+                }
+            } catch (Throwable t) {
+                LOGGER.at(Level.WARNING).withCause(t)
+                        .log("[MysticNameTags] Error while probing VaultUnlocked economy provider.");
+                stopEconomyProbeScheduler();
+            }
+        }, 5, 5, TimeUnit.SECONDS);
+    }
+
+    private void stopEconomyProbeScheduler() {
+        if (economyProbeScheduler != null) {
+            try {
+                economyProbeScheduler.shutdownNow();
+            } catch (Throwable ignored) {
+            }
+            economyProbeScheduler = null;
         }
     }
 }

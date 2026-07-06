@@ -1,0 +1,39 @@
+// MysticNameTags - Tag Editor list row template
+// Appended into #EditorTagList; whole row is a selection Button.
+
+$M = "MysticCommon.ui";
+
+Button {
+  Anchor: (Height: 42, Bottom: 6);
+  Background: (Color: #161b22(0.92));
+  LayoutMode: Left;
+  Padding: (Left: 8, Right: 10, Top: 5, Bottom: 5);
+  Style: (
+    Hovered: (Background: #1c2430(0.95)),
+    Pressed: (Background: #10151c(0.95))
+  );
+
+  Group #Accent {
+    Anchor: (Width: 4, Height: 28, Vertical: 0, Right: 10);
+    OutlineColor: #3a3a3a;
+    OutlineSize: 2;
+  }
+
+  Group {
+    LayoutMode: Top;
+    FlexWeight: 1;
+    Anchor: (Height: 30, Vertical: 0);
+
+    Label #Name {
+      Text: "";
+      Style: (FontSize: 13, TextColor: #e6edf3, RenderBold: true);
+      Anchor: (Height: 16, Bottom: 2);
+    }
+
+    Label #Meta {
+      Text: "";
+      Style: (FontSize: 10, TextColor: #6e7681);
+      Anchor: (Height: 12);
+    }
+  }
+}

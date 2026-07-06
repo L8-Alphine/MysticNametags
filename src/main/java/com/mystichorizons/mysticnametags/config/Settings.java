@@ -125,6 +125,13 @@ public final class Settings {
     private boolean fullPermissionGate = false;
     private boolean permissionGate = false;
 
+    /**
+     * If true, non-purchasable tags that declare a permission node are
+     * automatically treated as unlocked while the player has that permission
+     * (no UNLOCK click needed). Losing the permission revokes access again.
+     */
+    private boolean autoUnlockPermissionTags = false;
+
     private boolean rpgLevelingNameplatesEnabled = false;
     private int rpgLevelingRefreshSeconds = 30;
 
@@ -242,6 +249,7 @@ public final class Settings {
                 this.usePhysicalCoinEconomy = loaded.usePhysicalCoinEconomy;
                 this.fullPermissionGate = loaded.fullPermissionGate;
                 this.permissionGate = loaded.permissionGate;
+                this.autoUnlockPermissionTags = loaded.autoUnlockPermissionTags;
 
                 // RPG
                 this.rpgLevelingNameplatesEnabled = loaded.rpgLevelingNameplatesEnabled;
@@ -487,13 +495,15 @@ public final class Settings {
                 addInfoBlock(out, "__economy",
                         "Tag purchasing & permission gating.",
                         "fullPermissionGate = permission node fully gates tags (can hide/block access).",
-                        "permissionGate = tag remains visible, but permission node is required to unlock/equip."
+                        "permissionGate = tag remains visible, but permission node is required to unlock/equip.",
+                        "autoUnlockPermissionTags = non-paid tags with a permission node are instantly equippable while the player holds the permission (no UNLOCK click; revoked when the permission is removed)."
                 );
                 copy.accept("economySystemEnabled");
                 copy.accept("useCoinSystem");
                 copy.accept("usePhysicalCoinEconomy");
                 copy.accept("fullPermissionGate");
                 copy.accept("permissionGate");
+                copy.accept("autoUnlockPermissionTags");
 
                 addInfoBlock(out, "__rpg",
                         "RPGLeveling integration."
@@ -708,6 +718,10 @@ public final class Settings {
 
     public boolean isUsePhysicalCoinEconomy() {
         return usePhysicalCoinEconomy;
+    }
+
+    public boolean isAutoUnlockPermissionTagsEnabled() {
+        return autoUnlockPermissionTags;
     }
 
     public boolean isFullPermissionGateEnabled() {

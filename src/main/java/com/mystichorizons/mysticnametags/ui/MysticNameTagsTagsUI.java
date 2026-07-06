@@ -48,7 +48,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
-    private static final int MAX_ROWS = 10;
     private static final int PAGE_SIZE = 10;
 
     private static final String COLOR_TEXT_PRIMARY = "#e6edf3";
@@ -57,6 +56,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     private static final String COLOR_TEXT_CATEGORY = "#cbd5f5";
     private static final String COLOR_OUTLINE_ROW = "#3a3a3a";
     private static final String COLOR_OUTLINE_SELECT = "#58a6ff";
+    private static final String QUICK_LOADOUT_NAME = "quick";
     private static final DateTimeFormatter AVAILABILITY_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'").withZone(ZoneOffset.UTC);
     /**
@@ -78,6 +78,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     // 0 = All, 1..N = categories
     private int categoryIndex = 0;
     private long lastFilterApplyMs = 0L;
+    private boolean resetSearchBox;
     private String cooldownWarningText;
     /**
      * The currently selected tag in the right-side detail panel.
@@ -265,6 +266,17 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         evt.addEventBinding(CustomUIEventBindingType.Activating, "#DetailHelpButton", EventData.of("Action", "toggle_help"));
         evt.addEventBinding(CustomUIEventBindingType.Activating, "#HowItWorksCloseButton", EventData.of("Action", "toggle_help"));
 
+        // Vanilla-style live value capture: the payload contains ONLY the
+        // "@Filter" capture key, so the client resolves "#TagSearchBox.Value"
+        // when the value changes and sends it under "Filter". The handler
+        // recognises this payload by action == null && filter != null.
+        evt.addEventBinding(
+                CustomUIEventBindingType.ValueChanged,
+                "#TagSearchBox",
+                EventData.of("@Filter", "#TagSearchBox.Value"),
+                false
+        );
+
         evt.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 "#ApplyFilterButton",
@@ -277,7 +289,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 EventData.of("Action", "clear_filter")
         );
 
-        rebuildPage(ref, store, cmd, evt, true);
+        rebuildPage(ref, store, cmd, evt);
     }
 
     private List<TagDefinition> createFilteredSnapshot() {
@@ -299,7 +311,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         for (TagDefinition def : all) {
             if (def == null) continue;
-            boolean owns = uuid != null && def.getId() != null && tagManager.ownsTag(uuid, def.getId());
+            boolean owns = tagManager.effectivelyOwnsTag(playerRef, uuid, def);
 
             if (!def.isCurrentlyAvailable() && !owns && !debugShowHidden) {
                 continue;
@@ -348,7 +360,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String plainDisplay = safe(ColorFormatter.stripFormatting(display));
         String prettyId = prettifyId(id);
 
-        boolean owns = uuid != null && id != null && !id.isBlank() && tagManager.ownsTag(uuid, id);
+        boolean owns = tagManager.effectivelyOwnsTag(playerRef, uuid, def);
         boolean canUse = canUseTag(tagManager, def);
 
         TagDefinition equipped = tagManager.getEquipped(uuid);
@@ -468,8 +480,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     private void rebuildPage(@Nonnull Ref<EntityStore> ref,
                              @Nonnull Store<EntityStore> store,
                              @Nonnull UICommandBuilder cmd,
-                             @Nonnull UIEventBuilder evt,
-                             boolean registerRowEvents) {
+                             @Nonnull UIEventBuilder evt) {
 
         LanguageManager lang = LanguageManager.get();
         TagManager tagManager = TagManager.get();
@@ -495,7 +506,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#ProgressSectionTitle.Text", lang.tr("ui.tags.progress_section"));
         cmd.set("#RequirementsTitle.Text", lang.tr("ui.tags.requirements_title"));
         cmd.set("#HowItWorksTitle.Text", lang.getHowItWorksPanelTitle());
-        cmd.set("#FooterCloseHint.Text", lang.tr("ui.tags.footer_close_hint"));
+        cmd.set("#FooterHint.Text", lang.tr("ui.tags.footer_close_hint"));
 
         cmd.set("#PlayerLabel.Text", lang.tr("ui.tags.label_player"));
         cmd.set("#BalancePrefixLabel.Text", lang.tr("ui.tags.label_balance"));
@@ -521,11 +532,12 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         } else {
             cmd.set("#TagSearchBox.PlaceholderText", lang.tr("ui.tags.search_placeholder"));
         }
-        String fieldValue = pendingFilterQuery;
-        if (fieldValue != null && fieldValue.startsWith("#")) {
-            fieldValue = "";
+        // Only push a value into the search box when explicitly clearing;
+        // writing it on every refresh would fight the player's typing.
+        if (resetSearchBox) {
+            cmd.set("#TagSearchBox.Value", "");
+            resetSearchBox = false;
         }
-        cmd.set("#TagSearchBox.Value", fieldValue != null ? fieldValue : "");
 
         TagDefinition active = tagManager.getEquipped(uuid);
         if (active == null) {
@@ -545,10 +557,11 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
                 if (econEnabled) {
                     balance = integrations.getBalance(playerRef, uuid);
+                    String activeEconomyBackend = integrations.getActiveEconomyBackendName();
                     usingCash = !usingPhysical
                             && Settings.get().isEconomySystemEnabled()
                             && Settings.get().isUseCoinSystem()
-                            && integrations.isPrimaryEconomyAvailable();
+                            && activeEconomyBackend.startsWith("EconomySystem");
                 }
             }
         } catch (Throwable ignored) {
@@ -572,32 +585,29 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         ensureValidSelection(tags, active);
         TagDefinition selected = resolveSelectedDefinition(tags);
 
+        // Rows are stamped dynamically from the TagRow.ui template and
+        // addressed by index ("#TagList[i] ..."), so the list is rebuilt on
+        // every refresh.
+        cmd.clear("#TagList");
+
         int row = 0;
-        for (int i = startIndex; i < endIndex && row < MAX_ROWS; i++, row++) {
+        for (int i = startIndex; i < endIndex; i++, row++) {
             TagDefinition def = tags.get(i);
 
-            String cardSelector = "#TagRow" + row + "Card";
-            String nameSelector = "#TagRow" + row + "Name";
-            String priceSelector = "#TagRow" + row + "Price";
-            String buttonSelector = "#TagRow" + row + "Button";
-            String categoryPillSelector = "#TagRow" + row + "CategoryPill";
-            String categorySelector = "#TagRow" + row + "Category";
-            String stateSelector = "#TagRow" + row + "State";
-            String stateBadgeSelector = "#TagRow" + row + "StateBadge";
-
-            cmd.set(cardSelector + ".Visible", true);
+            cmd.append("#TagList", "mysticnametags/TagRow.ui");
+            String rowSel = "#TagList[" + row + "]";
 
             String rawDisplay = def.getDisplay();
             String nameText = ColorFormatter.colorizeForUi(rawDisplay != null ? rawDisplay : def.getId());
             String nameHex = rawDisplay != null ? ColorFormatter.extractUiTextColor(rawDisplay) : null;
             String priceText = buildPriceText(def, econEnabled, usingCash, lang);
 
-            cmd.set(nameSelector + ".Text", nameText);
-            cmd.set(priceSelector + ".Text", priceText);
+            cmd.set(rowSel + " #Name.Text", nameText);
+            cmd.set(rowSel + " #Price.Text", priceText);
 
             boolean canUse = canUseTag(tagManager, def);
             boolean isEquipped = equippedId != null && equippedId.equalsIgnoreCase(def.getId());
-            boolean owns = uuid != null && def.getId() != null && tagManager.ownsTag(uuid, def.getId());
+            boolean owns = tagManager.effectivelyOwnsTag(playerRef, uuid, def);
             boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
 
             String perm = def.getPermission();
@@ -612,58 +622,31 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             } else if (isSelected) {
                 resolvedNameColor = COLOR_TEXT_SELECTED;
             }
-            cmd.set(nameSelector + ".Style.TextColor", resolvedNameColor);
+            cmd.set(rowSel + " #Name.Style.TextColor", resolvedNameColor);
 
             String category = def.getCategory();
             if (category == null || category.trim().isEmpty()) {
-                cmd.set(categoryPillSelector + ".Visible", false);
-                cmd.set(categorySelector + ".Visible", false);
+                cmd.set(rowSel + " #CategoryPill.Visible", false);
             } else {
-                cmd.set(categoryPillSelector + ".Visible", true);
-                cmd.set(categorySelector + ".Visible", true);
-                cmd.set(categorySelector + ".Text", category);
-                cmd.set(categorySelector + ".Style.TextColor", COLOR_TEXT_CATEGORY);
+                cmd.set(rowSel + " #Category.Text", category);
+                cmd.set(rowSel + " #Category.Style.TextColor", COLOR_TEXT_CATEGORY);
             }
 
             RowBadge badge = buildRowBadge(def, canUse, owns, isEquipped, hasCost);
-            cmd.set(stateBadgeSelector + ".Visible", true);
-            cmd.set(stateSelector + ".Text", badge.text);
-            cmd.set(stateSelector + ".Style.TextColor", badge.textColor);
+            cmd.set(rowSel + " #State.Text", badge.text);
+            cmd.set(rowSel + " #State.Style.TextColor", badge.textColor);
+            cmd.set(rowSel + " #StatePill.OutlineColor", badge.textColor);
+            cmd.set(rowSel + " #Accent.OutlineColor", isSelected ? COLOR_OUTLINE_SELECT : badge.textColor);
 
-            cmd.set(cardSelector + ".OutlineSize", isSelected ? 2 : 1);
-            cmd.set(cardSelector + ".OutlineColor", isSelected ? COLOR_OUTLINE_SELECT : COLOR_OUTLINE_ROW);
+            EventData rowEvent = new EventData()
+                    .append("Action", "select_tag")
+                    .append("TagId", def.getId() != null ? def.getId() : "")
+                    .append("RowIndex", String.valueOf(row));
 
-            cmd.set(nameSelector + ".Visible", true);
-            cmd.set(priceSelector + ".Visible", true);
-            cmd.set(buttonSelector + ".Visible", true);
-
-            if (registerRowEvents) {
-                EventData rowEvent = new EventData()
-                        .append("Action", "select_tag")
-                        .append("TagId", def.getId() != null ? def.getId() : "")
-                        .append("RowIndex", String.valueOf(row));
-
-                evt.addEventBinding(CustomUIEventBindingType.Activating, buttonSelector, rowEvent, false);
-            }
+            evt.addEventBinding(CustomUIEventBindingType.Activating, rowSel, rowEvent, false);
         }
 
-        for (; row < MAX_ROWS; row++) {
-            String cardSelector = "#TagRow" + row + "Card";
-            String nameSelector = "#TagRow" + row + "Name";
-            String priceSelector = "#TagRow" + row + "Price";
-            String buttonSelector = "#TagRow" + row + "Button";
-            String categoryPillSelector = "#TagRow" + row + "CategoryPill";
-            String categorySelector = "#TagRow" + row + "Category";
-            String stateBadgeSelector = "#TagRow" + row + "StateBadge";
-
-            cmd.set(cardSelector + ".Visible", false);
-            cmd.set(nameSelector + ".Visible", false);
-            cmd.set(priceSelector + ".Visible", false);
-            cmd.set(buttonSelector + ".Visible", false);
-            cmd.set(categoryPillSelector + ".Visible", false);
-            cmd.set(categorySelector + ".Visible", false);
-            cmd.set(stateBadgeSelector + ".Visible", false);
-        }
+        cmd.set("#TagListEmpty.Visible", totalTags == 0);
 
         String label;
         if (totalTags == 0) {
@@ -681,6 +664,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         cmd.set("#PageLabel.Text", label);
+        if (totalTags == 0) {
+            cmd.set("#TagListEmpty.Text", label);
+        }
         cmd.set("#PrevPageButton.Visible", totalTags > 0 && currentPage > 0);
         cmd.set("#NextPageButton.Visible", totalTags > 0 && currentPage < totalPages - 1);
 
@@ -761,7 +747,23 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                                 @Nonnull UIEventData data) {
 
         String action = data.action;
-        if (action == null) return;
+
+        // Capture-only payload from the search box ValueChanged binding:
+        // apply the filter live as the player types.
+        if (action == null) {
+            if (data.filter != null && !data.filter.startsWith("#TagSearchBox")) {
+                String newFilter = normalizeFilter(data.filter);
+                pendingFilterQuery = newFilter;
+                if (!Objects.equals(this.filterQuery, newFilter)) {
+                    this.filterQuery = newFilter;
+                    this.currentPage = 0;
+                    this.detailHelpVisible = false;
+                    this.canUseCache.clear();
+                    refresh(ref, store);
+                }
+            }
+            return;
+        }
 
         switch (action) {
             case "close" -> this.close();
@@ -782,21 +784,12 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 refresh(ref, store);
             }
 
-            case "filter_changed" -> {
-                pendingFilterQuery = normalizeFilter(data.filter);
-            }
-
             case "apply_filter" -> {
                 long now = System.currentTimeMillis();
                 if (now - lastFilterApplyMs < 200) return;
                 lastFilterApplyMs = now;
 
-                String incoming = normalizeFilter(data.filter);
-                if (incoming != null && incoming.startsWith("#")) {
-                    incoming = null;
-                }
-
-                String newFilter = incoming;
+                String newFilter = normalizeFilter(pendingFilterQuery);
                 if (!Objects.equals(this.filterQuery, newFilter)) {
                     this.filterQuery = newFilter;
                     this.pendingFilterQuery = newFilter;
@@ -820,6 +813,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 this.selectedTagId = null;
                 this.detailHelpVisible = false;
                 this.canUseCache.clear();
+                this.resetSearchBox = true;
 
                 refresh(ref, store);
             }
@@ -878,6 +872,128 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
     }
 
+    private void toggleSelectedFavorite(@Nonnull Ref<EntityStore> ref,
+                                        @Nonnull Store<EntityStore> store) {
+        if (uuid == null || selectedTagId == null || selectedTagId.isBlank()) {
+            return;
+        }
+
+        TagManager.FavoriteResult result = TagManager.get().toggleFavorite(uuid, selectedTagId, playerRef.getUsername());
+        String key = switch (result) {
+            case ADDED -> "cmd.favorite.added";
+            case REMOVED -> "cmd.favorite.removed";
+            case NOT_OWNED -> "cmd.favorite.not_owned";
+            case NOT_FOUND -> "cmd.favorite.not_found";
+        };
+
+        sendUiNotification(key, Map.of("tagId", selectedTagId), NotificationStyle.Default);
+        refresh(ref, store);
+    }
+
+    private void equipRandomTag(boolean favoritesOnly,
+                                @Nonnull Ref<EntityStore> ref,
+                                @Nonnull Store<EntityStore> store) {
+        if (uuid == null) {
+            return;
+        }
+
+        TagManager manager = TagManager.get();
+        TagPurchaseResult result = manager.equipRandomTag(playerRef, uuid, favoritesOnly);
+        if (result == TagPurchaseResult.NOT_FOUND) {
+            sendUiNotification(favoritesOnly ? "cmd.random.no_favorites" : "cmd.random.no_owned",
+                    Map.of(),
+                    NotificationStyle.Warning);
+        } else {
+            handlePurchaseResult(result, manager.getEquipped(uuid));
+        }
+
+        cooldownWarningText = null;
+        detailHelpVisible = false;
+        canUseCache.clear();
+        refresh(ref, store);
+    }
+
+    private void saveQuickLoadout(@Nonnull Ref<EntityStore> ref,
+                                  @Nonnull Store<EntityStore> store) {
+        if (uuid == null || selectedTagId == null || selectedTagId.isBlank()) {
+            return;
+        }
+
+        TagManager manager = TagManager.get();
+        TagDefinition def = manager.getTag(selectedTagId);
+        if (def == null || def.getId() == null) {
+            sendUiNotification("cmd.favorite.not_found",
+                    Map.of("tagId", selectedTagId),
+                    NotificationStyle.Warning);
+            return;
+        }
+
+        if (!manager.ownsTag(uuid, def.getId())) {
+            sendUiNotification("cmd.favorite.not_owned",
+                    Map.of("tagId", def.getId()),
+                    NotificationStyle.Warning);
+            return;
+        }
+
+        TagManager.LoadoutResult result = manager.saveLoadoutTag(uuid, QUICK_LOADOUT_NAME, def.getId(), playerRef.getUsername());
+        sendLoadoutNotification(result, QUICK_LOADOUT_NAME, def.getId());
+        refresh(ref, store);
+    }
+
+    private void equipQuickLoadout(@Nonnull Ref<EntityStore> ref,
+                                   @Nonnull Store<EntityStore> store) {
+        if (uuid == null) {
+            return;
+        }
+
+        TagManager.LoadoutEquipResult result = TagManager.get().equipLoadout(playerRef, uuid, QUICK_LOADOUT_NAME);
+        if (result.getLoadoutResult() != TagManager.LoadoutResult.EQUIPPED) {
+            sendLoadoutNotification(result.getLoadoutResult(), QUICK_LOADOUT_NAME, result.getTagId());
+        } else {
+            sendUiNotification("cmd.loadout.equipped",
+                    Map.of(
+                            "name", QUICK_LOADOUT_NAME,
+                            "tagId", result.getTagId() == null ? "unknown" : result.getTagId(),
+                            "result", result.getTagResult().name()
+                    ),
+                    NotificationStyle.Default);
+        }
+
+        cooldownWarningText = null;
+        detailHelpVisible = false;
+        canUseCache.clear();
+        refresh(ref, store);
+    }
+
+    private void deleteQuickLoadout(@Nonnull Ref<EntityStore> ref,
+                                    @Nonnull Store<EntityStore> store) {
+        if (uuid == null) {
+            return;
+        }
+
+        TagManager.LoadoutResult result = TagManager.get().deleteLoadout(uuid, QUICK_LOADOUT_NAME, playerRef.getUsername());
+        sendLoadoutNotification(result, QUICK_LOADOUT_NAME, null);
+        refresh(ref, store);
+    }
+
+    private void sendLoadoutNotification(@Nonnull TagManager.LoadoutResult result,
+                                         @Nonnull String name,
+                                         @Nullable String tagId) {
+        String key = switch (result) {
+            case SAVED -> "cmd.loadout.saved";
+            case DELETED -> "cmd.loadout.deleted";
+            case NOT_FOUND -> "cmd.loadout.not_found";
+            case INVALID_NAME -> "cmd.loadout.invalid_name";
+            case NO_EQUIPPED_TAG -> "cmd.loadout.no_equipped";
+            case EQUIPPED -> "cmd.loadout.equipped";
+        };
+
+        Map<String, String> vars = tagId == null
+                ? Map.of("name", name)
+                : Map.of("name", name, "tagId", tagId, "result", TagPurchaseResult.EQUIPPED_ALREADY_OWNED.name());
+        sendUiNotification(key, vars, NotificationStyle.Default);
+    }
+
     private void activateSelectedTag(@Nonnull Ref<EntityStore> ref,
                                      @Nonnull Store<EntityStore> store) {
 
@@ -894,7 +1010,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         String resolvedId = def.getId();
 
         int delaySeconds = Settings.get().getTagEquipDelaySeconds();
-        boolean ownsBefore = manager.ownsTag(uuid, resolvedId);
+        boolean ownsBefore = manager.effectivelyOwnsTag(playerRef, uuid, def);
 
         if (delaySeconds > 0 && ownsBefore) {
             TagDefinition currentlyEquipped = manager.getEquipped(uuid);
@@ -959,7 +1075,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                          @Nonnull Store<EntityStore> store) {
         UICommandBuilder cmd = new UICommandBuilder();
         UIEventBuilder evt = new UIEventBuilder();
-        rebuildPage(ref, store, cmd, evt, true);
+        rebuildPage(ref, store, cmd, evt);
         sendUpdate(cmd, evt, false);
     }
 
@@ -1038,7 +1154,7 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         }
 
         boolean canUse = canUseTag(manager, def);
-        boolean owns = uuid != null && def.getId() != null && manager.ownsTag(uuid, def.getId());
+        boolean owns = manager.effectivelyOwnsTag(playerRef, uuid, def);
         boolean isEquipped = active != null
                 && active.getId() != null
                 && def.getId() != null
@@ -1954,6 +2070,25 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                 parsedTitle,
                 parsedMsg,
                 NotificationStyle.Default
+        );
+    }
+
+    private void sendUiNotification(@Nonnull String messageKey,
+                                    @Nonnull Map<String, String> vars,
+                                    @Nonnull NotificationStyle style) {
+        LanguageManager lang = LanguageManager.get();
+
+        String title = "&b" + lang.tr("plugin.title");
+        String msg = lang.tr(messageKey, vars);
+
+        String parsedTitle = WiFlowPlaceholderSupport.apply(playerRef, title);
+        String parsedMsg = WiFlowPlaceholderSupport.apply(playerRef, msg);
+
+        MysticNotificationUtil.send(
+                playerRef.getPacketHandler(),
+                ColorFormatter.colorize(parsedTitle),
+                ColorFormatter.colorize(parsedMsg),
+                style
         );
     }
 

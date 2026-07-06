@@ -7,36 +7,94 @@ import net.milkbowl.vault2.economy.EconomyResponse.ResponseType;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.UUID;
 
 public final class VaultUnlockedSupport {
 
-    // Cached provider; re-resolved if it goes null / disabled
+    // Cached provider; re-resolved when the services manager offers a new one
     private static volatile Economy economy;
+    private static volatile boolean loggedProvider;
+    private static volatile boolean loggedApiOnly;
 
     private VaultUnlockedSupport() {}
 
-    private static Economy resolveEconomy() {
-        // If we already have a live provider, keep using it
-        Economy cached = economy;
-        if (cached != null && cached.isEnabled()) {
-            return cached;
-        }
-
+    public static boolean isApiAvailable() {
         try {
-            Economy eco = VaultUnlockedServicesManager.get().economyObj();
-            if (eco != null && eco.isEnabled()) {
-                economy = eco;
-                return eco;
+            return VaultUnlockedServicesManager.get() != null;
+        } catch (NoClassDefFoundError e) {
+            return false;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static List<String> getProviderNames() {
+        try {
+            LinkedList<String> names = VaultUnlockedServicesManager.get().economyProviderNames();
+            if (names == null || names.isEmpty()) {
+                return List.of();
             }
+            return List.copyOf(names);
+        } catch (NoClassDefFoundError e) {
+            return List.of();
+        } catch (Throwable ignored) {
+            return List.of();
+        }
+    }
+
+    private static Economy resolveEconomy() {
+        try {
+            VaultUnlockedServicesManager manager = VaultUnlockedServicesManager.get();
+
+            Economy eco = manager.economy().orElse(null);
+
+            // Some services-manager builds return an empty default lookup even
+            // though providers are registered by name - fall back to the first
+            // registered provider name.
+            if (eco == null) {
+                for (String name : manager.economyProviderNames()) {
+                    if (name == null) continue;
+                    eco = manager.economyObj(name);
+                    if (eco != null) break;
+                }
+            }
+
+            if (eco == null) {
+                if (!loggedApiOnly) {
+                    loggedApiOnly = true;
+                    com.mystichorizons.mysticnametags.util.MysticLog.info(
+                            "VaultUnlocked API detected, but no economy provider is registered yet.");
+                }
+                return economy; // last known good provider, if any
+            }
+
+            // Do NOT require isEnabled() here: several providers register a
+            // working economy that misreports isEnabled() as false, which
+            // previously made this plugin claim the economy was disabled.
+            if (economy != eco) {
+                economy = eco;
+                if (!loggedProvider) {
+                    loggedProvider = true;
+                    boolean enabled;
+                    try {
+                        enabled = eco.isEnabled();
+                    } catch (Throwable t) {
+                        enabled = true;
+                    }
+                    com.mystichorizons.mysticnametags.util.MysticLog.info(
+                            "VaultUnlocked economy provider resolved: "
+                                    + eco.getClass().getName() + " (isEnabled=" + enabled + ")");
+                }
+            }
+            return eco;
         } catch (NoClassDefFoundError e) {
             // VaultUnlocked not on classpath
             return null;
         } catch (Throwable ignored) {
-            return null;
+            return economy;
         }
-
-        return null;
     }
 
     public static boolean isAvailable() {
