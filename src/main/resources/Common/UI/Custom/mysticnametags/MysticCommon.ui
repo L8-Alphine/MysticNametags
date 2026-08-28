@@ -1,0 +1,269 @@
+// MysticNameTags - Shared design system
+//
+// Import from sibling pages with:  $M = "MysticCommon.ui";
+//
+// Reusable templates:
+//   @Window       - dark page frame (outline, padding); size via instance Anchor
+//   @TitleBanner  - centered banner with #TitleLabel
+//   @Divider      - portal-style horizontal divider
+//   @Card         - container panel (patch texture, top layout, padding)
+//   @SectionHeader- section title label (give it an #Id + Text per use)
+//   @SearchBar    - #TagSearchBox + #ApplyFilterButton + #ClearFilterButton
+//   @PagerFooter  - #PrevPageButton + #PageLabel + #NextPageButton
+//   @PageFooter   - #FooterHint + #BottomCloseButton
+//
+// Row state colors set at runtime by controllers:
+//   ACTIVE #3fb950 | OWNED #58a6ff | BUY/LIMITED #f0b429 | LOCKED #f85149 | FREE #c9d1d9
+
+$C = "../Common.ui";
+
+// ==================== PALETTE ====================
+@ColorAccent = #f0b429;
+@ColorText = #e6edf3;
+@ColorMuted = #8b949e;
+@ColorFaint = #6e7681;
+@ColorHeader = #b0b8c0;
+@ColorPager = #96a9be;
+
+// ==================== LABEL STYLES ====================
+@TitleStyle = LabelStyle(
+  FontSize: 18,
+  RenderUppercase: true,
+  RenderBold: true,
+  TextColor: @ColorAccent,
+  HorizontalAlignment: Center,
+  VerticalAlignment: Center
+);
+
+@SectionTitleStyle = LabelStyle(
+  FontSize: 12,
+  RenderBold: true,
+  RenderUppercase: true,
+  TextColor: @ColorHeader
+);
+
+@StatLabelStyle = LabelStyle(
+  FontSize: 11,
+  TextColor: @ColorMuted,
+  VerticalAlignment: Center
+);
+
+@StatValueStyle = LabelStyle(
+  FontSize: 12,
+  TextColor: @ColorText,
+  RenderBold: true,
+  VerticalAlignment: Center
+);
+
+@RowNameStyle = LabelStyle(
+  FontSize: 14,
+  TextColor: @ColorText,
+  RenderBold: true,
+  VerticalAlignment: Center
+);
+
+@RowDescStyle = LabelStyle(
+  FontSize: 11,
+  TextColor: #94a3b8,
+  VerticalAlignment: Center
+);
+
+@PillLabelStyle = LabelStyle(
+  FontSize: 9,
+  RenderUppercase: true,
+  RenderBold: true,
+  TextColor: #ffffff,
+  HorizontalAlignment: Center,
+  VerticalAlignment: Center
+);
+
+@PriceStyle = LabelStyle(
+  FontSize: 11,
+  TextColor: #b6c9de,
+  RenderBold: true,
+  HorizontalAlignment: Center,
+  VerticalAlignment: Center
+);
+
+@EmptyStyle = LabelStyle(
+  FontSize: 14,
+  TextColor: @ColorFaint,
+  HorizontalAlignment: Center,
+  VerticalAlignment: Center
+);
+
+@HintStyle = LabelStyle(
+  FontSize: 11,
+  TextColor: @ColorFaint,
+  VerticalAlignment: Center
+);
+
+@BodyTextStyle = LabelStyle(
+  FontSize: 12,
+  TextColor: #cbd5f5,
+  Wrap: true
+);
+
+// ==================== BUTTON STYLES ====================
+@PrimaryBtnStyle = TextButtonStyle(
+  Default: (
+    Background: (Color: #1f6f43),
+    LabelStyle: (FontSize: 12, TextColor: #d9fff0, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  ),
+  Hovered: (
+    Background: (Color: #278a53),
+    LabelStyle: (FontSize: 12, TextColor: #ffffff, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  ),
+  Pressed: (
+    Background: (Color: #175735),
+    LabelStyle: (FontSize: 12, TextColor: #d9fff0, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  ),
+  Disabled: (
+    Background: (Color: #2a2a2a),
+    LabelStyle: (FontSize: 12, TextColor: #6e7681, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  )
+);
+
+@SlateBtnStyle = TextButtonStyle(
+  Default: (
+    Background: (Color: #2b3542),
+    LabelStyle: (FontSize: 11, TextColor: #dce6f2, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  ),
+  Hovered: (
+    Background: (Color: #3b4552),
+    LabelStyle: (FontSize: 11, TextColor: #ffffff, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  ),
+  Pressed: (
+    Background: (Color: #1b2532),
+    LabelStyle: (FontSize: 11, TextColor: #dce6f2, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  )
+);
+
+@DangerBtnStyle = TextButtonStyle(
+  Default: (
+    Background: (Color: #6e2020),
+    LabelStyle: (FontSize: 11, TextColor: #ffd9d9, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  ),
+  Hovered: (
+    Background: (Color: #8a2828),
+    LabelStyle: (FontSize: 11, TextColor: #ffffff, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  ),
+  Pressed: (
+    Background: (Color: #571717),
+    LabelStyle: (FontSize: 11, TextColor: #ffd9d9, RenderBold: true, RenderUppercase: true, HorizontalAlignment: Center, VerticalAlignment: Center)
+  )
+);
+
+// ==================== TEMPLATES ====================
+@Window = Group {
+  @Anchor = ();
+
+  Anchor: (...@Anchor);
+  Background: (Color: #0d1117(0.85));
+  OutlineColor: #2f2f2f;
+  OutlineSize: 3;
+  LayoutMode: Top;
+  Padding: (Top: 18, Bottom: 16, Left: 20, Right: 20);
+};
+
+@TitleBanner = Group {
+  Anchor: (Height: 52, Bottom: 14);
+  LayoutMode: Middle;
+
+  Group {
+    Anchor: (Width: 280, Height: 34);
+    Background: (TexturePath: "../Common/PopupTitle.png", HorizontalBorder: 50, VerticalBorder: 0);
+    LayoutMode: Center;
+    Padding: (Top: 4);
+
+    Label #TitleLabel {
+      Style: @TitleStyle;
+      Text: "";
+    }
+  }
+};
+
+@Divider = Group {
+  Anchor: (Height: 8, Bottom: 10);
+  Background: (TexturePath: "../Pages/Portals/PortalTopDivider.png");
+};
+
+@Card = Group {
+  Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
+  Padding: 12;
+  LayoutMode: Top;
+};
+
+@SectionHeader = Label {
+  Style: @SectionTitleStyle;
+  Anchor: (Height: 18, Bottom: 8);
+  Text: "";
+};
+
+@SearchBar = Group {
+  LayoutMode: Left;
+  Anchor: (Height: 38, Bottom: 10);
+
+  $C.@TextField #TagSearchBox {
+    FlexWeight: 1;
+    Anchor: (Height: 38);
+    PlaceholderText: "Search...";
+  }
+
+  Group { Anchor: (Width: 6); }
+
+  $C.@SmallSecondaryTextButton #ApplyFilterButton {
+    Text: "APPLY";
+    Anchor: (Width: 86, Height: 32, Vertical: 0);
+  }
+
+  Group { Anchor: (Width: 4); }
+
+  $C.@SmallSecondaryTextButton #ClearFilterButton {
+    Text: "CLEAR";
+    Anchor: (Width: 86, Height: 32, Vertical: 0);
+  }
+};
+
+@PagerFooter = Group {
+  LayoutMode: Left;
+  Anchor: (Height: 32);
+
+  $C.@SmallSecondaryTextButton #PrevPageButton {
+    Text: "PREV";
+    Anchor: (Width: 96, Height: 32);
+  }
+
+  Group { FlexWeight: 1; }
+
+  Label #PageLabel {
+    Text: "Page 1/1";
+    Anchor: (Width: 220, Height: 22, Vertical: 0);
+    Style: (FontSize: 12, TextColor: @ColorPager, HorizontalAlignment: Center, VerticalAlignment: Center);
+  }
+
+  Group { FlexWeight: 1; }
+
+  $C.@SmallSecondaryTextButton #NextPageButton {
+    Text: "NEXT";
+    Anchor: (Width: 96, Height: 32);
+  }
+};
+
+@PageFooter = Group {
+  LayoutMode: Left;
+  Anchor: (Height: 32);
+
+  Label #FooterHint {
+    Text: "";
+    Anchor: (Height: 20, Vertical: 0);
+    Style: @HintStyle;
+  }
+
+  Group { FlexWeight: 1; }
+
+  $C.@SmallSecondaryTextButton #BottomCloseButton {
+    Text: "CLOSE";
+    Anchor: (Width: 120, Height: 32);
+  }
+};

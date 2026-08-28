@@ -28,13 +28,8 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractCommand {
 
     protected AbstractTagsAdminSubCommand(@Nonnull String name, @Nonnull String description) {
         super(name, description);
-        this.setPermissionGroup(null);
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        // We handle permissions manually via IntegrationManager.
-        return false;
+        this.requireNoPermission();
+        this.setPermissionGroups();
     }
 
     protected Message colored(String text) {
@@ -70,6 +65,12 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractCommand {
 
         return integrations.hasPermission(sender, rootPerm)
                 || integrations.hasPermission(sender, subPerm);
+    }
+
+    @Nonnull
+    protected String actorName(@Nonnull CommandContext context) {
+        CommandSender sender = context.sender();
+        return sender == null ? "unknown" : sender.toString();
     }
 
     @Nullable

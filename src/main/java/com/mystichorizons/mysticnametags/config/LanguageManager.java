@@ -335,9 +335,19 @@ public final class LanguageManager {
         defaults.put("ui.tags.button_equip", "Equip");
         defaults.put("ui.tags.button_buy", "Buy");
         defaults.put("ui.tags.button_help", "?");
+        defaults.put("ui.tags.button_favorite", "Favorite");
+        defaults.put("ui.tags.button_unfavorite", "Unfavorite");
+        defaults.put("ui.tags.button_random_owned", "Random Owned");
+        defaults.put("ui.tags.button_random_favorite", "Random Favorite");
+        defaults.put("ui.tags.button_save_quick_loadout", "Save Quick");
+        defaults.put("ui.tags.button_equip_quick_loadout", "Equip Quick");
+        defaults.put("ui.tags.button_delete_quick_loadout", "Delete");
+        defaults.put("ui.tags.quick_loadout_empty", "Quick Loadout: empty");
+        defaults.put("ui.tags.quick_loadout_value", "Quick Loadout: {tagId}");
 
         defaults.put("ui.tags.badge_active", "ACTIVE");
         defaults.put("ui.tags.badge_locked", "LOCKED");
+        defaults.put("ui.tags.badge_unavailable", "EVENT");
         defaults.put("ui.tags.badge_owned", "OWNED");
         defaults.put("ui.tags.badge_buy", "BUY");
         defaults.put("ui.tags.badge_free", "FREE");
@@ -358,6 +368,13 @@ public final class LanguageManager {
         defaults.put("ui.tags.status_locked_requirements", "Status: LOCKED (requirements not met)");
         defaults.put("ui.tags.status_locked_not_purchased", "Status: LOCKED (not purchased)");
         defaults.put("ui.tags.status_available", "Status: AVAILABLE");
+        defaults.put("ui.tags.status_unavailable", "Unavailable");
+        defaults.put("ui.tags.req_availability_title", "Availability");
+        defaults.put("ui.tags.req_availability_unavailable", "This tag is not currently available.");
+        defaults.put("ui.tags.req_availability_window", "Window: {from} - {until}");
+        defaults.put("ui.tags.req_availability_from", "Starts: {from}");
+        defaults.put("ui.tags.req_availability_until", "Ends: {until}");
+        defaults.put("ui.tags.season_line", "Season: {season}");
 
         defaults.put("ui.tags.detail_status_active", "Active");
         defaults.put("ui.tags.detail_status_owned", "Owned");
@@ -399,6 +416,18 @@ public final class LanguageManager {
         defaults.put("ui.stats.endlessleveling.level", "Endless Level");
         defaults.put("ui.stats.endlessleveling.xp", "Endless XP");
         defaults.put("ui.stats.endlessleveling.skill_prefix", "Skill Level: {name}");
+        defaults.put("ui.stats.rpgleveling.level", "RPG Level");
+        defaults.put("ui.stats.rpgleveling.xp", "RPG XP");
+        defaults.put("ui.stats.rpgleveling.skills", "RPG Skill Points");
+        defaults.put("ui.stats.rpgleveling.skills_available", "RPG Skill Points Available");
+        defaults.put("ui.stats.rpgleveling.skills_prefix", "RPG Skill: {name}");
+        defaults.put("ui.stats.rpgleveling.classes", "RPG Class Selected");
+        defaults.put("ui.stats.rpgleveling.classes_prefix", "RPG Class: {name}");
+        defaults.put("ui.stats.rpgleveling.classes_tier", "RPG Class Tier");
+        defaults.put("ui.stats.rpgleveling.classes_tier_prefix", "RPG Class Tier: {name}");
+        defaults.put("ui.stats.rpgleveling.progression", "RPG Level Progress");
+        defaults.put("ui.stats.rpgleveling.progression_xp_needed", "RPG XP Needed");
+        defaults.put("ui.stats.rpgleveling.progression_class_kills", "RPG Class Tier Kills");
         defaults.put("ui.stats.prefix.kills", "Kills: {name}");
         defaults.put("ui.stats.prefix.mined", "Blocks Mined: {name}");
         defaults.put("ui.stats.prefix.placed", "Blocks Placed: {name}");
@@ -411,6 +440,47 @@ public final class LanguageManager {
         defaults.put("ui.owned.header_tag", "Tag");
         defaults.put("ui.owned.header_action", "Action");
         defaults.put("ui.owned.footer_hint", "Click a tag to equip or unequip it.");
+        defaults.put("ui.owned.badge_favorite", "FAV");
+
+        defaults.put("ui.packs.title", "TAG PACKS");
+        defaults.put("ui.packs.section_packs", "TAG PACKS");
+        defaults.put("ui.packs.button_refresh", "REFRESH");
+        defaults.put("ui.packs.folder_hint", "Folder: plugins/MysticNameTags/tagpacks");
+        defaults.put("ui.packs.section_import", "IMPORT");
+        defaults.put("ui.packs.label_pack", "Pack:");
+        defaults.put("ui.packs.label_mode", "Mode:");
+        defaults.put("ui.packs.label_file", "File:");
+        defaults.put("ui.packs.button_import", "IMPORT SELECTED PACK");
+        defaults.put("ui.packs.section_export", "EXPORT");
+        defaults.put("ui.packs.button_export", "EXPORT LOADED TAGS");
+        defaults.put("ui.packs.results_title", "RESULTS");
+        defaults.put("ui.packs.footer_hint", "Select a pack to import, or export the loaded tags to share them.");
+        defaults.put("ui.packs.no_selection", "(none selected)");
+        defaults.put("ui.packs.badge_selected", "SELECTED");
+        defaults.put("ui.packs.pack_meta", "{size}  |  {date}");
+        defaults.put("ui.packs.mode_hint_append", "Append: only adds tags that do not exist yet; existing tags are kept untouched.");
+        defaults.put("ui.packs.mode_hint_upsert", "Upsert: adds new tags and updates tags that already exist.");
+        defaults.put("ui.packs.mode_hint_replace", "Replace: wipes the current tag list and replaces it with the pack contents.");
+        defaults.put("ui.packs.result_no_selection", "Select a pack from the list before importing.");
+        defaults.put("ui.packs.result_import_success", "Imported {pack} ({mode}): {added} added, {replaced} replaced, {skipped} skipped.");
+        defaults.put("ui.packs.result_import_failed", "Import of {pack} failed: {error}");
+        defaults.put("ui.packs.result_export_success", "Exported {count} tags ({category}) to tagpacks/{file}.");
+        defaults.put("ui.packs.result_export_failed", "Export failed: {error}");
+
+        defaults.put("ui.editor.title", "TAG EDITOR");
+        defaults.put("ui.editor.list_title", "TAGS");
+        defaults.put("ui.editor.form_title", "TAG EDITOR");
+        defaults.put("ui.editor.button_new", "NEW TAG");
+        defaults.put("ui.editor.preview_title", "PREVIEW");
+        defaults.put("ui.editor.search_placeholder", "Search tags...");
+        defaults.put("ui.editor.footer_hint", "Click a tag in the list to load it into the editor.");
+        defaults.put("ui.editor.status_loaded", "Loaded tag: {tagId}");
+        defaults.put("ui.editor.status_cleared", "Editor cleared. Fill in the fields and press SAVE TAG.");
+        defaults.put("ui.editor.status_saved", "Saved {tagId} ({status}).");
+        defaults.put("ui.editor.status_deleted", "Deleted {tagId}.");
+        defaults.put("ui.editor.status_failed", "Editor action failed: {error}");
+        defaults.put("ui.editor.status_no_id", "Enter a Tag ID before deleting.");
+        defaults.put("ui.editor.status_not_found", "Tag not found: {tagId}");
         defaults.put("ui.owned.search_placeholder", "Search owned tags...");
         defaults.put("ui.owned.search_filter_prefix", "Search owned tags... ({filter})");
         defaults.put("ui.owned.none", "You do not own any tags yet.");
@@ -427,6 +497,7 @@ public final class LanguageManager {
         defaults.put("ui.dashboard.tab_overview", "Overview");
         defaults.put("ui.dashboard.tab_integrations", "Integrations");
         defaults.put("ui.dashboard.tab_debug", "Debug");
+        defaults.put("ui.dashboard.tab_editor", "Tag Editor");
         defaults.put("ui.dashboard.tab_support", "Support");
         defaults.put("ui.dashboard.tab_debug_support", "Debug & Support");
 
@@ -438,11 +509,26 @@ public final class LanguageManager {
         defaults.put("ui.dashboard.action_clear_cache", "Clear Cache");
         defaults.put("ui.dashboard.action_refresh_nameplate", "Refresh Nameplate");
         defaults.put("ui.dashboard.action_debug_snapshot", "Debug Snapshot");
+        defaults.put("ui.dashboard.action_audit_tail", "Audit Tail");
+        defaults.put("ui.dashboard.action_import_pack", "Import Pack");
+        defaults.put("ui.dashboard.action_export_pack", "Export Pack");
+        defaults.put("ui.dashboard.action_open_editor", "Tag Editor");
 
         defaults.put("ui.dashboard.button_refresh", "Refresh");
         defaults.put("ui.dashboard.button_reload", "Reload");
         defaults.put("ui.dashboard.button_mod_page", "Mod Page");
         defaults.put("ui.dashboard.button_bug_report", "Report Bug");
+        defaults.put("ui.dashboard.editor_help", "Create or update simple tag fields directly from in-game. Advanced requirements still belong in tags.json.");
+        defaults.put("ui.dashboard.editor_id", "ID");
+        defaults.put("ui.dashboard.editor_display", "Display");
+        defaults.put("ui.dashboard.editor_description", "Description");
+        defaults.put("ui.dashboard.editor_category", "Category");
+        defaults.put("ui.dashboard.editor_price", "Price");
+        defaults.put("ui.dashboard.editor_permission", "Permission");
+        defaults.put("ui.dashboard.editor_load", "Load");
+        defaults.put("ui.dashboard.editor_save", "Save");
+        defaults.put("ui.dashboard.editor_delete", "Delete");
+        defaults.put("ui.dashboard.editor_clear", "Clear");
 
         defaults.put("ui.dashboard.overview.line0", "Use /tags to open the Tag Selector.");
         defaults.put("ui.dashboard.overview.line1", "Equip tags you own or purchase via your economy plugin.");
@@ -479,6 +565,10 @@ public final class LanguageManager {
         defaults.put("cmd.help.line.reload", "&7/tags reload &8- &fReload configuration");
         defaults.put("cmd.help.line.ui", "&7/tags ui &8- &fOpen the dashboard UI");
         defaults.put("cmd.help.line.tags", "&7/tags tags &8- &fOpen the tag selection UI");
+        defaults.put("cmd.help.line.nameplate", "&7/mnametags nameplate <on|off|toggle|status> &8- &fToggle your own nameplate view");
+        defaults.put("cmd.help.line.favorite", "&7/mnametags favorite <add|remove|toggle|list> [tag] &8- &fManage favorite tags");
+        defaults.put("cmd.help.line.random", "&7/mnametags randomtag [owned|favorites] &8- &fEquip a random tag");
+        defaults.put("cmd.help.line.loadout", "&7/mnametags loadout <save|equip|delete|list> [name] &8- &fManage tag loadouts");
         defaults.put("cmd.help.footer", "&b========================");
 
         defaults.put("cmd.reload.no_permission", "&cYou do not have permission to use this command.");
@@ -502,6 +592,35 @@ public final class LanguageManager {
         defaults.put("cmd.tags.owned_disabled", "&cThe owned tags menu is disabled in settings.");
         defaults.put("cmd.tags.owned_opening", "&7[&bMysticNameTags&7] &fOpening &bOwned Tags&f...");
         defaults.put("cmd.tags.owned_open_error", "&cError opening owned tags selector: &7{error}");
+
+        defaults.put("cmd.nameplate.usage", "&cUsage: &f/mnametags nameplate <on|off|toggle|status>");
+        defaults.put("cmd.nameplate.visible", "&aYour own packet nameplate is now visible again.");
+        defaults.put("cmd.nameplate.hidden", "&7Your own packet nameplate is now hidden for your view. &8Other players can still see it.");
+        defaults.put("cmd.nameplate.status_visible", "&aYour own packet nameplate is currently visible.");
+        defaults.put("cmd.nameplate.status_hidden", "&7Your own packet nameplate is currently hidden for your view. &8Other players can still see it.");
+
+        defaults.put("cmd.favorite.usage", "&cUsage: &f/mnametags favorite <add|remove|toggle|list> [tagId]");
+        defaults.put("cmd.favorite.empty", "&7You do not have any favorite tags yet.");
+        defaults.put("cmd.favorite.list", "&bFavorite tags: &f{tags}");
+        defaults.put("cmd.favorite.added", "&aAdded '&f{tagId}&a' to your favorite tags.");
+        defaults.put("cmd.favorite.removed", "&eRemoved '&f{tagId}&e' from your favorite tags.");
+        defaults.put("cmd.favorite.not_owned", "&cYou must own '&f{tagId}&c' before favoriting it.");
+        defaults.put("cmd.favorite.not_found", "&cUnknown tag id '&f{tagId}&c'.");
+
+        defaults.put("cmd.random.usage", "&cUsage: &f/mnametags randomtag [owned|favorites]");
+        defaults.put("cmd.random.no_owned", "&cNo usable owned tags are available for random equip.");
+        defaults.put("cmd.random.no_favorites", "&cNo usable favorite tags are available for random equip.");
+        defaults.put("cmd.random.result", "&aRandom tag equip result: &f{result}");
+
+        defaults.put("cmd.loadout.usage", "&cUsage: &f/mnametags loadout <save|equip|delete|list> [name]");
+        defaults.put("cmd.loadout.empty", "&7You do not have any tag loadouts yet.");
+        defaults.put("cmd.loadout.list", "&bTag loadouts: &f{loadouts}");
+        defaults.put("cmd.loadout.saved", "&aSaved tag as loadout '&f{name}&a'.");
+        defaults.put("cmd.loadout.equipped", "&aEquipped loadout '&f{name}&a' using tag '&f{tagId}&a' (&7{result}&a).");
+        defaults.put("cmd.loadout.deleted", "&eDeleted loadout '&f{name}&e'.");
+        defaults.put("cmd.loadout.not_found", "&cNo loadout named '&f{name}&c' exists.");
+        defaults.put("cmd.loadout.invalid_name", "&cLoadout names must be 1-24 characters using letters, numbers, underscores, or dashes.");
+        defaults.put("cmd.loadout.no_equipped", "&cEquip a tag before saving a loadout.");
 
         defaults.put("cmd.info.not_loaded", "&cMysticNameTags plugin instance not available.");
         defaults.put("cmd.info.separator", "&7&m------------------------------");
@@ -551,6 +670,14 @@ public final class LanguageManager {
         defaults.put("cmd.admin.givetag.unknown_tag", "&cUnknown tag id '&f{tagId}&c'.");
         defaults.put("cmd.admin.givetag.success", "&aGave tag '&f{tagId}&a' to &b{player}&a (equipped).");
 
+        defaults.put("cmd.admin.audit.empty", "&7No MysticNameTags audit entries have been written yet.");
+        defaults.put("cmd.admin.importpack.usage", "&cUsage: &f/tagsadmin importpack <file.json> [append|upsert|replace]");
+        defaults.put("cmd.admin.importpack.failed", "&cTag pack import failed: &7{error}");
+        defaults.put("cmd.admin.importpack.success", "&aImported tag pack '&f{pack}&a'. Added: &f{added}&a, replaced: &f{replaced}&a, skipped: &f{skipped}&a.");
+        defaults.put("cmd.admin.exportpack.usage", "&cUsage: &f/tagsadmin exportpack <file.json> [category]");
+        defaults.put("cmd.admin.exportpack.failed", "&cTag pack export failed: &7{error}");
+        defaults.put("cmd.admin.exportpack.success", "&aExported &f{count}&a tags to tagpacks/&f{pack}&a.");
+
         defaults.put("dashboard.version_label", "Version: {version}");
         defaults.put("dashboard.version_label_update", "Version: {version} (update available: {latest})");
         defaults.put("dashboard.version_label_ahead", "Version: {version} (ahead of CurseForge: {latest})");
@@ -559,13 +686,14 @@ public final class LanguageManager {
         defaults.put("dashboard.integration_luckperms_none", "LuckPerms (none)");
         defaults.put("dashboard.integrations_plus_permissionsplus", "+ PermissionsPlus");
         defaults.put("dashboard.integrations_economy_prefix", "| Economy:");
-        defaults.put("dashboard.economy_primary", "EconomySystem (primary)");
+        defaults.put("dashboard.economy_primary", "EconomySystem");
         defaults.put("dashboard.economy_fallback_prefix", "(fallback: ");
         defaults.put("dashboard.economy_none", "none");
         defaults.put("dashboard.loaded_tags_label", "Loaded Tags: {count}");
         defaults.put("dashboard.storage_file", "Storage: File (playerdata/*.json)");
         defaults.put("dashboard.storage_sqlite", "Storage: SQLite ({file})");
         defaults.put("dashboard.storage_mysql", "Storage: MySQL {host}:{port}/{database}");
+        defaults.put("dashboard.storage_redis", "Storage: Redis {host}:{port}/{database}");
         defaults.put("dashboard.placeholders_prefix", "Placeholders:");
         defaults.put("dashboard.placeholders_none", "none");
         defaults.put("dashboard.cpu_label", "CPU (process): {percent}% ({cores} cores)");
@@ -594,6 +722,33 @@ public final class LanguageManager {
         defaults.put("dashboard.refresh_nameplate_status", "Status: nameplate refresh requested.");
         defaults.put("dashboard.debug_snapshot_toast", "Debug snapshot printed to console/logs.");
         defaults.put("dashboard.debug_snapshot_status", "Status: debug snapshot generated.");
+        defaults.put("dashboard.audit_tail_toast", "Recent audit entries loaded into the Debug tab.");
+        defaults.put("dashboard.audit_tail_status", "Status: audit tail loaded.");
+        defaults.put("dashboard.import_pack_success", "Imported tagpacks/import.json. Added: {added}, replaced: {replaced}, skipped: {skipped}.");
+        defaults.put("dashboard.import_pack_failed", "Import failed: {error}");
+        defaults.put("dashboard.import_pack_success_toast", "Imported tag pack from tagpacks/import.json.");
+        defaults.put("dashboard.import_pack_failed_toast", "Could not import tagpacks/import.json.");
+        defaults.put("dashboard.import_pack_success_status", "Status: tag pack imported.");
+        defaults.put("dashboard.import_pack_failed_status", "Status: tag pack import failed.");
+        defaults.put("dashboard.export_pack_success", "Exported {count} tags to tagpacks/{file}.");
+        defaults.put("dashboard.export_pack_failed", "Export failed: {error}");
+        defaults.put("dashboard.export_pack_success_toast", "Exported all loaded tags to tagpacks/export.json.");
+        defaults.put("dashboard.export_pack_failed_toast", "Could not export tags to tagpacks/export.json.");
+        defaults.put("dashboard.export_pack_success_status", "Status: tag pack exported.");
+        defaults.put("dashboard.export_pack_failed_status", "Status: tag pack export failed.");
+        defaults.put("dashboard.link_sent_toast", "Link sent to chat - click it there to open.");
+        defaults.put("dashboard.debug_snapshot_saved", "Debug snapshot saved to {file}");
+        defaults.put("dashboard.debug_snapshot_save_failed", "Could not write the debug snapshot file (see console).");
+        defaults.put("dashboard.editor_preview_empty", "Editor preview: no tag loaded.");
+        defaults.put("dashboard.editor_preview_value", "Editor preview: {id} | {display} | {category}");
+        defaults.put("dashboard.editor_loaded_status", "Status: tag loaded into editor.");
+        defaults.put("dashboard.editor_not_found_status", "Status: tag '{tagId}' not found; fill fields and Save to create it.");
+        defaults.put("dashboard.editor_saved_toast", "Tag definition saved.");
+        defaults.put("dashboard.editor_saved_status", "Status: tag {status}.");
+        defaults.put("dashboard.editor_deleted_toast", "Tag definition deleted.");
+        defaults.put("dashboard.editor_deleted_status", "Status: tag deleted.");
+        defaults.put("dashboard.editor_cleared_status", "Status: editor cleared.");
+        defaults.put("dashboard.editor_failed_status", "Status: editor failed - {error}");
         defaults.put("dashboard.internal_error_toast", "An internal error occurred; see server console for details.");
 
         defaults.put("tags.not_found", "That tag no longer exists.");
@@ -604,6 +759,7 @@ public final class LanguageManager {
         defaults.put("tags.unequipped", "Unequipped {tag}.");
         defaults.put("tags.no_economy", "Economy plugin is not configured.");
         defaults.put("tags.not_enough_money", "You cannot afford that tag.");
+        defaults.put("tags.unavailable", "That tag is not currently available.");
         defaults.put("tags.transaction_failed", "Transaction failed. Please try again.");
         defaults.put("tags.requirements_not_met", "You do not meet the requirements for that tag.");
         defaults.put("tags.equip_cooldown", "You must wait {seconds}s before equipping another tag.");

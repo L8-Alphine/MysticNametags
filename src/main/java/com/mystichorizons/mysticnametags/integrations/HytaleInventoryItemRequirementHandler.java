@@ -1,17 +1,17 @@
 package com.mystichorizons.mysticnametags.integrations;
 
+import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.logger.HytaleLogger;
-import com.hypixel.hytale.server.core.entity.entities.Player;
-import com.hypixel.hytale.server.core.inventory.Inventory;
+import com.hypixel.hytale.server.core.inventory.InventoryComponent;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 import com.hypixel.hytale.server.core.inventory.transaction.ItemStackTransaction;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.logging.Level;
 
@@ -201,72 +201,44 @@ public final class HytaleInventoryItemRequirementHandler implements ItemRequirem
     /**
      * Resolve the player's "main" ItemContainer from PlayerRef.
      *
-     * Steps:
-     *   1) Get Player ECS component from PlayerRef
-     *   2) Get Inventory from Player
-     *   3) Use reflection to find a no-arg method that returns ItemContainer
-     *
-     * If/when you know your Inventory API (e.g. getMainContainer()),
-     * replace the reflection part with a direct call.
+     * Update 5 migrated player inventories to ECS inventory components. Use the
+     * same broad carried-inventory scope as the old combined inventory path.
      */
     @Nullable
     private ItemContainer resolveInventory(@Nonnull PlayerRef playerRef) {
-        // 1) ECS: PlayerRef -> Player component
-        Player player = playerRef.getComponent(Player.getComponentType());
-        if (player == null) {
+        Ref<EntityStore> ref = playerRef.getReference();
+        if (ref == null || !ref.isValid()) {
             return null;
         }
 
-        // 2) Player -> Inventory
-        Inventory inv = player.getInventory();
-        if (inv == null) {
-            return null;
-        }
-
-        // 3a) Try a couple of common names first for stability
         try {
-            // Example: Inventory.getMainContainer()
-            try {
-                Method m = inv.getClass().getMethod("getMainContainer");
-                if (ItemContainer.class.isAssignableFrom(m.getReturnType())) {
-                    Object result = m.invoke(inv);
-                    if (result instanceof ItemContainer container) {
-                        return container;
-                    }
-                }
-            } catch (NoSuchMethodException ignored) {
-                // fall through to generic search
-            }
-
-            // Example: Inventory.getContainer()
-            try {
-                Method m = inv.getClass().getMethod("getContainer");
-                if (ItemContainer.class.isAssignableFrom(m.getReturnType())) {
-                    Object result = m.invoke(inv);
-                    if (result instanceof ItemContainer container) {
-                        return container;
-                    }
-                }
-            } catch (NoSuchMethodException ignored) {
-                // fall through to generic search
-            }
-
-            // 3b) Fallback: first public no-arg method returning ItemContainer
-            for (Method m : inv.getClass().getMethods()) {
-                if (m.getParameterCount() == 0 &&
-                        ItemContainer.class.isAssignableFrom(m.getReturnType())) {
-
-                    Object result = m.invoke(inv);
-                    if (result instanceof ItemContainer container) {
-                        return container;
-                    }
-                }
+            ItemContainer combined = InventoryComponent.getCombined(
+                    ref.getStore(),
+                    ref,
+                    InventoryComponent.BACKPACK_HOTBAR_STORAGE
+            );
+            if (combined != null) {
+                return combined;
             }
         } catch (Exception ex) {
-            LOGGER.at(Level.WARNING)
+            LOGGER.at(Level.FINE)
                     .withCause(ex)
-                    .log("[MysticNameTags] Failed to resolve ItemContainer from Inventory via reflection.");
+                    .log("[MysticNameTags] Failed to resolve combined inventory components.");
         }
+
+        return firstAvailableInventory(playerRef);
+    }
+
+    @Nullable
+    private static ItemContainer firstAvailableInventory(@Nonnull PlayerRef playerRef) {
+        InventoryComponent.Backpack backpack = playerRef.getComponent(InventoryComponent.Backpack.getComponentType());
+        if (backpack != null) return backpack.getInventory();
+
+        InventoryComponent.Hotbar hotbar = playerRef.getComponent(InventoryComponent.Hotbar.getComponentType());
+        if (hotbar != null) return hotbar.getInventory();
+
+        InventoryComponent.Storage storage = playerRef.getComponent(InventoryComponent.Storage.getComponentType());
+        if (storage != null) return storage.getInventory();
 
         return null;
     }

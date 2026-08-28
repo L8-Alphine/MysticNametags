@@ -1,7 +1,6 @@
 package com.mystichorizons.mysticnametags.nameplate;
 
 import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
@@ -9,8 +8,8 @@ import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.tags.TagManager;
-import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
 import java.util.Map;
@@ -35,24 +34,17 @@ public final class LevelNameplateRefreshTask implements Runnable {
         Universe universe = Universe.get();
         if (universe == null) return;
 
-        RPGLevelingAPI api = RPGLevelingAPI.get();
-        if (api == null) return;
-
         TagManager tagManager = TagManager.get();
         if (tagManager == null) return;
 
         for (World world : universe.getWorlds().values()) {
             if (world == null || !world.isAlive()) continue;
-            world.execute(() -> refreshWorld(world, tagManager, api));
+            world.execute(() -> refreshWorld(world, tagManager));
         }
     }
 
     private void refreshWorld(@Nonnull World world,
-                              @Nonnull TagManager tagManager,
-                              @Nonnull RPGLevelingAPI api) {
-
-        EntityStore entityStore = world.getEntityStore();
-        Store<EntityStore> store = entityStore.getStore();
+                              @Nonnull TagManager tagManager) {
 
         for (PlayerRef playerRef : world.getPlayerRefs()) {
             if (playerRef == null) continue;
@@ -70,9 +62,9 @@ public final class LevelNameplateRefreshTask implements Runnable {
 
             int level = 1;
             try {
-                RPGLevelingAPI.PlayerLevelInfo info = api.getPlayerLevelInfo(playerRef, store);
-                if (info != null && info.getLevel() > 0) {
-                    level = info.getLevel();
+                int currentLevel = RPGLevelingCompat.getPlayerLevel(playerRef);
+                if (currentLevel > 0) {
+                    level = currentLevel;
                 }
             } catch (Throwable t) {
                 LOGGER.at(Level.FINE).withCause(t)

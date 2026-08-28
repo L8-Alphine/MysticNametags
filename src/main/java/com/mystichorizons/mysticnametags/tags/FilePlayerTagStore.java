@@ -41,8 +41,11 @@ public final class FilePlayerTagStore implements PlayerTagStore {
             return data != null ? data : new PlayerTagData();
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
-                    .log("[MysticNameTags] Failed to load tag data for " + uuid);
-            return new PlayerTagData();
+                    .log("[MysticNameTags] Failed to load tag data for " + uuid
+                            + "; treating it as unknown so it is not overwritten.");
+            PlayerTagData unknown = new PlayerTagData();
+            unknown.setLoadFailed(true);
+            return unknown;
         }
     }
 

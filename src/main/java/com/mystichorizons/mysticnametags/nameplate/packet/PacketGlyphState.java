@@ -53,8 +53,8 @@ public final class PacketGlyphState {
         public UUID viewerUuid;
         public final Set<Integer> spawnedIds = new HashSet<>();
 
-        public float lastYawDegrees = Float.NaN;
-        public float lastParentYawDegrees = Float.NaN;
+        public float lastYawRadians = Float.NaN;
+        public float lastParentYawRadians = Float.NaN;
         public double lastBaseX = Double.NaN;
         public double lastBaseY = Double.NaN;
         public double lastBaseZ = Double.NaN;

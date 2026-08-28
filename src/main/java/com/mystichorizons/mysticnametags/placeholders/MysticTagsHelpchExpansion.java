@@ -85,7 +85,7 @@ public final class MysticTagsHelpchExpansion extends PlaceholderExpansion {
         try {
             switch (key) {
                 case "tag":
-                    return manager.getLegacyActiveTag(uuid);
+                    return ColorFormatter.colorizeForPlaceholder(manager.getLegacyActiveTag(uuid));
 
                 case "tag_mini":
                     return manager.getMiniMessageActiveTag(uuid);
@@ -94,7 +94,7 @@ public final class MysticTagsHelpchExpansion extends PlaceholderExpansion {
                     return manager.getPlainActiveTag(uuid);
 
                 case "full":
-                    return ColorFormatter.colorize(manager.getColoredFullNameplate(uuid, playerName));
+                    return ColorFormatter.colorizeForPlaceholder(manager.getColoredFullNameplate(uuid, playerName));
 
                 case "full_mini":
                     return ColorFormatter.toMiniMessage(manager.getColoredFullNameplate(uuid, playerName));

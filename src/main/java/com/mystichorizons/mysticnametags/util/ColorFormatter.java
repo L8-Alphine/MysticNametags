@@ -66,9 +66,9 @@ public final class ColorFormatter {
             return input;
         }
 
-        // 0) MiniMessage -> legacy (&#RRGGBB, &l, &o, &r)
+        // 0) MiniMessage -> compact legacy (&#RRGGBB, &l, &o, &r).
         // This also expands <gradient:...>text</gradient> into per-char &#RRGGBB.
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
         // 1) Expand hex codes like "&#8A2BE2" to &x&8&A&2&B&E&2
         Matcher matcher = HEX_PATTERN.matcher(input);
@@ -93,6 +93,77 @@ public final class ColorFormatter {
         processed = translateAlternateColorCodes('&', processed);
 
         return processed;
+    }
+
+    /**
+     * Normalize config/user color markup without expanding compact hex.
+     *
+     * This is the safest form for systems that understand the plugin's compact
+     * config syntax directly, such as glyph parsing:
+     * - MiniMessage subset -> legacy/hex codes
+     * - bare #RRGGBB -> &#RRGGBB
+     * - § codes -> & codes
+     * - keeps every later color transition intact
+     */
+    public static String colorizeCompact(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        String out = MiniMessageParser.toLegacy(input);
+        out = translateAlternateColorCodes('§', out);
+        out = translateAlternateColorCodes('&', out);
+        return out;
+    }
+
+    public static String colorizeForChat(String input) {
+        return colorizeCompact(input);
+    }
+
+    /**
+     * Normalize placeholder output while preserving true hex colors. Expanded
+     * hex leaks into some chat placeholder consumers as visible "&x&f&f..."
+     * text, so placeholders use the compact &#RRGGBB form instead.
+     */
+    public static String colorizeForPlaceholder(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        String out = colorizeCompact(input);
+
+        Matcher expanded = EXPANDED_HEX_AMP.matcher(out);
+        StringBuffer expandedBuffer = new StringBuffer();
+        while (expanded.find()) {
+            String hex = unpackExpandedHex(expanded.group(), '&');
+            String replacement = hex != null ? "&#" + hex.toUpperCase(Locale.ROOT) : expanded.group();
+            expanded.appendReplacement(expandedBuffer, Matcher.quoteReplacement(replacement));
+        }
+        expanded.appendTail(expandedBuffer);
+        out = expandedBuffer.toString();
+
+        Matcher sectionExpanded = EXPANDED_HEX_SECT.matcher(out);
+        StringBuffer sectionBuffer = new StringBuffer();
+        while (sectionExpanded.find()) {
+            String hex = unpackExpandedHex(sectionExpanded.group(), '§');
+            String replacement = hex != null ? "&#" + hex.toUpperCase(Locale.ROOT) : sectionExpanded.group();
+            sectionExpanded.appendReplacement(sectionBuffer, Matcher.quoteReplacement(replacement));
+        }
+        sectionExpanded.appendTail(sectionBuffer);
+
+        return sectionBuffer.toString();
+    }
+
+    /**
+     * Custom UI labels do not render legacy color markup in Text values, so this returns only the
+     * visible characters.
+     *
+     * <p>For anything that needs color, prefer {@link #toTextSpans(String)} and a label's
+     * {@code .TextSpans} property — it keeps every color in the source and, unlike
+     * {@code Style.TextColor}, still applies when the page is updated rather than first built.</p>
+     */
+    public static String colorizeForUi(String input) {
+        return stripFormatting(colorizeCompact(input));
     }
 
     // ------------------------------------------------------------
@@ -155,7 +226,7 @@ public final class ColorFormatter {
         if (input == null || input.isEmpty()) return null;
 
         // MiniMessage -> legacy so existing scanner sees &#RRGGBB etc.
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
 
         String currentHex = null;
@@ -238,7 +309,7 @@ public final class ColorFormatter {
         }
 
         // 0) MiniMessage -> legacy first
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
         // Expand hex &#RRGGBB -> §x§R§R§G§G§B§B
         Matcher matcher = HEX_PATTERN.matcher(input);
@@ -255,6 +326,21 @@ public final class ColorFormatter {
 
         // Convert & → §
         return buffer.toString().replace('&', '§');
+    }
+
+    /**
+     * Normalize config/user color markup for packet glyph parsing.
+     *
+     * Glyph rendering has its own color parser because it maps text colors to
+     * model tint effects. Keep hex in a compact form so visible-length clamping
+     * and per-character parsing can preserve color state without inflating text.
+     */
+    public static String colorizeForGlyphNameplate(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+
+        return colorizeCompact(input);
     }
 
     public static String toMiniMessage(String input) {
@@ -435,7 +521,7 @@ public final class ColorFormatter {
     public static String extractFirstHexColor(String input) {
         if (input == null || input.isEmpty()) return null;
 
-        input = MiniMessageSupport.miniToLegacy(input);
+        input = colorizeCompact(input);
 
         // 0) Plain "#RRGGBB" anywhere in the string
         Matcher hashMatcher = HASH_HEX_PATTERN.matcher(input);
@@ -501,12 +587,146 @@ public final class ColorFormatter {
     }
 
     public static Message toMessage(String text, Color baseColor) {
-        if (text == null || text.isEmpty()) {
+        List<Message> parts = buildSegments(text, baseColor);
+        if (parts.isEmpty()) {
             return Message.raw("");
+        }
+        return Message.join(parts.toArray(new Message[0]));
+    }
+
+    /**
+     * Builds a span tree for a UI label's {@code .TextSpans} property.
+     *
+     * <p>Use this instead of {@code .Text} plus {@code .Style.TextColor} whenever a label's color
+     * comes from config: {@code Style.TextColor} only applies on a page's first build batch and
+     * silently no-ops on later updates, so a label restyled after a refresh keeps its stale color.
+     * Spans apply on every update and carry one color each, which is also what makes multi-colored
+     * and gradient displays render properly.</p>
+     *
+     * <p>Never set both {@code .Text} and {@code .TextSpans} on the same label.</p>
+     */
+    public static Message toTextSpans(String text) {
+        return toTextSpans(text, DEFAULT_COLOR);
+    }
+
+    public static Message toTextSpans(String text, Color baseColor) {
+        Message root = Message.empty();
+        for (Message part : buildSegments(text, baseColor)) {
+            root.insert(part);
+        }
+        return root;
+    }
+
+    /**
+     * Same as {@link #toTextSpans(String, Color)} but takes the base color as {@code #RRGGBB}.
+     *
+     * <p>Pass the color the label declares in its {@code .ui} style. Spans do not inherit that
+     * style color, so without it text carrying no color codes of its own would render white
+     * instead of matching the rest of the panel.</p>
+     */
+    public static Message toTextSpans(String text, String hexBaseColor) {
+        return toTextSpans(text, parseHexColor(hexBaseColor, DEFAULT_COLOR));
+    }
+
+    /**
+     * Shortens text to a visible-character budget without counting or cutting through color codes.
+     *
+     * @param maxVisible maximum rendered characters, ignoring formatting markup
+     * @param ellipsis   appended only when something was actually cut; may be null
+     */
+    public static String truncateVisible(String input, int maxVisible, String ellipsis) {
+        if (input == null || input.isEmpty() || maxVisible <= 0) {
+            return "";
+        }
+
+        // MiniMessage -> legacy so only one markup syntax has to be skipped below.
+        String text = colorizeCompact(input);
+
+        StringBuilder out = new StringBuilder(text.length());
+        int visible = 0;
+        int i = 0;
+        boolean truncated = false;
+
+        while (i < text.length()) {
+            char c = text.charAt(i);
+
+            if ((c == '&' || c == '§') && i + 7 < text.length() && text.charAt(i + 1) == '#') {
+                out.append(text, i, i + 8);
+                i += 8;
+                continue;
+            }
+
+            if ((c == '&' || c == '§') && i + 13 < text.length()
+                    && (text.charAt(i + 1) == 'x' || text.charAt(i + 1) == 'X')) {
+                out.append(text, i, i + 14);
+                i += 14;
+                continue;
+            }
+
+            if ((c == '&' || c == '§') && i + 1 < text.length()
+                    && "0123456789abcdefABCDEFklmnorKLMNORxX".indexOf(text.charAt(i + 1)) >= 0) {
+                out.append(c).append(text.charAt(i + 1));
+                i += 2;
+                continue;
+            }
+
+            if (visible >= maxVisible) {
+                truncated = true;
+                break;
+            }
+
+            out.append(c);
+            visible++;
+            i++;
+        }
+
+        if (truncated && ellipsis != null) {
+            out.append(ellipsis);
+        }
+
+        return out.toString();
+    }
+
+    private static Color parseHexColor(String hex, Color fallback) {
+        if (hex == null || hex.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Color.decode(hex.startsWith("#") ? hex : "#" + hex);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    /**
+     * One span of plain text in a single color, for labels whose color the UI forces (a muted
+     * locked row, a selected row, a status badge) rather than taking from the tag's own display.
+     * Any formatting in {@code text} is stripped so the forced color actually wins.
+     *
+     * @param hexColor {@code #RRGGBB}; falls back to the default color if unparsable
+     */
+    public static Message toFlatTextSpans(String text, String hexColor) {
+        String plain = colorizeForUi(text);
+        if (plain == null) {
+            plain = "";
+        }
+
+        Message root = Message.empty();
+        root.insert(Message.raw(plain).color(parseHexColor(hexColor, DEFAULT_COLOR)));
+        return root;
+    }
+
+    /**
+     * Splits formatted text into per-color/style runs. Every returned segment carries an explicit
+     * color, because spans do not inherit the label's style color.
+     */
+    private static List<Message> buildSegments(String text, Color baseColor) {
+        if (text == null || text.isEmpty()) {
+            return new ArrayList<>();
         }
 
         // MiniMessage -> legacy so existing parsing handles everything
-        text = MiniMessageSupport.miniToLegacy(text);
+        text = colorizeCompact(text);
 
         Color currentColor = baseColor != null ? baseColor : DEFAULT_COLOR;
         boolean bold = false;
@@ -607,10 +827,7 @@ public final class ColorFormatter {
             }
         }
 
-        if (parts.isEmpty()) {
-            return Message.raw("");
-        }
-        return Message.join(parts.toArray(new Message[0]));
+        return parts;
     }
 
     private static Message buildSegment(String text, Color color, boolean bold, boolean italic) {
@@ -649,10 +866,15 @@ public final class ColorFormatter {
             NAMED.put("yellow", new Color(0xFFFF55));
             NAMED.put("gold", new Color(0xFFAA00));
             NAMED.put("light_purple", new Color(0xFF55FF));
+            NAMED.put("purple", new Color(0xFF55FF));
+            NAMED.put("magenta", new Color(0xFF55FF));
+            NAMED.put("pink", new Color(0xFF55FF));
             NAMED.put("dark_purple", new Color(0xAA00AA));
+            NAMED.put("grey", new Color(0xAAAAAA));
+            NAMED.put("dark_grey", new Color(0x555555));
         }
 
-        private static final Pattern HEX_TAG = Pattern.compile("^#([0-9A-Fa-f]{6})$");
+        private static final Pattern HEX_TAG = Pattern.compile("^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$");
         private static final Pattern GRADIENT_OPEN = Pattern.compile("^gradient:(.+)$");
 
         private static final class State {
@@ -715,33 +937,36 @@ public final class ColorFormatter {
                             continue;
                         }
 
-                        // <bold>, <italic>
-                        if ("bold".equals(tag)) {
+                        // <bold>/<b>, <italic>/<i>
+                        if (isBoldTag(tag)) {
                             stack.push(state.copy());
                             state.bold = true;
                             i = close + 1;
                             textStart = i;
                             continue;
                         }
-                        if ("italic".equals(tag)) {
+                        if (isItalicTag(tag)) {
                             stack.push(state.copy());
                             state.italic = true;
                             i = close + 1;
                             textStart = i;
                             continue;
                         }
+                        if (isNoopDecorationTag(tag)) {
+                            stack.push(state.copy());
+                            i = close + 1;
+                            textStart = i;
+                            continue;
+                        }
 
-                        // <#RRGGBB>
-                        Matcher hexM = HEX_TAG.matcher(tag);
-                        if (hexM.matches()) {
-                            Color c = parseHexColor(hexM.group(1));
-                            if (c != null) {
-                                stack.push(state.copy());
-                                state.color = c;
-                                i = close + 1;
-                                textStart = i;
-                                continue;
-                            }
+                        // <#RRGGBB>, <#RGB>, <color:#RRGGBB>
+                        Color tagColor = parseTagColor(tag);
+                        if (tagColor != null) {
+                            stack.push(state.copy());
+                            state.color = tagColor;
+                            i = close + 1;
+                            textStart = i;
+                            continue;
                         }
 
                         // <red> <green> etc.
@@ -824,22 +1049,28 @@ public final class ColorFormatter {
                             continue;
                         }
 
-                        if ("bold".equals(tag)) {
+                        if (isBoldTag(tag)) {
                             tagStack.push("&l");
                             out.append("&l");
                             i = close + 1;
                             continue;
                         }
-                        if ("italic".equals(tag)) {
+                        if (isItalicTag(tag)) {
                             tagStack.push("&o");
                             out.append("&o");
                             i = close + 1;
                             continue;
                         }
+                        String legacyDecoration = legacyDecorationCode(tag);
+                        if (legacyDecoration != null) {
+                            tagStack.push(legacyDecoration);
+                            out.append(legacyDecoration);
+                            i = close + 1;
+                            continue;
+                        }
 
-                        Matcher hexM = HEX_TAG.matcher(tag);
-                        if (hexM.matches()) {
-                            String hex = hexM.group(1).toUpperCase(Locale.ROOT);
+                        String hex = parseTagHex(tag);
+                        if (hex != null) {
                             String legacy = "&#" + hex;
                             tagStack.push(legacy);
                             out.append(legacy);
@@ -905,7 +1136,8 @@ public final class ColorFormatter {
             for (String part : raw) {
                 String p = part.trim();
                 if (p.startsWith("#")) p = p.substring(1);
-                if (p.matches("[0-9A-Fa-f]{6}")) {
+                if (p.matches("[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}")) {
+                    p = expandHex(p);
                     Color c = parseHexColor(p);
                     if (c != null) colors.add(c);
                 } else {
@@ -979,6 +1211,63 @@ public final class ColorFormatter {
 
         private static int clamp255(int v) {
             return Math.max(0, Math.min(255, v));
+        }
+
+        private static boolean isBoldTag(String tag) {
+            return "bold".equals(tag) || "b".equals(tag) || "strong".equals(tag);
+        }
+
+        private static boolean isItalicTag(String tag) {
+            return "italic".equals(tag) || "i".equals(tag) || "em".equals(tag);
+        }
+
+        private static boolean isNoopDecorationTag(String tag) {
+            return legacyDecorationCode(tag) != null;
+        }
+
+        private static String legacyDecorationCode(String tag) {
+            if ("underlined".equals(tag) || "underline".equals(tag) || "u".equals(tag)) {
+                return "&n";
+            }
+            if ("strikethrough".equals(tag) || "strike".equals(tag) || "st".equals(tag)) {
+                return "&m";
+            }
+            if ("obfuscated".equals(tag) || "obfuscate".equals(tag) || "obf".equals(tag)) {
+                return "&k";
+            }
+            return null;
+        }
+
+        private static Color parseTagColor(String tag) {
+            String hex = parseTagHex(tag);
+            return hex == null ? null : parseHexColor(hex);
+        }
+
+        private static String parseTagHex(String tag) {
+            String value = tag;
+            int colon = tag.indexOf(':');
+            if (colon >= 0) {
+                String prefix = tag.substring(0, colon);
+                if ("color".equals(prefix) || "colour".equals(prefix) || "c".equals(prefix)) {
+                    value = tag.substring(colon + 1).trim();
+                }
+            }
+
+            Matcher hexM = HEX_TAG.matcher(value);
+            if (!hexM.matches()) {
+                return null;
+            }
+
+            return expandHex(hexM.group(1)).toUpperCase(Locale.ROOT);
+        }
+
+        private static String expandHex(String hex) {
+            if (hex != null && hex.length() == 3) {
+                return "" + hex.charAt(0) + hex.charAt(0)
+                        + hex.charAt(1) + hex.charAt(1)
+                        + hex.charAt(2) + hex.charAt(2);
+            }
+            return hex;
         }
     }
 

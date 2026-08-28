@@ -16,12 +16,8 @@ public class InfoSubCommand extends CommandBase {
 
     public InfoSubCommand() {
         super("info", "Show plugin information");
-        this.setPermissionGroup(null);
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
+        this.requireNoPermission();
+        this.setPermissionGroups();
     }
 
     private void sendColored(CommandContext context, String text) {
@@ -66,21 +62,21 @@ public class InfoSubCommand extends CommandBase {
 
         integrationLine.append(lang.tr("cmd.info.economy_prefix"));
 
-        if (econPrimary) {
-            integrationLine.append(lang.tr("cmd.info.economy_primary"));
-            if (econVault || econElite) {
+        if (econVault) {
+            integrationLine.append(lang.tr("cmd.info.economy_vault"));
+            if (econPrimary || econElite) {
                 integrationLine.append(lang.tr("cmd.info.economy_fallback_prefix"));
                 boolean first = true;
-                if (econVault) { integrationLine.append(lang.tr("cmd.info.economy_vault")); first = false; }
+                if (econPrimary) { integrationLine.append(lang.tr("cmd.info.economy_primary")); first = false; }
                 if (econElite) {
                     if (!first) integrationLine.append(lang.tr("cmd.info.economy_fallback_sep"));
                     integrationLine.append(lang.tr("cmd.info.economy_elite"));
                 }
                 integrationLine.append(lang.tr("cmd.info.economy_fallback_suffix"));
             }
-        } else if (econVault || econElite) {
+        } else if (econPrimary || econElite) {
             boolean first = true;
-            if (econVault) { integrationLine.append(lang.tr("cmd.info.economy_vault")); first = false; }
+            if (econPrimary) { integrationLine.append(lang.tr("cmd.info.economy_primary")); first = false; }
             if (econElite) {
                 if (!first) integrationLine.append(lang.tr("cmd.info.economy_plus_sep"));
                 integrationLine.append(lang.tr("cmd.info.economy_elite"));

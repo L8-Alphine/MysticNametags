@@ -95,8 +95,13 @@ public final class SqlPlayerTagStore implements PlayerTagStore {
             }
         } catch (SQLException e) {
             LOGGER.at(Level.WARNING).withCause(e)
-                    .log("[MysticNameTags] Failed to load SQL tag data for " + uuid);
-            return new PlayerTagData();
+                    .log("[MysticNameTags] Failed to load SQL tag data for " + uuid
+                            + "; treating it as unknown until the database responds again.");
+            // Flagged rather than returned empty so a database blip cannot make
+            // the player look tagless and then overwrite their real row.
+            PlayerTagData unknown = new PlayerTagData();
+            unknown.setLoadFailed(true);
+            return unknown;
         }
     }
 
@@ -140,6 +145,37 @@ public final class SqlPlayerTagStore implements PlayerTagStore {
         }
     }
 
+    /**
+     * Inserts only when the player has no row yet.
+     *
+     * On a network every server runs this migration against the same database,
+     * so a plain upsert would let the second server to boot overwrite what the
+     * first one imported. Insert-if-absent makes the import first-writer-wins
+     * and idempotent.
+     *
+     * @return true when this call created the row.
+     */
+    private boolean saveIfAbsent(@Nonnull UUID uuid, @Nonnull PlayerTagData data) {
+        boolean isSqlite = jdbcUrl.startsWith("jdbc:sqlite:");
+
+        String sql = isSqlite
+                ? "INSERT INTO mystic_tags_players(uuid, data_json) VALUES (?, ?) "
+                        + "ON CONFLICT(uuid) DO NOTHING"
+                : "INSERT INTO mystic_tags_players(uuid, data_json) VALUES (?, ?) "
+                        + "ON DUPLICATE KEY UPDATE data_json = data_json";
+
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, gson.toJson(data));
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            LOGGER.at(Level.WARNING).withCause(e)
+                    .log("[MysticNameTags] Failed to migrate SQL tag data for " + uuid);
+            return false;
+        }
+    }
+
     @Override
     public void migrateFromFolder(@Nonnull File playerDataFolder,
                                   @Nonnull Gson gson) {
@@ -156,6 +192,7 @@ public final class SqlPlayerTagStore implements PlayerTagStore {
                 .log("[MysticNameTags] Migrating " + files.length + " playerdata JSON files into SQL backend...");
 
         int migrated = 0;
+        int skipped = 0;
         for (File file : files) {
             try {
                 String filename = file.getName();
@@ -169,8 +206,11 @@ public final class SqlPlayerTagStore implements PlayerTagStore {
 
                     PlayerTagData data = gson.fromJson(reader, PlayerTagData.class);
                     if (data == null) data = new PlayerTagData();
-                    save(uuid, data);
-                    migrated++;
+                    if (saveIfAbsent(uuid, data)) {
+                        migrated++;
+                    } else {
+                        skipped++;
+                    }
                 }
             } catch (Exception e) {
                 LOGGER.at(Level.WARNING).withCause(e)
@@ -179,7 +219,8 @@ public final class SqlPlayerTagStore implements PlayerTagStore {
         }
 
         LOGGER.at(Level.INFO)
-                .log("[MysticNameTags] Migration complete. Migrated " + migrated + " players.");
+                .log("[MysticNameTags] Migration complete. Migrated " + migrated
+                        + " players, left " + skipped + " already present in the database untouched.");
 
         // Optional: rename original folder so we don't re-migrate next boot
         File renamed = new File(playerDataFolder.getParentFile(), "playerdata_legacy");

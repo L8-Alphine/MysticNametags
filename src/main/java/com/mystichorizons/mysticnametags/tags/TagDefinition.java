@@ -3,6 +3,11 @@ package com.mystichorizons.mysticnametags.tags;
 import com.google.gson.annotations.SerializedName;
 
 import javax.annotation.Nullable;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 public class TagDefinition {
@@ -15,6 +20,20 @@ public class TagDefinition {
     boolean purchasable;
     String permission;
     String category;
+    String season;
+    String activeFrom;
+    String activeUntil;
+    String availabilityMessage;
+
+    /**
+     * Banner art file in {@code <dataDir>/images/}. When set (and banners are enabled), the tag
+     * renders as this image above the player's head instead of its text {@link #display}.
+     * Accepts {@code "legend"}, {@code "legend.png"} or {@code "images/legend.png"}.
+     */
+    String banner;
+
+    /** Optional size multiplier for this tag's banner. Defaults to 1.0. */
+    Double bannerScale;
 
     Integer requiredPlaytimeMinutes;
     List<String> requiredOwnedTags;
@@ -67,6 +86,26 @@ public class TagDefinition {
     public double getPrice() { return price; }
     public boolean isPurchasable() { return purchasable; }
     public String getPermission() { return permission; }
+    public String getSeason() { return season; }
+    public String getActiveFrom() { return activeFrom; }
+    public String getActiveUntil() { return activeUntil; }
+    public String getAvailabilityMessage() { return availabilityMessage; }
+
+    @Nullable
+    public String getBanner() { return banner; }
+
+    public void setBanner(@Nullable String banner) { this.banner = banner; }
+
+    public boolean hasBanner() { return banner != null && !banner.isBlank(); }
+
+    public double getBannerScale() {
+        if (bannerScale == null || bannerScale <= 0.0d) {
+            return 1.0d;
+        }
+        return bannerScale;
+    }
+
+    public void setBannerScale(@Nullable Double bannerScale) { this.bannerScale = bannerScale; }
 
     public String getCategory() {
         if (category == null) return "General";
@@ -143,6 +182,62 @@ public class TagDefinition {
 
     public boolean hasStatRequirement() {
         return !getRequiredStats().isEmpty();
+    }
+
+    public boolean hasAvailabilityWindow() {
+        return parseAvailabilityInstant(activeFrom, true) != null
+                || parseAvailabilityInstant(activeUntil, false) != null;
+    }
+
+    public boolean isCurrentlyAvailable() {
+        Instant now = Instant.now();
+        Instant from = parseAvailabilityInstant(activeFrom, true);
+        Instant until = parseAvailabilityInstant(activeUntil, false);
+
+        if (from != null && now.isBefore(from)) {
+            return false;
+        }
+        return until == null || now.isBefore(until);
+    }
+
+    @Nullable
+    public Instant getActiveFromInstant() {
+        return parseAvailabilityInstant(activeFrom, true);
+    }
+
+    @Nullable
+    public Instant getActiveUntilInstant() {
+        return parseAvailabilityInstant(activeUntil, false);
+    }
+
+    @Nullable
+    public static Instant parseAvailabilityInstant(@Nullable String value, boolean startOfDay) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+
+        try {
+            return Instant.parse(trimmed);
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            return OffsetDateTime.parse(trimmed).toInstant();
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            LocalDate date = LocalDate.parse(trimmed);
+            if (startOfDay) {
+                return date.atStartOfDay().toInstant(ZoneOffset.UTC);
+            }
+            return date.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+        } catch (DateTimeParseException ignored) {
+        }
+
+        return null;
     }
 
     @Nullable

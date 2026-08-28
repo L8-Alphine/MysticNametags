@@ -4,6 +4,7 @@ import com.hypixel.hytale.protocol.*;
 import com.hypixel.hytale.protocol.packets.entities.EntityUpdates;
 import com.hypixel.hytale.server.core.receiver.IPacketReceiver;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import org.joml.Vector3f;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -311,21 +312,9 @@ public final class PacketGlyphSender {
                                                     float offsetY,
                                                     float offsetZ,
                                                     @Nonnull ModelTransform transform) {
-        if (mountedToNetworkId <= 0) {
-            return new ComponentUpdate[]{new TransformUpdate(transform)};
-        }
-
-        // These are run-level glyph plates now, not per-letter plates. Keep both
-        // transform and mount current so the whole run can billboard as one unit.
-        return new ComponentUpdate[]{
-                new TransformUpdate(transform),
-                new MountedUpdate(
-                        mountedToNetworkId,
-                        new Vector3f(offsetX, offsetY, offsetZ),
-                        GLYPH_ENTITY_MOUNT_CONTROLLER,
-                        null
-                )
-        };
+        // The mount is sent on spawn. Re-sending it with each billboard refresh
+        // makes the client fight the absolute transform and causes visible drift.
+        return new ComponentUpdate[]{new TransformUpdate(transform)};
     }
 
     public static boolean spawnMany(@Nonnull PlayerRef viewer,

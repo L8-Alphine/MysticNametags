@@ -2,9 +2,9 @@
   "groupId": "com.mystichorizons",
   "artifactId": "mysticnametags",
   "modName": "MysticNameTags",
-  "version": "1.0.0",
+  "version": "1.2.8",
   "buildSystem": "Gradle",
   "language": "Java",
-  "jarPath": "build/libs/mysticnametags-1.0.0.jar",
+  "jarPath": "build/libs/mysticnametags-1.2.8.jar",
   "buildTask": "shadowJar"
 }

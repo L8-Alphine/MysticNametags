@@ -8,6 +8,7 @@ import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.protocol.packets.interface_.CustomPageLifetime;
 import com.hypixel.hytale.protocol.packets.interface_.CustomUIEventBindingType;
 import com.hypixel.hytale.protocol.packets.interface_.NotificationStyle;
+import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.entity.entities.player.pages.InteractiveCustomUIPage;
 import com.hypixel.hytale.server.core.ui.builder.EventData;
@@ -17,10 +18,17 @@ import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventBus;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
+import com.mystichorizons.mysticnametags.network.RedisManager;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
+import com.mystichorizons.mysticnametags.tags.TagAuditLogger;
+import com.mystichorizons.mysticnametags.tags.TagConfigValidator;
+import com.mystichorizons.mysticnametags.tags.TagDefinition;
+import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
@@ -28,10 +36,13 @@ import com.mystichorizons.mysticnametags.util.UpdateChecker;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.RuntimeMXBean;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +56,46 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     (UIEventData e, String v) -> e.action = v,
                     e -> e.action)
             .add()
+            .append(new KeyedCodec<>("TagId", Codec.STRING),
+                    (UIEventData e, String v) -> e.tagId = v,
+                    e -> e.tagId)
+            .add()
+            .append(new KeyedCodec<>("Display", Codec.STRING),
+                    (UIEventData e, String v) -> e.display = v,
+                    e -> e.display)
+            .add()
+            .append(new KeyedCodec<>("Description", Codec.STRING),
+                    (UIEventData e, String v) -> e.description = v,
+                    e -> e.description)
+            .add()
+            .append(new KeyedCodec<>("Category", Codec.STRING),
+                    (UIEventData e, String v) -> e.category = v,
+                    e -> e.category)
+            .add()
+            .append(new KeyedCodec<>("Price", Codec.STRING),
+                    (UIEventData e, String v) -> e.price = v,
+                    e -> e.price)
+            .add()
+            .append(new KeyedCodec<>("Permission", Codec.STRING),
+                    (UIEventData e, String v) -> e.permission = v,
+                    e -> e.permission)
+            .add()
+            .append(new KeyedCodec<>("Field", Codec.STRING),
+                    (UIEventData e, String v) -> e.field = v,
+                    e -> e.field)
+            .add()
+            .append(new KeyedCodec<>("Value", Codec.STRING),
+                    (UIEventData e, String v) -> e.value = v,
+                    e -> e.value)
+            .add()
+            .append(new KeyedCodec<>("Text", Codec.STRING),
+                    (UIEventData e, String v) -> e.text = v,
+                    e -> e.text)
+            .add()
+            .append(new KeyedCodec<>("NewValue", Codec.STRING),
+                    (UIEventData e, String v) -> e.newValue = v,
+                    e -> e.newValue)
+            .add()
             .build();
     private static final String LAYOUT = "mysticnametags/Dashboard.ui";
     private static final String CURSEFORGE_URL =
@@ -54,9 +105,17 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
     private static final String TAB_OVERVIEW = "Overview";
     private static final String TAB_INTEGRATIONS = "Integrations";
     private static final String TAB_DEBUG = "Debug";
+    private static final String TAB_EDITOR = "Editor";
     private static final String TAB_SUPPORT = "Support";
     private final PlayerRef playerRef;
     private String activeTab = TAB_OVERVIEW;
+    private List<String> debugOverrideLines;
+    private String editorTagId = "";
+    private String editorDisplay = "";
+    private String editorDescription = "";
+    private String editorCategory = "General";
+    private String editorPrice = "0";
+    private String editorPermission = "";
 
     public MysticNameTagsDashboardUI(@Nonnull PlayerRef playerRef) {
         super(playerRef, CustomPageLifetime.CanDismissOrCloseThroughInteraction, CODEC);
@@ -169,6 +228,85 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         return value ? "Yes" : "No";
     }
 
+    @Nonnull
+    private static DashboardHealth captureDashboardHealth(@Nonnull Settings settings,
+                                                          @Nonnull IntegrationManager integrations,
+                                                          @Nonnull File dataFolder) {
+        TagConfigValidator.Report report = TagConfigValidator.validateDefault(settings, integrations);
+        int storageErrors = inspectStorageErrors(settings, dataFolder);
+        List<String> integrationWarnings = inspectIntegrationWarnings(settings, integrations);
+
+        int errors = report.count(TagConfigValidator.Severity.ERROR) + storageErrors;
+        int warnings = report.count(TagConfigValidator.Severity.WARNING) + integrationWarnings.size();
+        String status = errors > 0 ? "ISSUES FOUND" : (warnings > 0 ? "WARNINGS" : "HEALTHY");
+        String color = errors > 0 ? "#ff6b6b" : (warnings > 0 ? "#f0b429" : "#55d68a");
+
+        List<String> lines = new ArrayList<>();
+        lines.add("Doctor status: " + status + " (" + errors + " errors, " + warnings + " warnings)");
+        lines.add("Tags: " + report.getRawTagCount() + " raw, " + report.getUniqueTagCount()
+                + " unique, " + report.getCategoryCount() + " categories");
+        lines.add("Validation: " + report.count(TagConfigValidator.Severity.ERROR) + " errors, "
+                + report.count(TagConfigValidator.Severity.WARNING) + " warnings, "
+                + report.count(TagConfigValidator.Severity.INFO) + " info");
+        lines.add("Storage: " + StorageBackend.fromString(settings.getStorageBackendRaw()).name()
+                + (storageErrors > 0 ? " needs attention" : " OK"));
+
+        for (String warning : integrationWarnings) {
+            lines.add("Integration warning: " + warning);
+        }
+
+        for (TagConfigValidator.Finding finding : report.getFindingsUpTo(2)) {
+            lines.add(finding.getSeverity().name() + ": " + finding.getLocation()
+                    + " - " + finding.getMessage());
+        }
+
+        while (lines.size() < 6) {
+            lines.add(lines.size() == 4
+                    ? "No tag config findings."
+                    : "Run /tagsadmin doctor for the full health report.");
+        }
+
+        return new DashboardHealth("Health: " + status, color, lines);
+    }
+
+    private static int inspectStorageErrors(@Nonnull Settings settings,
+                                            @Nonnull File dataFolder) {
+        StorageBackend backend = StorageBackend.fromString(settings.getStorageBackendRaw());
+        return switch (backend) {
+            case FILE -> {
+                File playerDataFolder = new File(dataFolder, "playerdata");
+                yield (playerDataFolder.isDirectory() && playerDataFolder.canWrite()) ? 0 : 1;
+            }
+            case SQLITE -> {
+                File sqliteFile = new File(dataFolder, settings.getSqliteFile());
+                File parent = sqliteFile.getAbsoluteFile().getParentFile();
+                yield (parent != null && parent.canWrite()) ? 0 : 1;
+            }
+            case MYSQL -> 0;
+            case REDIS -> {
+                RedisManager redis = RedisManager.get();
+                yield (redis != null && redis.isHealthy()) ? 0 : 1;
+            }
+        };
+    }
+
+    @Nonnull
+    private static List<String> inspectIntegrationWarnings(@Nonnull Settings settings,
+                                                           @Nonnull IntegrationManager integrations) {
+        List<String> warnings = new ArrayList<>();
+        if (settings.isEconomySystemEnabled() && !integrations.hasAnyEconomy()) {
+            warnings.add("economy enabled but no backend is available");
+        }
+        if (settings.isRpgLevelingNameplatesEnabled() && !RPGLevelingCompat.isAvailable()) {
+            warnings.add("RPGLeveling nameplates enabled but RPGLeveling is unavailable");
+        }
+        if (settings.isEndlessLevelingNameplatesEnabled()
+                && !integrations.isEndlessLevelingNameplateAttached()) {
+            warnings.add("Endless Leveling bridge is not attached");
+        }
+        return warnings;
+    }
+
     @Override
     public void build(@Nonnull Ref<EntityStore> ref,
                       @Nonnull UICommandBuilder commands,
@@ -225,6 +363,8 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 EventData.of("Action", "tab_integrations"));
         events.addEventBinding(CustomUIEventBindingType.Activating, "#DebugTabButton",
                 EventData.of("Action", "tab_debug"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#EditorTabButton",
+                EventData.of("Action", "tab_editor"));
         events.addEventBinding(CustomUIEventBindingType.Activating, "#SupportTabButton",
                 EventData.of("Action", "tab_support"));
 
@@ -247,6 +387,38 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 EventData.of("Action", "refresh_nameplate"));
         events.addEventBinding(CustomUIEventBindingType.Activating, "#DebugSnapshotButton",
                 EventData.of("Action", "debug_snapshot"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#AuditTailButton",
+                EventData.of("Action", "audit_tail"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#ImportPackButton",
+                EventData.of("Action", "import_pack"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#ExportPackButton",
+                EventData.of("Action", "export_pack"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#OpenEditorButton",
+                EventData.of("Action", "open_tag_editor"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#EditorLoadButton",
+                EventData.of("Action", "editor_load"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#EditorSaveButton",
+                EventData.of("Action", "editor_save"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#EditorDeleteButton",
+                EventData.of("Action", "editor_delete"));
+        events.addEventBinding(CustomUIEventBindingType.Activating, "#EditorClearButton",
+                EventData.of("Action", "editor_clear"));
+
+        // Vanilla-style live value capture: each payload contains ONLY one
+        // "@Key" capture entry ("@TagId" -> value sent under "TagId", etc.);
+        // recognised in handleDataEvent by action == null.
+        events.addEventBinding(CustomUIEventBindingType.ValueChanged, "#EditorTagIdBox",
+                EventData.of("@TagId", "#EditorTagIdBox.Value"), false);
+        events.addEventBinding(CustomUIEventBindingType.ValueChanged, "#EditorDisplayBox",
+                EventData.of("@Display", "#EditorDisplayBox.Value"), false);
+        events.addEventBinding(CustomUIEventBindingType.ValueChanged, "#EditorDescriptionBox",
+                EventData.of("@Description", "#EditorDescriptionBox.Value"), false);
+        events.addEventBinding(CustomUIEventBindingType.ValueChanged, "#EditorCategoryBox",
+                EventData.of("@Category", "#EditorCategoryBox.Value"), false);
+        events.addEventBinding(CustomUIEventBindingType.ValueChanged, "#EditorPriceBox",
+                EventData.of("@Price", "#EditorPriceBox.Value"), false);
+        events.addEventBinding(CustomUIEventBindingType.ValueChanged, "#EditorPermissionBox",
+                EventData.of("@Permission", "#EditorPermissionBox.Value"), false);
     }
 
     @Override
@@ -254,7 +426,16 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                                 @Nonnull Store<EntityStore> store,
                                 @Nonnull UIEventData data) {
 
-        if (data.action == null) return;
+        if (data.action == null) {
+            // Capture-only payloads from the editor tab's text fields.
+            if (data.tagId != null) editorTagId = data.tagId;
+            if (data.display != null) editorDisplay = data.display;
+            if (data.description != null) editorDescription = data.description;
+            if (data.category != null) editorCategory = data.category;
+            if (data.price != null) editorPrice = data.price;
+            if (data.permission != null) editorPermission = data.permission;
+            return;
+        }
 
         LanguageManager lang = LanguageManager.get();
         UUID uuid = playerRef.getUuid();
@@ -263,6 +444,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         try {
             switch (action) {
                 case "refresh" -> {
+                    debugOverrideLines = null;
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
                             "&b" + lang.tr("plugin.title"),
@@ -273,6 +455,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 }
 
                 case "reload" -> {
+                    debugOverrideLines = null;
                     TagManager.reload();
 
                     MysticNotificationUtil.send(
@@ -308,6 +491,11 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
                 case "tab_debug" -> {
                     activeTab = TAB_DEBUG;
+                    refreshDashboard(null);
+                }
+
+                case "tab_editor" -> {
+                    activeTab = TAB_EDITOR;
                     refreshDashboard(null);
                 }
 
@@ -383,6 +571,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 }
 
                 case "debug_snapshot" -> {
+                    debugOverrideLines = null;
                     TagManager manager = TagManager.get();
                     IntegrationManager integrations = manager.getIntegrations();
 
@@ -435,14 +624,128 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
                     MysticLog.debug(sb.toString());
 
+                    String savedFileName = saveDebugSnapshotToFile(sb.toString());
+
+                    debugOverrideLines = new ArrayList<>();
+                    for (String line : sb.toString().split("\n")) {
+                        if (debugOverrideLines.size() >= 6) break;
+                        debugOverrideLines.add(shortenDebugLine(line));
+                    }
+                    debugOverrideLines.add(savedFileName != null
+                            ? lang.tr("dashboard.debug_snapshot_saved", Map.of("file", savedFileName))
+                            : lang.tr("dashboard.debug_snapshot_save_failed"));
+                    activeTab = TAB_DEBUG;
+
                     MysticNotificationUtil.send(
                             playerRef.getPacketHandler(),
                             "&b" + lang.tr("plugin.title"),
-                            lang.tr("dashboard.debug_snapshot_toast"),
+                            savedFileName != null
+                                    ? lang.tr("dashboard.debug_snapshot_saved", Map.of("file", savedFileName))
+                                    : lang.tr("dashboard.debug_snapshot_toast"),
                             NotificationStyle.Default
                     );
 
                     refreshDashboard(lang.tr("dashboard.debug_snapshot_status"));
+                }
+
+                case "audit_tail" -> {
+                    List<String> auditLines = TagAuditLogger.tail(7);
+                    debugOverrideLines = new ArrayList<>();
+                    if (auditLines.isEmpty()) {
+                        debugOverrideLines.add(lang.tr("cmd.admin.audit.empty"));
+                    } else {
+                        for (String line : auditLines) {
+                            debugOverrideLines.add(shortenDebugLine(line));
+                        }
+                    }
+
+                    activeTab = TAB_DEBUG;
+                    MysticNotificationUtil.send(
+                            playerRef.getPacketHandler(),
+                            "&b" + lang.tr("plugin.title"),
+                            lang.tr("dashboard.audit_tail_toast"),
+                            NotificationStyle.Default
+                    );
+                    refreshDashboard(lang.tr("dashboard.audit_tail_status"));
+                }
+
+                case "import_pack", "export_pack" -> {
+                    Player player = store.getComponent(ref, Player.getComponentType());
+                    if (player == null) {
+                        MysticLog.warn("Dashboard pack manager open failed for "
+                                + playerRef.getUsername() + " – no Player component.");
+                        return;
+                    }
+                    player.getPageManager().openCustomPage(ref, store,
+                            new MysticNameTagsPackManagerUI(playerRef));
+                }
+
+                case "open_tag_editor" -> {
+                    Player player = store.getComponent(ref, Player.getComponentType());
+                    if (player == null) {
+                        MysticLog.warn("Dashboard tag editor open failed for "
+                                + playerRef.getUsername() + " – no Player component.");
+                        return;
+                    }
+                    player.getPageManager().openCustomPage(ref, store,
+                            new MysticNameTagsTagEditorUI(playerRef));
+                }
+
+                case "editor_load" -> {
+                    activeTab = TAB_EDITOR;
+                    populateEditorFromTag(editorTagId, lang.tr("dashboard.editor_loaded_status"));
+                }
+
+                case "editor_save" -> {
+                    activeTab = TAB_EDITOR;
+                    TagManager.TagEditResult result = TagManager.get().upsertSimpleTag(
+                            editorTagId,
+                            editorDisplay,
+                            editorDescription,
+                            editorCategory,
+                            editorPrice,
+                            editorPermission,
+                            playerRef.getUsername()
+                    );
+
+                    if (result.isSuccess()) {
+                        populateEditorFromDefinition(result.getTag(), lang.tr("dashboard.editor_saved_status", Map.of(
+                                "status", result.getStatus().name().toLowerCase(Locale.ROOT)
+                        )));
+                        MysticNotificationUtil.send(
+                                playerRef.getPacketHandler(),
+                                "&b" + lang.tr("plugin.title"),
+                                lang.tr("dashboard.editor_saved_toast"),
+                                NotificationStyle.Success
+                        );
+                    } else {
+                        refreshDashboard(lang.tr("dashboard.editor_failed_status", Map.of(
+                                "error", result.getMessage() == null ? result.getStatus().name() : result.getMessage()
+                        )));
+                    }
+                }
+
+                case "editor_delete" -> {
+                    activeTab = TAB_EDITOR;
+                    TagManager.TagEditResult result = TagManager.get().deleteTagDefinition(editorTagId, playerRef.getUsername());
+                    if (result.isSuccess()) {
+                        clearEditorFields(lang.tr("dashboard.editor_deleted_status"));
+                        MysticNotificationUtil.send(
+                                playerRef.getPacketHandler(),
+                                "&b" + lang.tr("plugin.title"),
+                                lang.tr("dashboard.editor_deleted_toast"),
+                                NotificationStyle.Success
+                        );
+                    } else {
+                        refreshDashboard(lang.tr("dashboard.editor_failed_status", Map.of(
+                                "error", result.getMessage() == null ? result.getStatus().name() : result.getMessage()
+                        )));
+                    }
+                }
+
+                case "editor_clear" -> {
+                    activeTab = TAB_EDITOR;
+                    clearEditorFields(lang.tr("dashboard.editor_cleared_status"));
                 }
 
                 case "close" -> close();
@@ -470,8 +773,122 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         populateDynamicFields(update);
         populateIntegrationDetails(update);
         applyTabSelection(update, activeTab);
+        applyEditorDraft(update);
         update.set("#StatusText.Text", statusOverride != null ? statusOverride : lang.tr("dashboard.welcome"));
         sendUpdate(update, null, false);
+    }
+
+    private void setEditorDraftFromDefinition(@Nullable TagDefinition def) {
+        if (def == null) {
+            return;
+        }
+        editorTagId = safe(def.getId());
+        editorDisplay = safe(def.getDisplay());
+        editorDescription = safe(def.getDescription());
+        editorCategory = safe(def.getCategory());
+        editorPrice = String.valueOf(def.getPrice());
+        editorPermission = safe(def.getPermission());
+    }
+
+    private void clearEditorDraft() {
+        editorTagId = "";
+        editorDisplay = "";
+        editorDescription = "";
+        editorCategory = "General";
+        editorPrice = "0";
+        editorPermission = "";
+    }
+
+    private void applyEditorDraft(@Nonnull UICommandBuilder update) {
+        update.set("#EditorTagIdBox.Value", editorTagId);
+        update.set("#EditorDisplayBox.Value", editorDisplay);
+        update.set("#EditorDescriptionBox.Value", editorDescription);
+        update.set("#EditorCategoryBox.Value", editorCategory);
+        update.set("#EditorPriceBox.Value", editorPrice);
+        update.set("#EditorPermissionBox.Value", editorPermission);
+    }
+
+    private void populateEditorFromTag(@Nullable String tagId,
+                                       @Nonnull String statusText) {
+        LanguageManager lang = LanguageManager.get();
+        String id = tagId == null ? "" : tagId.trim();
+        TagDefinition def = id.isBlank() ? null : TagManager.get().getTag(id);
+
+        if (def == null) {
+            UICommandBuilder update = baseDashboardUpdate(lang.tr("dashboard.editor_not_found_status", Map.of(
+                    "tagId", id.isBlank() ? "unknown" : id
+            )));
+            editorTagId = id;
+            editorDisplay = "";
+            editorDescription = "";
+            editorCategory = "General";
+            editorPrice = "0";
+            editorPermission = "";
+            applyEditorDraft(update);
+            update.set("#EditorPreviewLine.Text", lang.tr("dashboard.editor_preview_empty"));
+            sendUpdate(update, null, false);
+            return;
+        }
+
+        populateEditorFromDefinition(def, statusText);
+    }
+
+    private void populateEditorFromDefinition(@Nullable TagDefinition def,
+                                              @Nonnull String statusText) {
+        LanguageManager lang = LanguageManager.get();
+        UICommandBuilder update = baseDashboardUpdate(statusText);
+
+        if (def == null) {
+            sendUpdate(update, null, false);
+            return;
+        }
+
+        setEditorDraftFromDefinition(def);
+        applyEditorDraft(update);
+        update.set("#EditorPreviewLine.Text", lang.tr("dashboard.editor_preview_value", Map.of(
+                "id", safe(def.getId()),
+                "display", safe(def.getDisplay()),
+                "category", safe(def.getCategory())
+        )));
+        sendUpdate(update, null, false);
+    }
+
+    private void clearEditorFields(@Nonnull String statusText) {
+        LanguageManager lang = LanguageManager.get();
+        UICommandBuilder update = baseDashboardUpdate(statusText);
+        clearEditorDraft();
+        applyEditorDraft(update);
+        update.set("#EditorPreviewLine.Text", lang.tr("dashboard.editor_preview_empty"));
+        sendUpdate(update, null, false);
+    }
+
+    private UICommandBuilder baseDashboardUpdate(@Nonnull String statusText) {
+        UICommandBuilder update = new UICommandBuilder();
+        applyStaticText(update);
+        populateDynamicFields(update);
+        populateIntegrationDetails(update);
+        applyTabSelection(update, activeTab);
+        applyEditorDraft(update);
+        update.set("#StatusText.Text", statusText);
+        return update;
+    }
+
+    @Nonnull
+    private static String safe(@Nullable String value) {
+        return value == null ? "" : value;
+    }
+
+    @Nullable
+    private static String firstNonBlank(@Nullable String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private void applyStaticText(@Nonnull UICommandBuilder commands) {
@@ -487,6 +904,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#ClearCacheButton.Text", lang.tr("ui.dashboard.action_clear_cache"));
         commands.set("#RefreshNameplateButton.Text", lang.tr("ui.dashboard.action_refresh_nameplate"));
         commands.set("#DebugSnapshotButton.Text", lang.tr("ui.dashboard.action_debug_snapshot"));
+        commands.set("#AuditTailButton.Text", lang.tr("ui.dashboard.action_audit_tail"));
+        commands.set("#ImportPackButton.Text", lang.tr("ui.dashboard.action_import_pack"));
+        commands.set("#ExportPackButton.Text", lang.tr("ui.dashboard.action_export_pack"));
+        commands.set("#OpenEditorButton.Text", lang.tr("ui.dashboard.action_open_editor"));
 
         commands.set("#RefreshButton.Text", lang.tr("ui.dashboard.button_refresh"));
         commands.set("#ReloadButton.Text", lang.tr("ui.dashboard.button_reload"));
@@ -514,6 +935,19 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#NameplateCardTitle.Text", "NAMEPLATES");
 
         commands.set("#DebugHeader.Text", lang.tr("ui.dashboard.tab_debug_support").toUpperCase(Locale.ROOT));
+        commands.set("#EditorHeader.Text", lang.tr("ui.dashboard.tab_editor").toUpperCase(Locale.ROOT));
+        commands.set("#EditorHelpLine.Text", lang.tr("ui.dashboard.editor_help"));
+        commands.set("#EditorIdLabel.Text", lang.tr("ui.dashboard.editor_id"));
+        commands.set("#EditorDisplayLabel.Text", lang.tr("ui.dashboard.editor_display"));
+        commands.set("#EditorDescriptionLabel.Text", lang.tr("ui.dashboard.editor_description"));
+        commands.set("#EditorCategoryLabel.Text", lang.tr("ui.dashboard.editor_category"));
+        commands.set("#EditorPriceLabel.Text", lang.tr("ui.dashboard.editor_price"));
+        commands.set("#EditorPermissionLabel.Text", lang.tr("ui.dashboard.editor_permission"));
+        commands.set("#EditorLoadButton.Text", lang.tr("ui.dashboard.editor_load"));
+        commands.set("#EditorSaveButton.Text", lang.tr("ui.dashboard.editor_save"));
+        commands.set("#EditorDeleteButton.Text", lang.tr("ui.dashboard.editor_delete"));
+        commands.set("#EditorClearButton.Text", lang.tr("ui.dashboard.editor_clear"));
+        commands.set("#EditorPreviewLine.Text", lang.tr("dashboard.editor_preview_empty"));
         commands.set("#SupportHeader.Text", lang.tr("ui.dashboard.tab_support").toUpperCase(Locale.ROOT));
 
         commands.set("#OverviewLine0.Text", lang.tr("ui.dashboard.overview.line0"));
@@ -586,18 +1020,18 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
         integrationsText.append(" ").append(lang.tr("dashboard.integrations_economy_prefix")).append(" ");
 
-        if (econPrimary) {
-            integrationsText.append(lang.tr("dashboard.economy_primary"));
-            if (econEcoTale || econVault || econElite) {
+        if (econVault) {
+            integrationsText.append("VaultUnlocked");
+            if (econPrimary || econEcoTale || econElite) {
                 integrationsText.append(" ").append(lang.tr("dashboard.economy_fallback_prefix"));
                 boolean first = true;
-                if (econEcoTale) {
-                    integrationsText.append("EcoTale");
+                if (econPrimary) {
+                    integrationsText.append(lang.tr("dashboard.economy_primary"));
                     first = false;
                 }
-                if (econVault) {
+                if (econEcoTale) {
                     if (!first) integrationsText.append(", ");
-                    integrationsText.append("VaultUnlocked");
+                    integrationsText.append("EcoTale");
                     first = false;
                 }
                 if (econElite) {
@@ -606,15 +1040,15 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 }
                 integrationsText.append(")");
             }
-        } else if (econEcoTale || econVault || econElite) {
+        } else if (econPrimary || econEcoTale || econElite) {
             boolean first = true;
-            if (econEcoTale) {
-                integrationsText.append("EcoTale");
+            if (econPrimary) {
+                integrationsText.append(lang.tr("dashboard.economy_primary"));
                 first = false;
             }
-            if (econVault) {
+            if (econEcoTale) {
                 if (!first) integrationsText.append(" + ");
-                integrationsText.append("VaultUnlocked");
+                integrationsText.append("EcoTale");
                 first = false;
             }
             if (econElite) {
@@ -653,7 +1087,44 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
 
         commands.set("#PlaceholderBackendsLabel.Text", placeholderText.toString());
 
+        DashboardHealth health = captureDashboardHealth(settings, integrations, plugin.getDataDirectory().toFile());
+        commands.set("#HealthLabel.TextSpans", ColorFormatter.toFlatTextSpans(health.label, health.color));
+        populateDoctorDebugLines(commands, health);
+
         populateResourceStats(commands);
+    }
+
+    private void populateDoctorDebugLines(@Nonnull UICommandBuilder commands,
+                                          @Nonnull DashboardHealth health) {
+        if (debugOverrideLines != null) {
+            commands.set("#DebugHeader.Text", "AUDIT / TAG PACKS");
+            for (int i = 0; i <= 6; i++) {
+                String line = i < debugOverrideLines.size() ? debugOverrideLines.get(i) : "";
+                commands.set("#DebugLine" + i + ".Text", line);
+            }
+            return;
+        }
+
+        commands.set("#DebugHeader.Text", "DOCTOR / DEBUG");
+        commands.set("#DebugLine0.Text", health.line(0));
+        commands.set("#DebugLine1.Text", health.line(1));
+        commands.set("#DebugLine2.Text", health.line(2));
+        commands.set("#DebugLine3.Text", health.line(3));
+        commands.set("#DebugLine4.Text", health.line(4));
+        commands.set("#DebugLine5.Text", health.line(5));
+        commands.set("#DebugLine6.Text", "Public API listeners: " + MysticNameTagsEventBus.listenerCount()
+                + " | Use /tagsadmin doctor for full details.");
+    }
+
+    private static String shortenDebugLine(@Nullable String line) {
+        if (line == null) {
+            return "";
+        }
+        String trimmed = line.trim();
+        if (trimmed.length() <= 118) {
+            return trimmed;
+        }
+        return trimmed.substring(0, 115) + "...";
     }
 
     private void applyTabSelection(@Nonnull UICommandBuilder commands,
@@ -662,16 +1133,19 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         boolean overview = TAB_OVERVIEW.equalsIgnoreCase(tabKey);
         boolean integrations = TAB_INTEGRATIONS.equalsIgnoreCase(tabKey);
         boolean debug = TAB_DEBUG.equalsIgnoreCase(tabKey);
+        boolean editor = TAB_EDITOR.equalsIgnoreCase(tabKey);
         boolean support = TAB_SUPPORT.equalsIgnoreCase(tabKey);
 
         commands.set("#DashboardTabs.SelectedTab", overview ? TAB_OVERVIEW
                 : integrations ? TAB_INTEGRATIONS
                 : debug ? TAB_DEBUG
+                : editor ? TAB_EDITOR
                 : TAB_SUPPORT);
 
         commands.set("#TabOverviewPanel.Visible", overview);
         commands.set("#TabIntegrationsPanel.Visible", integrations);
         commands.set("#TabDebugPanel.Visible", debug);
+        commands.set("#TabEditorPanel.Visible", editor);
         commands.set("#TabSupportPanel.Visible", support);
 
         LanguageManager lang = LanguageManager.get();
@@ -682,6 +1156,8 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             activeTitle = lang.tr("ui.dashboard.tab_integrations");
         } else if (debug) {
             activeTitle = lang.tr("ui.dashboard.tab_debug_support");
+        } else if (editor) {
+            activeTitle = lang.tr("ui.dashboard.tab_editor");
         } else {
             activeTitle = lang.tr("ui.dashboard.tab_support");
         }
@@ -719,6 +1195,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 || invokeBooleanMethodIfPresent(integrations, "isStatProviderAvailable");
         boolean itemHandler = invokeBooleanMethodIfPresent(integrations, "isItemRequirementHandlerAvailable");
         boolean endlessNameplate = invokeBooleanMethodIfPresent(integrations, "isEndlessLevelingNameplateAttached");
+        boolean glyphNameplates = settings.isExperimentalGlyphNameplatesEnabled();
 
         String playtimeProviderName = getPlaytimeProviderName(integrations);
         String activePermissionBackend = getActivePermissionBackendName(integrations);
@@ -745,7 +1222,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#PrefixesCardStatus.Text", "Provider: " + prefixProvider);
         commands.set("#PrefixesCardMeta.Text", "Available: " + yesNo(anyPrefixProvider));
 
-        commands.set("#EconomyCardStatus.Text", "Mode: " + integrations.getEconomyMode().name());
+        commands.set("#EconomyCardStatus.Text", "Backend: " + integrations.getActiveEconomyBackendName());
         commands.set("#EconomyCardMeta.Text", "Available: " + yesNo(integrations.hasAnyEconomy()));
 
         commands.set("#PlaytimeCardStatus.Text", "Provider: " + playtimeProviderName);
@@ -755,9 +1232,13 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#PlaceholdersCardStatus.Text", "WiFlow: " + yesNo(wiflow));
         commands.set("#PlaceholdersCardMeta.Text", "Helpch: " + yesNo(helpch));
 
-        commands.set("#NameplateCardStatus.Text", "EndlessLeveling: " + yesNo(endlessNameplate));
+        commands.set("#NameplateCardStatus.Text",
+                "Glyph: " + yesNo(glyphNameplates) + " | EndlessLeveling: " + yesNo(endlessNameplate));
         commands.set("#NameplateCardMeta.Text",
-                endlessNameplate ? "Extended rendering active" : "Standard rendering active");
+                "Preset: " + settings.getNameplatePreset()
+                        + (glyphNameplates
+                        ? " | Glyph font: " + settings.getExperimentalGlyphFont()
+                        : (endlessNameplate ? " | Extended rendering active" : " | Standard rendering active")));
 
         commands.set("#PermissionsLine0.Text", "Active backend: " + activePermissionBackend);
         commands.set("#PermissionsLine1.Text", "LuckPerms detected: " + yesNo(luckPerms)
@@ -773,6 +1254,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#EconomyLine0.Text", "Economy system enabled in settings: " + yesNo(economyEnabled));
         commands.set("#EconomyLine1.Text",
                 "Economy mode: " + integrations.getEconomyMode().name()
+                        + " | Active backend: " + integrations.getActiveEconomyBackendName()
                         + " | Physical coins configured: " + yesNo(physicalCoinsConfigured)
                         + " | Coin system ledger enabled: " + yesNo(useCoinSystem));
         commands.set("#EconomyLine2.Text",
@@ -821,6 +1303,11 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     "port", String.valueOf(settings.getMysqlPort()),
                     "database", settings.getMysqlDatabase()
             ));
+            case REDIS -> lang.tr("dashboard.storage_redis", Map.of(
+                    "host", settings.getRedisHost(),
+                    "port", String.valueOf(settings.getRedisPort()),
+                    "database", String.valueOf(settings.getRedisDatabase())
+            ));
         };
     }
 
@@ -830,6 +1317,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             case SQLITE -> "SQLITE file=" + settings.getSqliteFile();
             case MYSQL -> "MYSQL " + settings.getMysqlHost() + ":" + settings.getMysqlPort()
                     + "/" + settings.getMysqlDatabase();
+            case REDIS -> "REDIS " + settings.getRedisHost() + ":" + settings.getRedisPort()
+                    + "/" + settings.getRedisDatabase()
+                    + " prefix=" + settings.getRedisKeyPrefix()
+                    + " connected=" + (RedisManager.get() != null && RedisManager.get().isHealthy());
         };
     }
 
@@ -856,58 +1347,57 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         )));
     }
 
+    /**
+     * Sends a clickable link into chat. Clicking the link makes the client
+     * show its native open-URL confirmation popup.
+     */
     private void sendLinkToChatOrFallback(@Nonnull String title,
                                           @Nonnull String label,
                                           @Nonnull String url) {
-        String plainMessage = label + ": " + url;
+        try {
+            playerRef.sendMessage(Message.join(
+                    Message.raw(label + ": "),
+                    Message.raw(url).link(url)
+            ));
 
-        if (trySendChatLine(plainMessage)) {
             MysticNotificationUtil.send(
                     playerRef.getPacketHandler(),
                     title,
-                    "Link sent to chat.",
+                    LanguageManager.get().tr("dashboard.link_sent_toast"),
                     NotificationStyle.Success
             );
-            return;
+        } catch (Throwable t) {
+            MysticNotificationUtil.send(
+                    playerRef.getPacketHandler(),
+                    title,
+                    label + ": " + url,
+                    NotificationStyle.Default
+            );
         }
-
-        MysticNotificationUtil.send(
-                playerRef.getPacketHandler(),
-                title,
-                plainMessage,
-                NotificationStyle.Default
-        );
     }
 
-    private boolean trySendChatLine(@Nonnull String message) {
-        Object packetHandler = null;
+    /**
+     * Writes the debug snapshot to plugins/MysticNameTags/debug/ and returns
+     * the file name, or null when writing failed.
+     */
+    @Nullable
+    private String saveDebugSnapshotToFile(@Nonnull String content) {
         try {
-            packetHandler = playerRef.getPacketHandler();
-        } catch (Throwable ignored) {
-        }
+            File dataFolder = MysticNameTagsPlugin.getInstance().getDataDirectory().toFile();
+            File debugFolder = new File(dataFolder, "debug");
+            if (!debugFolder.isDirectory() && !debugFolder.mkdirs()) {
+                return null;
+            }
 
-        if (invokeSingleStringMethod(packetHandler, "sendChatMessage", message)) return true;
-        if (invokeSingleStringMethod(packetHandler, "sendSystemMessage", message)) return true;
-        if (invokeSingleStringMethod(packetHandler, "sendMessage", message)) return true;
-        if (invokeSingleStringMethod(packetHandler, "sendRawChatMessage", message)) return true;
+            String stamp = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT)
+                    .format(new java.util.Date());
+            File out = new File(debugFolder, "debug-snapshot-" + stamp + ".log");
 
-        if (invokeSingleStringMethod(playerRef, "sendChatMessage", message)) return true;
-        if (invokeSingleStringMethod(playerRef, "sendSystemMessage", message)) return true;
-        if (invokeSingleStringMethod(playerRef, "sendMessage", message)) return true;
-
-        return false;
-    }
-
-    private boolean invokeSingleStringMethod(@Nullable Object target,
-                                             @Nonnull String methodName,
-                                             @Nonnull String value) {
-        if (target == null) return false;
-        try {
-            Method m = target.getClass().getMethod(methodName, String.class);
-            m.invoke(target, value);
-            return true;
-        } catch (Throwable ignored) {
-            return false;
+            java.nio.file.Files.writeString(out.toPath(), content, java.nio.charset.StandardCharsets.UTF_8);
+            return "debug/" + out.getName();
+        } catch (Throwable t) {
+            MysticLog.error("Failed to save debug snapshot file", t);
+            return null;
         }
     }
 
@@ -919,8 +1409,40 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         long uptimeMillis;
     }
 
+    private static final class DashboardHealth {
+        final String label;
+        final String color;
+        final List<String> lines;
+
+        DashboardHealth(@Nonnull String label,
+                        @Nonnull String color,
+                        @Nonnull List<String> lines) {
+            this.label = label;
+            this.color = color;
+            this.lines = List.copyOf(lines);
+        }
+
+        @Nonnull
+        String line(int index) {
+            if (index < 0 || index >= lines.size()) {
+                return "";
+            }
+            return lines.get(index);
+        }
+    }
+
     public static class UIEventData {
         private String action;
+        private String tagId;
+        private String display;
+        private String description;
+        private String category;
+        private String price;
+        private String permission;
+        private String field;
+        private String value;
+        private String text;
+        private String newValue;
 
         public UIEventData() {
         }

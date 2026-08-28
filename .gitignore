@@ -1,6 +1,7 @@
 # Gradle
 .gradle/
 build/
+gradle.properties
 
 # Maven
 target/
@@ -24,3 +25,6 @@ server/world/*
 /server/HytaleServer.jar
 /server/HytaleServer.aot
 /libs/
+/server/
+/tools/
+/.claude/

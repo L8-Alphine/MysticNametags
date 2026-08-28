@@ -1,0 +1,9 @@
+// MysticNameTags - Owned tag row: equip/unequip button (child [2])
+
+$M = "MysticCommon.ui";
+
+TextButton {
+  Text: "EQUIP";
+  Anchor: (Width: 140, Height: 28, Vertical: 0);
+  Style: $M.@SlateBtnStyle;
+}

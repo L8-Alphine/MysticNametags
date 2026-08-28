@@ -1,0 +1,21 @@
+package com.mystichorizons.mysticnametags.api.events;
+
+public enum MysticNameTagsEventType {
+    TAG_EQUIPPED,
+    TAG_UNEQUIPPED,
+    TAG_UNLOCKED,
+    TAG_PURCHASED,
+    TAG_FAVORITE_ADDED,
+    TAG_FAVORITE_REMOVED,
+    LOADOUT_SAVED,
+    LOADOUT_EQUIPPED,
+    LOADOUT_DELETED,
+    TAG_PACK_IMPORTED,
+    TAG_PACK_EXPORTED,
+    TAG_CREATED,
+    TAG_UPDATED,
+    TAG_DELETED,
+    PLAYER_TAGS_RESET,
+    PLAYER_TAG_GRANTED,
+    PLAYER_TAG_REMOVED
+}

@@ -11,15 +11,24 @@ import com.mystichorizons.mysticnametags.commands.TagsCommand;
 import com.mystichorizons.mysticnametags.commands.TagsOwnedCommand;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.generated.HStatsIdentity;
 import com.mystichorizons.mysticnametags.hstats.HStats;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
+import com.mystichorizons.mysticnametags.integrations.economy.VaultUnlockedSupport;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeCompat;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeNameplateHook;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
+import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.*;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerAssetManager;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
+import com.mystichorizons.mysticnametags.network.NetworkSyncService;
+import com.mystichorizons.mysticnametags.network.RedisManager;
 import com.mystichorizons.mysticnametags.stats.PlayerStatManager;
 import com.mystichorizons.mysticnametags.stats.systems.BlockBreakStatSystem;
 import com.mystichorizons.mysticnametags.stats.systems.BlockPlaceStatSystem;
@@ -46,6 +55,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
     private ScheduledExecutorService levelScheduler;
     private ScheduledExecutorService glyphScheduler;
+    private ScheduledExecutorService economyProbeScheduler;
 
     private IntegrationManager integrations;
     private UpdateChecker updateChecker;
@@ -103,8 +113,11 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         // Synchronous is fine here; if you prefer async, wrap in your scheduler.
         this.updateChecker.checkForUpdates();
 
-        // Start HStats
-        new HStats("b2740b4b-b730-4693-9ec4-e39a1ac5b661", version);
+        // Start HStats when a runtime or bundled UUID is available.
+        String hstatsModUuid = resolveHStatsModUuid();
+        if (hstatsModUuid != null) {
+            new HStats(hstatsModUuid, version);
+        }
 
         // ------------------------------------------------------
         // Playtime service (60s interval; adjust if you add config)
@@ -123,10 +136,36 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         LanguageManager.init();
 
         // ------------------------------------------------------
+        // Redis (network storage + cross-server sync)
+        // Connects before the tag/stat stores are built, since the
+        // Redis-backed stores resolve their connection through it.
+        // ------------------------------------------------------
+        RedisManager.init();
+
+        // ------------------------------------------------------
+        // Licensing (gates tag banners; never blocks startup)
+        // ------------------------------------------------------
+        MysticNameTagsLicense.init(getDataDirectory(), version, null);
+
+        // ------------------------------------------------------
+        // Tag banner art (registers images/*.png as client assets)
+        // ------------------------------------------------------
+        try {
+            BannerAssetManager.init(getDataDirectory());
+            BannerAssetManager.get().scanAndRegister();
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize tag banners.");
+        }
+
+        // ------------------------------------------------------
         // Tags + ECS systems + commands + listeners
         // ------------------------------------------------------
         TagManager.init(integrations);
         PlayerStatManager.init(this.integrations);
+
+        // Subscriber starts last: incoming sync messages need a live TagManager.
+        NetworkSyncService.init();
 
         // Register commands
         registerCommands();
@@ -138,6 +177,26 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         registerEcsSystems();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Setup complete!");
+    }
+
+    private String resolveHStatsModUuid() {
+        String propertyValue = System.getProperty("mysticnametags.hstats.uuid");
+        if (propertyValue != null && !propertyValue.isBlank()) {
+            return propertyValue.trim();
+        }
+
+        String environmentValue = System.getenv("MYSTICNAMETAGS_HSTATS_UUID");
+        if (environmentValue != null && !environmentValue.isBlank()) {
+            return environmentValue.trim();
+        }
+
+        String bundledValue = HStatsIdentity.getModUuid();
+        if (bundledValue != null && !bundledValue.isBlank()) {
+            return bundledValue.trim();
+        }
+
+        LOGGER.at(Level.INFO).log("[MysticNameTags] HStats disabled; no UUID was provided or bundled.");
+        return null;
     }
 
     private void registerCommands() {
@@ -251,8 +310,20 @@ public class MysticNameTagsPlugin extends JavaPlugin {
                     .log("[MysticNameTags][Debug] EconomySystem API not reachable at startup");
         }
 
+        startVaultEconomyProbeIfNeeded();
+
         // RPGLeveling nameplate refresher (lazy-guarded by config + API checks)
         startLevelSchedulerIfNeeded();
+
+        // MMOSkillTree nameplate refreshes are event-driven.
+        try {
+            if (MMOSkillTreeCompat.isAvailable()) {
+                MMOSkillTreeNameplateHook.register();
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize MMOSkillTree nameplate listeners.");
+        }
 
         // Glyph nameplate follow refresher
         startGlyphFollowSchedulerIfNeeded();
@@ -282,9 +353,21 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         LOGGER.at(Level.INFO).log("[MysticNameTags] Shutting down...");
 
         try {
+            stopEconomyProbeScheduler();
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop economy probe scheduler");
+        }
+        try {
             stopLevelScheduler();
         } catch (Throwable ignored) {
             LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop level scheduler");
+        }
+        try {
+            if (MMOSkillTreeCompat.isAvailable()) {
+                MMOSkillTreeNameplateHook.unregister();
+            }
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to unregister MMOSkillTree nameplate listeners");
         }
         try {
             stopGlyphFollowScheduler();
@@ -304,11 +387,21 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop PlayerStatManager");
         }
         try {
+            NetworkSyncService.shutdown();
+            RedisManager.shutdown();
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to close the Redis connection");
+        }
+        try {
             NameplateManager.get().clearAll();
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING)
                     .withCause(t)
                     .log("[MysticNameTags] Error while clearing nameplates during shutdown.");
+        }
+        try {
+            EndlessLevelingCompat.restorePlayerNameplates();
+        } catch (Throwable ignored) {
         } finally {
             MysticLog.shutdown();
             instance = null;
@@ -321,13 +414,7 @@ public class MysticNameTagsPlugin extends JavaPlugin {
 
     public static boolean isRpgLevelingAvailable() {
         try {
-            if (!Settings.get().isRpgLevelingNameplatesEnabled()) {
-                return false;
-            }
-
-            // Safe probe of the API
-            org.zuxaw.plugin.api.RPGLevelingAPI api = org.zuxaw.plugin.api.RPGLevelingAPI.get();
-            return api != null;
+            return RPGLevelingCompat.isAvailable();
         } catch (Throwable t) {
             return false;
         }
@@ -419,6 +506,24 @@ public class MysticNameTagsPlugin extends JavaPlugin {
                     .log("[MysticNameTags] Failed to re-initialize integrations during reload.");
         }
 
+        // 3a) Re-read the license so an operator can drop one in without a restart
+        MysticNameTagsLicense.reload();
+
+        // 3b) Re-scan banner art so new/changed PNGs reach connected players
+        try {
+            BannerAssetManager banners = BannerAssetManager.get();
+            if (banners == null) {
+                BannerAssetManager.init(getDataDirectory());
+                banners = BannerAssetManager.get();
+            }
+            if (banners != null) {
+                banners.scanAndRegister();
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to re-scan tag banners during reload.");
+        }
+
         // 4) Reload tags.json and refresh all online nameplates
         TagManager.reload();
 
@@ -427,16 +532,14 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         startLevelSchedulerIfNeeded();
         stopGlyphFollowScheduler();
         startGlyphFollowSchedulerIfNeeded();
+        tryRegisterEndlessLevelingNameplates();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Reload complete.");
     }
 
     private void tryRegisterEndlessLevelingNameplates() {
-        if (endlessLevelingSystemRegistered) {
-            return;
-        }
-
         if (!Settings.get().isEndlessLevelingNameplatesEnabled()) {
+            EndlessLevelingCompat.restorePlayerNameplates();
             LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling nameplates disabled in settings.");
             return;
         }
@@ -444,6 +547,11 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         try {
             if (!EndlessLevelingCompat.isAvailable()) {
                 LOGGER.at(Level.INFO).log("[MysticNameTags] EndlessLeveling API not detected.");
+                return;
+            }
+
+            EndlessLevelingCompat.suppressPlayerNameplates();
+            if (endlessLevelingSystemRegistered) {
                 return;
             }
 
@@ -507,6 +615,78 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             try { glyphScheduler.shutdownNow(); } catch (Throwable ignored) {}
             glyphScheduler = null;
             LOGGER.at(Level.INFO).log("[MysticNameTags] Stopped glyph follow scheduler.");
+        }
+    }
+
+    private void startVaultEconomyProbeIfNeeded() {
+        if (!Settings.get().isEconomySystemEnabled()) {
+            return;
+        }
+
+        if (!VaultUnlockedSupport.isApiAvailable()) {
+            LOGGER.at(Level.INFO).log("[MysticNameTags] VaultUnlocked API not detected at startup.");
+            return;
+        }
+
+        if (VaultUnlockedSupport.isAvailable()) {
+            LOGGER.at(Level.INFO).log("[MysticNameTags] VaultUnlocked economy provider detected at startup.");
+            return;
+        }
+
+        LOGGER.at(Level.INFO).log(
+                "[MysticNameTags] VaultUnlocked API detected, but no economy provider is registered yet. "
+                        + "Retrying provider detection for 60s.");
+
+        stopEconomyProbeScheduler();
+        economyProbeScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "MysticNameTags-EconomyProbe");
+            t.setDaemon(true);
+            return t;
+        });
+
+        final int[] attempts = {0};
+        economyProbeScheduler.scheduleAtFixedRate(() -> {
+            try {
+                attempts[0]++;
+                if (integrations != null) {
+                    integrations.refreshEconomyBackends("VaultUnlocked startup retry");
+                    if (integrations.hasAnyEconomy()) {
+                        stopEconomyProbeScheduler();
+                        return;
+                    }
+                }
+
+                if (VaultUnlockedSupport.isAvailable()) {
+                    LOGGER.at(Level.INFO).log(
+                            "[MysticNameTags] VaultUnlocked economy provider detected after startup. "
+                                    + "Providers=" + VaultUnlockedSupport.getProviderNames());
+                    stopEconomyProbeScheduler();
+                    return;
+                }
+
+                if (attempts[0] >= 12) {
+                    LOGGER.at(Level.WARNING).log(
+                            "[MysticNameTags] VaultUnlocked API is loaded, but no VaultUnlocked economy provider "
+                                    + "registered after 60s. Providers=" + VaultUnlockedSupport.getProviderNames()
+                                    + ". Check that your economy plugin supports/registers with VaultUnlocked "
+                                    + "and starts before purchases are used.");
+                    stopEconomyProbeScheduler();
+                }
+            } catch (Throwable t) {
+                LOGGER.at(Level.WARNING).withCause(t)
+                        .log("[MysticNameTags] Error while probing VaultUnlocked economy provider.");
+                stopEconomyProbeScheduler();
+            }
+        }, 5, 5, TimeUnit.SECONDS);
+    }
+
+    private void stopEconomyProbeScheduler() {
+        if (economyProbeScheduler != null) {
+            try {
+                economyProbeScheduler.shutdownNow();
+            } catch (Throwable ignored) {
+            }
+            economyProbeScheduler = null;
         }
     }
 }

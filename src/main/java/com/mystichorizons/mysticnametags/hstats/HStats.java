@@ -1,3 +1,16 @@
+/*
+ * HStats - Hytale Mod Metrics (hstats.dev)
+ *
+ * HStats is a simple metrics system for Hytale mods. Inspired by bStats.
+ * This file is designed to be copied into your mod's source code, so you
+ * can easily integrate HStats into your mod.
+ *
+ * You are not allowed to modify the code in this file besides the package name.
+ * If you are found to have modified information being sent to HStats, you will be
+ * banned from using the service. (Also it's a stats website why would you do that)
+ *
+ * Created by Al3xWarrior
+ */
 package com.mystichorizons.mysticnametags.hstats;
 
 import com.hypixel.hytale.server.core.HytaleServer;

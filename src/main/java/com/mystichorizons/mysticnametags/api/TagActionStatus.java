@@ -21,6 +21,7 @@ public enum TagActionStatus {
     FAILED_NO_PERMISSION,
     FAILED_NO_ECONOMY,
     FAILED_NOT_ENOUGH_MONEY,
+    FAILED_UNAVAILABLE,
     FAILED_TRANSACTION;
 
     public boolean isSuccess() {
@@ -58,6 +59,8 @@ public enum TagActionStatus {
                 return FAILED_NO_ECONOMY;
             case NOT_ENOUGH_MONEY:
                 return FAILED_NOT_ENOUGH_MONEY;
+            case UNAVAILABLE:
+                return FAILED_UNAVAILABLE;
             case TRANSACTION_FAILED:
             default:
                 return FAILED_TRANSACTION;

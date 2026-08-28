@@ -20,12 +20,8 @@ public class ReloadSubCommand extends CommandBase {
 
     public ReloadSubCommand() {
         super("reload", "Reload MysticNameTags configuration and tags");
-        this.setPermissionGroup(null);
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
+        this.requireNoPermission();
+        this.setPermissionGroups();
     }
 
     private boolean hasReloadPermission(@Nonnull CommandContext context) {

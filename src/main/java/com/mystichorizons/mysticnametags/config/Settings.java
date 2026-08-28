@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
+import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphAssets;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
@@ -32,6 +33,7 @@ public final class Settings {
 
     // Core Settings
     private String nameplateFormat = "{rank} {name} {tag}";
+    private String nameplatePreset = "CUSTOM";
     private boolean stripExtraSpaces = true;
     private String language = "en_US";
 
@@ -56,6 +58,30 @@ public final class Settings {
     private String mysqlDatabase = "mysticnametags";
     private String mysqlUser = "root";
     private String mysqlPassword = "password";
+
+    // Redis options (used by storageBackend=REDIS and by redisSyncEnabled)
+    private String redisHost = "localhost";
+    private int redisPort = 6379;
+    private String redisUser = "";
+    private String redisPassword = "";
+    private int redisDatabase = 0;
+    private boolean redisSsl = false;
+    private String redisKeyPrefix = "mysticnametags:";
+    private int redisTimeoutMs = 2000;
+    private int redisPoolSize = 8;
+
+    /**
+     * Cross-server tag sync over Redis pub/sub. Independent of the storage
+     * backend: pair it with MYSQL to keep durability in SQL while still
+     * pushing tag changes to the rest of the network instantly.
+     */
+    private boolean redisSyncEnabled = false;
+
+    /**
+     * Identifies this server in sync messages so it ignores its own
+     * broadcasts. Blank = derive one automatically at startup.
+     */
+    private String networkServerId = "";
 
     // Playtime Setup
     private String playtimeProvider = "AUTO"; // AUTO, INTERNAL, ZIB_PLAYTIME, NONE
@@ -123,6 +149,13 @@ public final class Settings {
     private boolean fullPermissionGate = false;
     private boolean permissionGate = false;
 
+    /**
+     * If true, non-purchasable tags that declare a permission node are
+     * automatically treated as unlocked while the player has that permission
+     * (no UNLOCK click needed). Losing the permission revokes access again.
+     */
+    private boolean autoUnlockPermissionTags = false;
+
     private boolean rpgLevelingNameplatesEnabled = false;
     private int rpgLevelingRefreshSeconds = 30;
 
@@ -137,6 +170,7 @@ public final class Settings {
     // --- Experimental glyph / hologram nameplates ----------------------------
 
     private boolean experimentalGlyphNameplatesEnabled = false;
+    private String experimentalGlyphFont = GlyphAssets.DEFAULT_FONT;
     private int experimentalGlyphMaxChars = 32;
     private int experimentalGlyphUpdateTicks = 1; // 1 tick -> smooth per-viewer billboarding
     private int experimentalGlyphMaxEntitiesPerPlayer = 40;
@@ -152,6 +186,14 @@ public final class Settings {
     private int experimentalGlyphMaxCharsPerLine = 32;
     private double experimentalGlyphLineSpacing = 0.30d;
     private double experimentalGlyphTintStrength = 0.65d;
+
+    // --- Tag banners ---------------------------------------------------------
+
+    private boolean bannersEnabled = true;
+    private double bannerMaxWidthBlocks = 1.6d;
+    private double bannerMaxHeightBlocks = 0.8d;
+    private long bannerMaxFileBytes = 262_144L;
+    private boolean bannerKeepNameLine = false;
 
     // ---------------------------------------------------------------------
 
@@ -187,6 +229,7 @@ public final class Settings {
             if (loaded != null) {
                 // Core
                 this.nameplateFormat = nonBlankOr(loaded.nameplateFormat, this.nameplateFormat);
+                this.nameplatePreset = nonBlankOr(loaded.nameplatePreset, this.nameplatePreset);
                 this.stripExtraSpaces = loaded.stripExtraSpaces;
                 this.language = nonBlankOr(loaded.language, this.language);
                 this.tagDelaysecs = Math.max(0, loaded.tagDelaysecs);
@@ -200,6 +243,18 @@ public final class Settings {
                 this.mysqlDatabase = nonBlankOr(loaded.mysqlDatabase, this.mysqlDatabase);
                 this.mysqlUser = nonBlankOr(loaded.mysqlUser, this.mysqlUser);
                 this.mysqlPassword = (loaded.mysqlPassword == null ? this.mysqlPassword : loaded.mysqlPassword);
+
+                this.redisHost = nonBlankOr(loaded.redisHost, this.redisHost);
+                this.redisPort = (loaded.redisPort <= 0 ? this.redisPort : loaded.redisPort);
+                this.redisUser = (loaded.redisUser == null ? this.redisUser : loaded.redisUser);
+                this.redisPassword = (loaded.redisPassword == null ? this.redisPassword : loaded.redisPassword);
+                this.redisDatabase = loaded.redisDatabase;
+                this.redisSsl = loaded.redisSsl;
+                this.redisKeyPrefix = nonBlankOr(loaded.redisKeyPrefix, this.redisKeyPrefix);
+                this.redisTimeoutMs = (loaded.redisTimeoutMs <= 0 ? this.redisTimeoutMs : loaded.redisTimeoutMs);
+                this.redisPoolSize = (loaded.redisPoolSize <= 0 ? this.redisPoolSize : loaded.redisPoolSize);
+                this.redisSyncEnabled = loaded.redisSyncEnabled;
+                this.networkServerId = (loaded.networkServerId == null ? this.networkServerId : loaded.networkServerId);
 
                 // Playtime
                 this.playtimeProvider = nonBlankOr(loaded.playtimeProvider, this.playtimeProvider);
@@ -238,6 +293,7 @@ public final class Settings {
                 this.usePhysicalCoinEconomy = loaded.usePhysicalCoinEconomy;
                 this.fullPermissionGate = loaded.fullPermissionGate;
                 this.permissionGate = loaded.permissionGate;
+                this.autoUnlockPermissionTags = loaded.autoUnlockPermissionTags;
 
                 // RPG
                 this.rpgLevelingNameplatesEnabled = loaded.rpgLevelingNameplatesEnabled;
@@ -248,6 +304,7 @@ public final class Settings {
 
                 // Glyph
                 this.experimentalGlyphNameplatesEnabled = loaded.experimentalGlyphNameplatesEnabled;
+                this.experimentalGlyphFont = nonBlankOr(loaded.experimentalGlyphFont, this.experimentalGlyphFont);
                 this.experimentalGlyphMaxChars = loaded.experimentalGlyphMaxChars;
                 this.experimentalGlyphUpdateTicks = loaded.experimentalGlyphUpdateTicks;
                 this.experimentalGlyphMaxEntitiesPerPlayer = loaded.experimentalGlyphMaxEntitiesPerPlayer;
@@ -261,6 +318,13 @@ public final class Settings {
                 this.experimentalGlyphMaxCharsPerLine = loaded.experimentalGlyphMaxCharsPerLine;
                 this.experimentalGlyphLineSpacing = loaded.experimentalGlyphLineSpacing;
                 this.experimentalGlyphTintStrength = loaded.experimentalGlyphTintStrength;
+
+                // Banners
+                this.bannersEnabled = loaded.bannersEnabled;
+                this.bannerMaxWidthBlocks = loaded.bannerMaxWidthBlocks;
+                this.bannerMaxHeightBlocks = loaded.bannerMaxHeightBlocks;
+                this.bannerMaxFileBytes = loaded.bannerMaxFileBytes;
+                this.bannerKeepNameLine = loaded.bannerKeepNameLine;
             }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
@@ -298,6 +362,34 @@ public final class Settings {
         this.mysqlDatabase = getMysqlDatabase();
         if (!safeEquals(before, this.mysqlDatabase)) dirty = true;
 
+        before = this.redisHost;
+        this.redisHost = getRedisHost();
+        if (!safeEquals(before, this.redisHost)) dirty = true;
+
+        int oldRedisPort = this.redisPort;
+        this.redisPort = getRedisPort();
+        if (oldRedisPort != this.redisPort) dirty = true;
+
+        int oldRedisDb = this.redisDatabase;
+        this.redisDatabase = getRedisDatabase();
+        if (oldRedisDb != this.redisDatabase) dirty = true;
+
+        before = this.redisKeyPrefix;
+        this.redisKeyPrefix = getRedisKeyPrefix();
+        if (!safeEquals(before, this.redisKeyPrefix)) dirty = true;
+
+        int oldRedisTimeout = this.redisTimeoutMs;
+        this.redisTimeoutMs = getRedisTimeoutMs();
+        if (oldRedisTimeout != this.redisTimeoutMs) dirty = true;
+
+        int oldRedisPool = this.redisPoolSize;
+        this.redisPoolSize = getRedisPoolSize();
+        if (oldRedisPool != this.redisPoolSize) dirty = true;
+
+        before = this.networkServerId;
+        this.networkServerId = getNetworkServerId();
+        if (!safeEquals(before, this.networkServerId)) dirty = true;
+
         before = this.defaultTagId;
         this.defaultTagId = (this.defaultTagId == null ? "mystic" : this.defaultTagId.trim());
         if (!safeEquals(before, this.defaultTagId)) dirty = true;
@@ -317,6 +409,14 @@ public final class Settings {
         int oldGlyphChars = this.experimentalGlyphMaxChars;
         this.experimentalGlyphMaxChars = Math.max(8, this.experimentalGlyphMaxChars);
         if (oldGlyphChars != this.experimentalGlyphMaxChars) dirty = true;
+
+        before = this.nameplatePreset;
+        this.nameplatePreset = getNameplatePreset();
+        if (!safeEquals(before, this.nameplatePreset)) dirty = true;
+
+        before = this.experimentalGlyphFont;
+        this.experimentalGlyphFont = GlyphAssets.normalizeFont(this.experimentalGlyphFont);
+        if (!safeEquals(before, this.experimentalGlyphFont)) dirty = true;
 
         int oldGlyphTicks = this.experimentalGlyphUpdateTicks;
         this.experimentalGlyphUpdateTicks = Math.max(1, this.experimentalGlyphUpdateTicks);
@@ -368,6 +468,18 @@ public final class Settings {
         double oldGlyphTintStrength = this.experimentalGlyphTintStrength;
         this.experimentalGlyphTintStrength = Math.max(0.0d, Math.min(1.0d, this.experimentalGlyphTintStrength));
         if (Double.compare(oldGlyphTintStrength, this.experimentalGlyphTintStrength) != 0) dirty = true;
+
+        double oldBannerWidth = this.bannerMaxWidthBlocks;
+        this.bannerMaxWidthBlocks = Math.max(0.25d, Math.min(8.0d, this.bannerMaxWidthBlocks));
+        if (Double.compare(oldBannerWidth, this.bannerMaxWidthBlocks) != 0) dirty = true;
+
+        double oldBannerHeight = this.bannerMaxHeightBlocks;
+        this.bannerMaxHeightBlocks = Math.max(0.25d, Math.min(8.0d, this.bannerMaxHeightBlocks));
+        if (Double.compare(oldBannerHeight, this.bannerMaxHeightBlocks) != 0) dirty = true;
+
+        long oldBannerBytes = this.bannerMaxFileBytes;
+        this.bannerMaxFileBytes = Math.max(1024L, this.bannerMaxFileBytes);
+        if (oldBannerBytes != this.bannerMaxFileBytes) dirty = true;
     }
 
     private void saveIfDirty() {
@@ -415,12 +527,16 @@ public final class Settings {
 
                 addInfoBlock(out, "__core",
                         "Core nameplate settings.",
+                        "nameplatePreset = CUSTOM / COMPACT / TAG_ONLY / TWO_LINE / RPG / ENDLESS",
+                        "When nameplatePreset is CUSTOM, nameplateFormat is used directly.",
                         "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {endless_primary_class}, {endless_secondary_class}, {rpg_level}, {ecoquests_rank}",
-                        "nameplateFormat supports /n for a new line",
+                        "nameplateFormat supports /n, \\n, {nl}, {newline}, and <br> for a new line.",
+                        "Native Hytale nameplates may render as one line; glyph nameplates are the reliable multiline path.",
                         "stripExtraSpaces = condense multiple spaces",
                         "language = locale bundle (e.g. en_US)",
                         "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = off)"
                 );
+                copy.accept("nameplatePreset");
                 copy.accept("nameplateFormat");
                 copy.accept("stripExtraSpaces");
                 copy.accept("language");
@@ -428,7 +544,13 @@ public final class Settings {
 
                 addInfoBlock(out, "__storage",
                         "Storage backend for tag ownership data.",
-                        "storageBackend = FILE / SQLITE / MYSQL"
+                        "storageBackend = FILE / SQLITE / MYSQL / REDIS",
+                        "FILE and SQLITE are single-server only.",
+                        "MYSQL and REDIS are shared: every server reads the same tag data,",
+                        "so a tag equipped on one server is already equipped on the next",
+                        "server the player joins.",
+                        "REDIS needs Redis persistence (RDB/AOF) turned on, or tag ownership",
+                        "is lost when the Redis instance restarts."
                 );
                 copy.accept("storageBackend");
                 copy.accept("sqliteFile");
@@ -437,6 +559,30 @@ public final class Settings {
                 copy.accept("mysqlDatabase");
                 copy.accept("mysqlUser");
                 copy.accept("mysqlPassword");
+
+                addInfoBlock(out, "__network",
+                        "Redis connection + cross-server sync (multi-server networks).",
+                        "Used when storageBackend = REDIS, and whenever redisSyncEnabled is true.",
+                        "redisSyncEnabled = broadcast tag changes to the other servers over",
+                        "Redis pub/sub so they update live instead of only on next join.",
+                        "Pair redisSyncEnabled with storageBackend = MYSQL to keep durability",
+                        "in SQL and use Redis purely as the message bus.",
+                        "redisKeyPrefix namespaces the keys; keep it identical on every server.",
+                        "networkServerId = blank to auto-generate. It only exists so a server",
+                        "can ignore the messages it published itself.",
+                        "Redis settings apply at startup; restart the server after changing them."
+                );
+                copy.accept("redisSyncEnabled");
+                copy.accept("redisHost");
+                copy.accept("redisPort");
+                copy.accept("redisUser");
+                copy.accept("redisPassword");
+                copy.accept("redisDatabase");
+                copy.accept("redisSsl");
+                copy.accept("redisKeyPrefix");
+                copy.accept("redisTimeoutMs");
+                copy.accept("redisPoolSize");
+                copy.accept("networkServerId");
 
                 addInfoBlock(out, "__nameplates",
                         "Nameplate behavior.",
@@ -470,13 +616,15 @@ public final class Settings {
                 addInfoBlock(out, "__economy",
                         "Tag purchasing & permission gating.",
                         "fullPermissionGate = permission node fully gates tags (can hide/block access).",
-                        "permissionGate = tag remains visible, but permission node is required to unlock/equip."
+                        "permissionGate = tag remains visible, but permission node is required to unlock/equip.",
+                        "autoUnlockPermissionTags = non-paid tags with a permission node are instantly equippable while the player holds the permission (no UNLOCK click; revoked when the permission is removed)."
                 );
                 copy.accept("economySystemEnabled");
                 copy.accept("useCoinSystem");
                 copy.accept("usePhysicalCoinEconomy");
                 copy.accept("fullPermissionGate");
                 copy.accept("permissionGate");
+                copy.accept("autoUnlockPermissionTags");
 
                 addInfoBlock(out, "__rpg",
                         "RPGLeveling integration."
@@ -495,6 +643,7 @@ public final class Settings {
                         "⚠ EXPERIMENTAL ⚠",
                         "Glyph nameplates packet-spawn models and mount them to the player.",
                         "Keep disabled unless testing with low player counts.",
+                        "experimentalGlyphFont = default / sans / serif / comic / cursive / impact / mono / thin",
                         "experimentalGlyphUpdateTicks = billboard refresh cadence; 1 is smoothest",
                         "experimentalGlyphViewerActivationDistance = activate nearest-viewer billboard inside this radius",
                         "experimentalGlyphViewerDropDistance = keep current viewer until they leave this larger radius",
@@ -508,6 +657,7 @@ public final class Settings {
                         "experimentalGlyphTintStrength = glyph color brightness multiplier (0.0 - 1.0, lower = dimmer/less glow)"
                 );
                 copy.accept("experimentalGlyphNameplatesEnabled");
+                copy.accept("experimentalGlyphFont");
                 copy.accept("experimentalGlyphMaxChars");
                 copy.accept("experimentalGlyphUpdateTicks");
                 copy.accept("experimentalGlyphMaxEntitiesPerPlayer");
@@ -521,6 +671,23 @@ public final class Settings {
                 copy.accept("experimentalGlyphMaxCharsPerLine");
                 copy.accept("experimentalGlyphLineSpacing");
                 copy.accept("experimentalGlyphTintStrength");
+
+                addInfoBlock(out, "__banners",
+                        "Tag banners: render a PNG above the player instead of the tag's text.",
+                        "Drop art in the plugin's images/ folder, then set \"banner\": \"<file>\" on a tag in tags.json.",
+                        "Banners ride the glyph nameplate pipeline, so experimentalGlyphNameplatesEnabled must also be true.",
+                        "bannersEnabled = master toggle; when false, banner tags render their normal text display",
+                        "bannerMaxWidthBlocks = widest a banner may render; larger art is scaled down keeping its aspect",
+                        "bannerMaxHeightBlocks = tallest a banner may render; the tighter of the two caps wins",
+                        "bannerMaxFileBytes = PNGs larger than this are skipped at load with a warning",
+                        "bannerKeepNameLine = render the rest of nameplateFormat around the banner, with the banner",
+                        "                     taking the {tag} slot. When false the banner is the whole nameplate."
+                );
+                copy.accept("bannersEnabled");
+                copy.accept("bannerMaxWidthBlocks");
+                copy.accept("bannerMaxHeightBlocks");
+                copy.accept("bannerMaxFileBytes");
+                copy.accept("bannerKeepNameLine");
 
                 JsonObject other = new JsonObject();
                 for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
@@ -610,9 +777,34 @@ public final class Settings {
 
     @Nonnull
     public String getNameplateFormatRaw() {
+        String preset = getNameplatePreset();
+        if (!"CUSTOM".equals(preset)) {
+            return switch (preset) {
+                case "COMPACT" -> "{rank} {name} {tag}";
+                case "TAG_ONLY" -> "{tag}";
+                case "TWO_LINE" -> "{rank} {name}\\n{tag}";
+                case "RPG" -> "{rank} {name}\\n{tag} Lv.{rpg_level}";
+                case "ENDLESS" -> "{rank} {name}\\n{tag} Lv.{endless_level} {endless_prestige}";
+                default -> "{rank} {name} {tag}";
+            };
+        }
+
         return (nameplateFormat == null || nameplateFormat.isBlank())
                 ? "{rank} {name} {tag}"
                 : nameplateFormat;
+    }
+
+    @Nonnull
+    public String getNameplatePreset() {
+        String value = nameplatePreset;
+        if (value == null || value.isBlank()) {
+            return "CUSTOM";
+        }
+
+        return switch (value.trim().toUpperCase()) {
+            case "COMPACT", "TAG_ONLY", "TWO_LINE", "RPG", "ENDLESS" -> value.trim().toUpperCase();
+            default -> "CUSTOM";
+        };
     }
 
     public boolean isStripExtraSpacesEnabled() {
@@ -654,6 +846,62 @@ public final class Settings {
         return mysqlPassword == null ? "" : mysqlPassword;
     }
 
+    // ---------------------------------------------------------------------
+    // Redis / network sync
+    // ---------------------------------------------------------------------
+
+    public String getRedisHost() {
+        return (redisHost == null || redisHost.isBlank()) ? "localhost" : redisHost.trim();
+    }
+
+    public int getRedisPort() {
+        return redisPort <= 0 ? 6379 : redisPort;
+    }
+
+    public String getRedisUser() {
+        return redisUser == null ? "" : redisUser.trim();
+    }
+
+    public String getRedisPassword() {
+        return redisPassword == null ? "" : redisPassword;
+    }
+
+    /** Redis ships with databases 0-15, but the limit is configurable server-side. */
+    public int getRedisDatabase() {
+        if (redisDatabase < 0) return 0;
+        return Math.min(redisDatabase, 255);
+    }
+
+    public boolean isRedisSsl() {
+        return redisSsl;
+    }
+
+    /** Always ends with a colon so keys read as prefix:tags:uuid. */
+    public String getRedisKeyPrefix() {
+        String raw = (redisKeyPrefix == null || redisKeyPrefix.isBlank())
+                ? "mysticnametags:" : redisKeyPrefix.trim();
+        return raw.endsWith(":") ? raw : raw + ":";
+    }
+
+    public int getRedisTimeoutMs() {
+        if (redisTimeoutMs < 250) return 250;
+        return Math.min(redisTimeoutMs, 60_000);
+    }
+
+    public int getRedisPoolSize() {
+        if (redisPoolSize < 2) return 2;
+        return Math.min(redisPoolSize, 64);
+    }
+
+    public boolean isRedisSyncEnabled() {
+        return redisSyncEnabled;
+    }
+
+    public String getNetworkServerId() {
+        if (networkServerId == null) return "";
+        return networkServerId.trim().replaceAll("[^A-Za-z0-9._-]", "-");
+    }
+
     public boolean isEconomySystemEnabled() {
         return economySystemEnabled;
     }
@@ -664,6 +912,10 @@ public final class Settings {
 
     public boolean isUsePhysicalCoinEconomy() {
         return usePhysicalCoinEconomy;
+    }
+
+    public boolean isAutoUnlockPermissionTagsEnabled() {
+        return autoUnlockPermissionTags;
     }
 
     public boolean isFullPermissionGateEnabled() {
@@ -751,6 +1003,11 @@ public final class Settings {
         return experimentalGlyphNameplatesEnabled;
     }
 
+    @Nonnull
+    public String getExperimentalGlyphFont() {
+        return GlyphAssets.normalizeFont(experimentalGlyphFont);
+    }
+
     public int getExperimentalGlyphMaxChars() {
         return Math.max(8, experimentalGlyphMaxChars);
     }
@@ -801,5 +1058,27 @@ public final class Settings {
 
     public double getExperimentalGlyphTintStrength() {
         return Math.max(0.0d, Math.min(1.0d, experimentalGlyphTintStrength));
+    }
+
+    // --- Tag banners ---------------------------------------------------------
+
+    public boolean isBannersEnabled() {
+        return bannersEnabled;
+    }
+
+    public double getBannerMaxWidthBlocks() {
+        return Math.max(0.25d, Math.min(8.0d, bannerMaxWidthBlocks));
+    }
+
+    public double getBannerMaxHeightBlocks() {
+        return Math.max(0.25d, Math.min(8.0d, bannerMaxHeightBlocks));
+    }
+
+    public long getBannerMaxFileBytes() {
+        return Math.max(1024L, bannerMaxFileBytes);
+    }
+
+    public boolean isBannerKeepNameLine() {
+        return bannerKeepNameLine;
     }
 }

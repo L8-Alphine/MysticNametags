@@ -135,6 +135,11 @@ public final class PlayerStatManager implements StatProvider {
                 break;
             }
 
+            case REDIS: {
+                chosen = new RedisPlayerStatStore(GSON);
+                break;
+            }
+
             case FILE:
             default: {
                 chosen = new FilePlayerStatStore(statsFolder, GSON);

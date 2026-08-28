@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mystichorizons.dev/schemas/mysticnametags/tag.schema.json",
+  "title": "MysticNameTags tags.json",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/tag"
+  },
+  "$defs": {
+    "tag": {
+      "type": "object",
+      "required": ["id", "display"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "purchasable": {
+          "type": "boolean"
+        },
+        "permission": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "season": {
+          "type": "string",
+          "description": "Optional event or season label, such as Halloween or Winter 2026."
+        },
+        "activeFrom": {
+          "type": "string",
+          "description": "Optional ISO-8601 UTC instant or date when this tag becomes unlockable, such as 2026-10-01 or 2026-10-01T00:00:00Z."
+        },
+        "activeUntil": {
+          "type": "string",
+          "description": "Optional ISO-8601 UTC instant or date when this tag stops being unlockable. Date-only values end at the next UTC midnight."
+        },
+        "availabilityMessage": {
+          "type": "string",
+          "description": "Optional text shown in commands/UIs when the tag is outside its seasonal availability window."
+        },
+        "banner": {
+          "type": "string",
+          "description": "Optional banner image in the plugin's images/ folder, such as legend or legend.png. When set, the tag renders as this picture above the player instead of its text display. Requires bannersEnabled and experimentalGlyphNameplatesEnabled."
+        },
+        "bannerScale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Optional size multiplier for this tag's banner. Defaults to 1.0; the result is still capped by bannerMaxWidthBlocks."
+        },
+        "requiredPlaytimeMinutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requiredOwnedTags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "requiredStats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/statRequirement"
+          }
+        },
+        "requiredStatKey": {
+          "type": "string",
+          "description": "Legacy stat requirement key. Prefer requiredStats for new configs."
+        },
+        "requiredStatValue": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Legacy stat requirement minimum. Prefer requiredStats for new configs."
+        },
+        "requiredItems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/itemRequirement"
+          }
+        },
+        "placeholderRequirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/placeholderRequirement"
+          }
+        },
+        "requiredPlaceholders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/placeholderRequirement"
+          }
+        },
+        "onUnlockCommands": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "statRequirement": {
+      "type": "object",
+      "required": ["key", "min"],
+      "additionalProperties": true,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "itemRequirement": {
+      "type": "object",
+      "required": ["itemId", "amount"],
+      "additionalProperties": true,
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "placeholderRequirement": {
+      "type": "object",
+      "required": ["placeholder", "operator", "value"],
+      "additionalProperties": true,
+      "properties": {
+        "placeholder": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operator": {
+          "type": "string",
+          "enum": ["true", "false", "==", "!=", ">", ">=", "<", "<=", "contains"]
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

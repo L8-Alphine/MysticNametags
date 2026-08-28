@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.2.3'
+version = '1.2.8'
 
 repositories {
     mavenCentral()
@@ -18,13 +18,13 @@ repositories {
         url = 'https://maven.hytale.com/pre-release'
     }
     maven {
-        url "https://repo.codemc.io/repository/creatorfromhell/"
+        url = uri("https://repo.codemc.io/repository/creatorfromhell/")
     }
 }
 
 dependencies {
     // Hytale Server API from official Maven repository
-    compileOnly 'com.hypixel.hytale:Server:2026.03.26-89796e57b'
+    compileOnly 'com.hypixel.hytale:Server:0.6.0'
 
     // JSR305 annotations (@Nonnull, @Nullable)
     compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
@@ -37,12 +37,17 @@ dependencies {
     // SQLite JDBC Driver
     implementation 'org.xerial:sqlite-jdbc:3.45.1.0'
 
+    // Redis client (network-wide tag storage + cross-server sync)
+    implementation 'redis.clients:jedis:5.2.0'
+
     // PlaceholderAPI
     compileOnly files('libs/WiFlowPlaceholderAPI-1.0.0.jar')
     compileOnly files('libs/PlaceholderAPI-1.0.3-CurseForge.jar')
 
     // VaultUnlocked Support
-    compileOnly 'net.cfh.vault:VaultUnlocked:2.18.3'
+    compileOnly('net.cfh.vault:VaultUnlocked:2.20.0') {
+        transitive = false
+    }
 
     // EliteEssentials Support
     compileOnly files('libs/EliteEssentials-1.1.6.jar')
@@ -72,10 +77,13 @@ dependencies {
     compileOnly files('libs/PrefixesPlus-3.2.6.jar')
 
     //RPGLeveling Support
-    compileOnly files('libs/RPGLeveling-0.2.2.jar')
+    compileOnly files('libs/RPGLeveling-0.3.6.jar')
 
     // Endless Leveling
-    compileOnly files('libs/EndlessLeveling-6.0.5-BETA.jar')
+    compileOnly files('libs/EndlessLeveling.jar')
+
+    // MMOSkills
+    compileOnly files('libs/MMOSkillTree-1.4.1.jar')
 
     // EcoQuest Support - Adds support for adventurer ranks like E -> SS rank
     compileOnly files('libs/EcoTaleQuests-1.5.2.jar')
@@ -93,6 +101,82 @@ dependencies {
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+def generatedHStatsIdentityDir = layout.buildDirectory.dir('generated/hstats-identity-src')
+
+sourceSets {
+    main {
+        java {
+            srcDir generatedHStatsIdentityDir
+        }
+    }
+}
+
+tasks.register('generateHStatsIdentity') {
+    def hstatsUuidProvider = providers.gradleProperty('mysticnametags.hstats.uuid')
+        .orElse(providers.environmentVariable('MYSTICNAMETAGS_HSTATS_UUID'))
+        .orElse('')
+
+    inputs.property('hstatsUuid', hstatsUuidProvider)
+    outputs.dir(generatedHStatsIdentityDir)
+
+    doLast {
+        def outDir = generatedHStatsIdentityDir.get()
+            .file('com/mystichorizons/mysticnametags/generated')
+            .asFile
+        delete outDir
+        outDir.mkdirs()
+
+        def uuid = hstatsUuidProvider.get().trim()
+        def file = new File(outDir, 'HStatsIdentity.java')
+
+        if (uuid.isEmpty()) {
+            file.text = '''package com.mystichorizons.mysticnametags.generated;
+
+public final class HStatsIdentity {
+    private HStatsIdentity() {
+    }
+
+    public static String getModUuid() {
+        return null;
+    }
+}
+'''
+            return
+        }
+
+        uuid = UUID.fromString(uuid).toString()
+
+        byte[] key = [0x5d, 0x23, 0x6f, 0x19, 0x44, 0x71, 0x08, 0x32, 0x6a, 0x15, 0x53, 0x2c] as byte[]
+        byte[] raw = uuid.getBytes('UTF-8')
+        def encoded = (0..<raw.length).collect { int index ->
+            (raw[index] ^ key[index % key.length]) & 0xff
+        }
+        def keyValues = key.collect { int value -> "(byte) 0x${String.format('%02x', value & 0xff)}" }.join(', ')
+        def dataValues = encoded.collect { int value -> "(byte) 0x${String.format('%02x', value)}" }.join(', ')
+
+        file.text = """package com.mystichorizons.mysticnametags.generated;
+
+import java.nio.charset.StandardCharsets;
+
+public final class HStatsIdentity {
+    private static final byte[] DATA = new byte[] { ${dataValues} };
+    private static final byte[] KEY = new byte[] { ${keyValues} };
+
+    private HStatsIdentity() {
+    }
+
+    public static String getModUuid() {
+        byte[] decoded = new byte[DATA.length];
+        for (int index = 0; index < DATA.length; index++) {
+            decoded[index] = (byte) (DATA[index] ^ KEY[index % KEY.length]);
+        }
+        return new String(decoded, StandardCharsets.UTF_8);
+    }
+}
+"""
     }
 }
 
@@ -191,7 +275,7 @@ tasks.register('copyServerJar') {
 }
 
 tasks.named('compileJava') {
-    dependsOn 'copyServerJar'
+    dependsOn 'copyServerJar', 'generateHStatsIdentity'
 }
 
 // Deploy plugin JAR to server mods folder

@@ -5,6 +5,8 @@ import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.commands.AbstractTagsAdminSubCommand;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.network.NetworkSyncService;
+import com.mystichorizons.mysticnametags.network.RedisManager;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
 
 import javax.annotation.Nonnull;
@@ -100,6 +102,45 @@ public class TagsAdminDebugStorageSubCommand extends AbstractTagsAdminSubCommand
                 sb.append("&7Note: &fIf credentials/host are wrong, check startup logs for SQL errors.&r\n");
                 break;
             }
+
+            case REDIS: {
+                RedisManager redis = RedisManager.get();
+
+                sb.append("&7Redis Host: &f").append(settings.getRedisHost()).append("&r\n");
+                sb.append("&7Redis Port: &f").append(settings.getRedisPort()).append("&r\n");
+                sb.append("&7Redis Database: &f").append(settings.getRedisDatabase()).append("&r\n");
+                sb.append("&7Redis User: &f")
+                        .append(settings.getRedisUser().isEmpty() ? "(default)" : settings.getRedisUser())
+                        .append("&r\n");
+                sb.append("&7TLS: &f").append(settings.isRedisSsl() ? "on" : "off").append("&r\n");
+                sb.append("&7Key Prefix: &f").append(settings.getRedisKeyPrefix()).append("&r\n");
+                sb.append("&7Player key pattern: &f")
+                        .append(settings.getRedisKeyPrefix())
+                        .append("tags:<uuid>&r\n");
+                sb.append("&7Connected: ")
+                        .append(redis != null && redis.isHealthy() ? "&aYES" : "&cNO")
+                        .append("&r\n");
+
+                sb.append("&7Note: &fRedis needs RDB or AOF persistence enabled, "
+                        + "or tag ownership is lost when Redis restarts.&r\n");
+                break;
+            }
+        }
+
+        NetworkSyncService sync = NetworkSyncService.get();
+        sb.append("&7Cross-server sync: ");
+        if (!settings.isRedisSyncEnabled()) {
+            sb.append("&7DISABLED");
+        } else if (sync != null) {
+            sb.append("&aACTIVE");
+        } else {
+            sb.append("&cENABLED BUT NOT RUNNING");
+        }
+        sb.append("&r\n");
+
+        if (sync != null) {
+            sb.append("&7Server id: &f").append(sync.getServerId()).append("&r\n");
+            sb.append("&7Sync channel: &f").append(sync.getChannel()).append("&r\n");
         }
 
         context.sender().sendMessage(colored(sb.toString()));

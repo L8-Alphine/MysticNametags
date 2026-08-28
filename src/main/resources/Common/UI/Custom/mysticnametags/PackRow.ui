@@ -1,0 +1,51 @@
+// MysticNameTags - Tag pack row template (Pack Manager UI)
+// Appended into #PackList; whole row is a selection Button.
+
+$M = "MysticCommon.ui";
+
+Button {
+  Anchor: (Height: 46, Bottom: 6);
+  Background: (Color: #161b22(0.92));
+  LayoutMode: Left;
+  Padding: (Left: 8, Right: 10, Top: 6, Bottom: 6);
+  Style: (
+    Hovered: (Background: #1c2430(0.95)),
+    Pressed: (Background: #10151c(0.95))
+  );
+
+  Group #Accent {
+    Anchor: (Width: 4, Height: 30, Vertical: 0, Right: 10);
+    OutlineColor: #3a3a3a;
+    OutlineSize: 2;
+  }
+
+  Group {
+    LayoutMode: Top;
+    FlexWeight: 1;
+    Anchor: (Height: 32, Vertical: 0);
+
+    Label #Name {
+      Text: "";
+      Style: $M.@RowNameStyle;
+      Anchor: (Height: 18, Bottom: 2);
+    }
+
+    Label #Meta {
+      Text: "";
+      Style: $M.@RowDescStyle;
+      Anchor: (Height: 12);
+    }
+  }
+
+  Group #StatePill {
+    Anchor: (Width: 84, Height: 20, Vertical: 0, Left: 8);
+    Background: (Color: #0d1117(0.9));
+    OutlineColor: #58a6ff;
+    OutlineSize: 1;
+    LayoutMode: Middle;
+
+    Label #State {
+      Style: $M.@PillLabelStyle;
+    }
+  }
+}

@@ -6,7 +6,12 @@ import com.hypixel.hytale.server.core.io.PacketHandler;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeCompat;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventBus;
+import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventListener;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.tags.TagManager.TagPurchaseResult;
@@ -53,6 +58,31 @@ public final class MysticNameTagsAPI {
 
     private static IntegrationManager integrations() {
         return mgr().getIntegrations();
+    }
+
+    // ---------------------------------------------------------------------
+    // Public event hooks
+    // ---------------------------------------------------------------------
+
+    /**
+     * Registers a listener for MysticNameTags lifecycle events.
+     *
+     * The returned handle unregisters the listener when closed.
+     */
+    @Nonnull
+    public static AutoCloseable listen(@Nonnull MysticNameTagsEventListener listener) {
+        return MysticNameTagsEventBus.register(listener);
+    }
+
+    /**
+     * Unregisters a listener previously registered with {@link #listen(MysticNameTagsEventListener)}.
+     */
+    public static boolean unlisten(@Nonnull MysticNameTagsEventListener listener) {
+        return MysticNameTagsEventBus.unregister(listener);
+    }
+
+    public static int getEventListenerCount() {
+        return MysticNameTagsEventBus.listenerCount();
     }
 
     // ---------------------------------------------------------------------
@@ -142,6 +172,30 @@ public final class MysticNameTagsAPI {
     public static boolean ownsTag(@Nullable UUID uuid, @Nullable String id) {
         if (uuid == null || id == null) return false;
         return mgr().ownsTag(uuid, id);
+    }
+
+    /**
+     * Creates or updates a simple tag definition in tags.json.
+     * Intended for admin tools and companion plugins that need a stable write API.
+     */
+    @Nonnull
+    public static TagManager.TagEditResult createOrUpdateSimpleTag(@Nullable String id,
+                                                                   @Nullable String display,
+                                                                   @Nullable String description,
+                                                                   @Nullable String category,
+                                                                   @Nullable String price,
+                                                                   @Nullable String permission,
+                                                                   @Nullable String actor) {
+        return mgr().upsertSimpleTag(id, display, description, category, price, permission, actor);
+    }
+
+    /**
+     * Deletes a tag definition from tags.json and removes stale ownership references from loaded player data.
+     */
+    @Nonnull
+    public static TagManager.TagEditResult deleteTag(@Nullable String id,
+                                                    @Nullable String actor) {
+        return mgr().deleteTagDefinition(id, actor);
     }
 
     // ---------------------------------------------------------------------
@@ -261,6 +315,117 @@ public final class MysticNameTagsAPI {
     }
 
     // ---------------------------------------------------------------------
+    // EndlessLeveling helpers
+    // ---------------------------------------------------------------------
+
+    /**
+     * Returns true when the EndlessLeveling 9.x public API is present.
+     */
+    public static boolean isEndlessLevelingAvailable() {
+        return EndlessLevelingCompat.isAvailable();
+    }
+
+    /**
+     * Returns true when MysticNameTags has attached its EndlessLeveling nameplate refresh bridge.
+     */
+    public static boolean isEndlessLevelingNameplateAttached() {
+        return integrations().isEndlessLevelingNameplateAttached();
+    }
+
+    /**
+     * Returns the player's EndlessLeveling level as display text, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessLevel(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessLevel(uuid);
+    }
+
+    /**
+     * Returns the configured EndlessLeveling prestige display, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessPrestige(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessPrestige(uuid);
+    }
+
+    /**
+     * Returns the player's EndlessLeveling race id, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessRace(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessRace(uuid);
+    }
+
+    /**
+     * Returns the player's EndlessLeveling primary class display, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessPrimaryClass(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessPrimaryClass(uuid);
+    }
+
+    /**
+     * Returns the player's EndlessLeveling secondary class display, or an empty string.
+     */
+    @Nonnull
+    public static String getEndlessSecondaryClass(@Nullable UUID uuid) {
+        return uuid == null ? "" : integrations().getEndlessSecondaryClass(uuid);
+    }
+
+    /**
+     * Reads an EndlessLeveling stat key such as {@code endlessleveling.level},
+     * {@code endlessleveling.xp}, {@code endlessleveling.prestige}, or
+     * {@code endlessleveling.skill.STRENGTH}.
+     */
+    @Nullable
+    public static Integer getEndlessLevelingStat(@Nullable UUID uuid, @Nullable String key) {
+        if (uuid == null || key == null || !key.trim().startsWith("endlessleveling.")) {
+            return null;
+        }
+        return integrations().getStatValue(uuid, key);
+    }
+
+    /**
+     * Returns true when the RPGLeveling public API is present.
+     */
+    public static boolean isRpgLevelingAvailable() {
+        return RPGLevelingCompat.isAvailable();
+    }
+
+    /**
+     * Reads an RPGLeveling stat key such as {@code rpgleveling.lvl},
+     * {@code rpgleveling.skills.damage}, {@code rpgleveling.classes.archery}, or
+     * {@code rpgleveling.progression}.
+     */
+    @Nullable
+    public static Integer getRpgLevelingStat(@Nullable UUID uuid, @Nullable String key) {
+        if (uuid == null || key == null || !key.trim().startsWith("rpgleveling.")) {
+            return null;
+        }
+        return integrations().getStatValue(uuid, key);
+    }
+
+    /**
+     * Returns true when the MMOSkillTree public API is present.
+     */
+    public static boolean isMMOSkillTreeAvailable() {
+        return MMOSkillTreeCompat.isAvailable();
+    }
+
+    /**
+     * Reads an MMOSkillTree stat key such as {@code mmoskilltree.total_level},
+     * {@code mmoskilltree.level.mining}, {@code mmoskilltree.xp.mining}, or
+     * {@code mmoskilltree.achievement.first_steps}.
+     */
+    @Nullable
+    public static Integer getMMOSkillTreeStat(@Nullable UUID uuid, @Nullable String key) {
+        if (uuid == null || key == null || !key.trim().startsWith("mmoskilltree.")) {
+            return null;
+        }
+        return integrations().getStatValue(uuid, key);
+    }
+
+    // ---------------------------------------------------------------------
     // Rank prefix & economy helpers
     // ---------------------------------------------------------------------
 
@@ -358,6 +523,11 @@ public final class MysticNameTagsAPI {
      *   <li>%mystic_rank%         – colored rank prefix (PrefixesPlus/LuckPerms)</li>
      *   <li>%mystic_rank_plain%   – plain rank prefix</li>
      *   <li>%mystic_balance%      – numeric balance</li>
+     *   <li>%mystic_endless_level% – EndlessLeveling level</li>
+     *   <li>%mystic_endless_prestige% – EndlessLeveling prestige display</li>
+     *   <li>%mystic_endless_race% – EndlessLeveling race id</li>
+     *   <li>%mystic_endless_primary_class% – EndlessLeveling primary class display</li>
+     *   <li>%mystic_endless_secondary_class% – EndlessLeveling secondary class display</li>
      * </ul>
      *
      * Any placeholder without available data is replaced with an empty string.
@@ -386,7 +556,12 @@ public final class MysticNameTagsAPI {
                     .replace("%mystic_full_plain%", "")
                     .replace("%mystic_rank%", "")
                     .replace("%mystic_rank_plain%", "")
-                    .replace("%mystic_balance%", "");
+                    .replace("%mystic_balance%", "")
+                    .replace("%mystic_endless_level%", "")
+                    .replace("%mystic_endless_prestige%", "")
+                    .replace("%mystic_endless_race%", "")
+                    .replace("%mystic_endless_primary_class%", "")
+                    .replace("%mystic_endless_secondary_class%", "");
         }
 
         // Tag
@@ -421,7 +596,12 @@ public final class MysticNameTagsAPI {
                 .replace("%mystic_rank_plain%", rankPlain)
                 .replace("%mystic_full%", fullColored)
                 .replace("%mystic_full_plain%", fullPlain)
-                .replace("%mystic_balance%", String.valueOf(balance));
+                .replace("%mystic_balance%", String.valueOf(balance))
+                .replace("%mystic_endless_level%", getEndlessLevel(useUuid))
+                .replace("%mystic_endless_prestige%", getEndlessPrestige(useUuid))
+                .replace("%mystic_endless_race%", getEndlessRace(useUuid))
+                .replace("%mystic_endless_primary_class%", getEndlessPrimaryClass(useUuid))
+                .replace("%mystic_endless_secondary_class%", getEndlessSecondaryClass(useUuid));
     }
 
     // ---------------------------------------------------------------------

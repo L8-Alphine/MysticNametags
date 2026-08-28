@@ -1,0 +1,196 @@
+// MysticNameTags - In-game Tag Editor UI
+// Controller: MysticNameTagsTagEditorUI
+//
+// Tag rows are stamped dynamically from EditorTagRow.ui into #EditorTagList.
+
+$C = "../Common.ui";
+$M = "MysticCommon.ui";
+
+$C.@PageOverlay {
+  LayoutMode: Top;
+
+  SceneBlur #SceneBlur1 {}
+  SceneBlur #SceneBlur2 {}
+
+  Group {
+    LayoutMode: Middle;
+    FlexWeight: 1;
+
+    $M.@Window #TagEditorRoot {
+      Anchor: (Width: 1240, Height: 860);
+
+      $M.@TitleBanner {}
+
+      Group {
+        FlexWeight: 1;
+        LayoutMode: Left;
+
+        // ==================== TAG LIST ====================
+        $M.@Card {
+          Anchor: (Width: 440, Right: 20);
+
+          $M.@Divider {}
+
+          $M.@SectionHeader #EditorListTitle { Text: "TAGS"; }
+
+          $M.@SearchBar {}
+
+          Label #EditorListEmpty {
+            Text: "No tags found.";
+            Style: $M.@EmptyStyle;
+            Anchor: (Height: 30, Bottom: 8);
+            Visible: false;
+          }
+
+          Group #EditorTagList {
+            FlexWeight: 1;
+            LayoutMode: TopScrolling;
+            ScrollbarStyle: $C.@DefaultScrollbarStyle;
+          }
+
+          Group { Anchor: (Height: 10); }
+
+          $M.@PagerFooter {}
+        }
+
+        // ==================== EDITOR FORM ====================
+        Group {
+          FlexWeight: 1;
+          LayoutMode: Top;
+
+          $M.@Card {
+            FlexWeight: 1;
+
+            $M.@Divider {}
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 26, Bottom: 10);
+
+              $M.@SectionHeader #EditorFormTitle {
+                Text: "TAG EDITOR";
+                FlexWeight: 1;
+                Anchor: (Height: 18, Vertical: 0);
+              }
+
+              $C.@SmallSecondaryTextButton #EditorNewButton {
+                Text: "NEW TAG";
+                Anchor: (Width: 110, Height: 26, Vertical: 0);
+              }
+            }
+
+            Label #EditorHelpLine {
+              Text: "";
+              Style: $M.@HintStyle;
+              Anchor: (Height: 18, Bottom: 10);
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 38, Bottom: 8);
+              Label #EditorIdLabel { Text: "Tag ID"; Style: $M.@StatLabelStyle; Anchor: (Width: 110, Vertical: 0); }
+              $C.@TextField #EditorTagIdBox { FlexWeight: 1; Anchor: (Height: 38); PlaceholderText: "event.summer_sun"; }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 38, Bottom: 8);
+              Label #EditorDisplayLabel { Text: "Display"; Style: $M.@StatLabelStyle; Anchor: (Width: 110, Vertical: 0); }
+              $C.@TextField #EditorDisplayBox { FlexWeight: 1; Anchor: (Height: 38); PlaceholderText: "&#FFAA00&l[Sunborn]"; }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 38, Bottom: 8);
+              Label #EditorDescriptionLabel { Text: "Description"; Style: $M.@StatLabelStyle; Anchor: (Width: 110, Vertical: 0); }
+              $C.@TextField #EditorDescriptionBox { FlexWeight: 1; Anchor: (Height: 38); PlaceholderText: "&7A limited event tag."; }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 38, Bottom: 8);
+              Label #EditorCategoryLabel { Text: "Category"; Style: $M.@StatLabelStyle; Anchor: (Width: 110, Vertical: 0); }
+              $C.@TextField #EditorCategoryBox { FlexWeight: 1; Anchor: (Height: 38); PlaceholderText: "Events"; }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 38, Bottom: 8);
+              Label #EditorPriceLabel { Text: "Price"; Style: $M.@StatLabelStyle; Anchor: (Width: 110, Vertical: 0); }
+              $C.@TextField #EditorPriceBox { FlexWeight: 1; Anchor: (Height: 38); PlaceholderText: "0"; }
+            }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 38, Bottom: 12);
+              Label #EditorPermissionLabel { Text: "Permission"; Style: $M.@StatLabelStyle; Anchor: (Width: 110, Vertical: 0); }
+              $C.@TextField #EditorPermissionBox { FlexWeight: 1; Anchor: (Height: 38); PlaceholderText: "mysticnametags.tag.example"; }
+            }
+
+            $M.@Divider {}
+
+            $M.@SectionHeader #EditorPreviewTitle { Text: "PREVIEW"; }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 30, Bottom: 12);
+
+              Group {
+                FlexWeight: 1;
+                Anchor: (Height: 30);
+                Background: (Color: #0d1117(0.9));
+                OutlineColor: #3d4450;
+                OutlineSize: 1;
+                LayoutMode: Middle;
+
+                // Text is supplied at runtime via .TextSpans - never also set .Text here.
+                Label #EditorPreviewLine {
+                  Style: (FontSize: 14, RenderBold: true, TextColor: #e6edf3, HorizontalAlignment: Center, VerticalAlignment: Center);
+                }
+              }
+            }
+
+            Label #EditorStatusLine {
+              Text: "";
+              Style: (FontSize: 11, TextColor: #96a9be, VerticalAlignment: Center);
+              Anchor: (Height: 20, Bottom: 10);
+            }
+
+            Group { FlexWeight: 1; }
+
+            Group {
+              LayoutMode: Left;
+              Anchor: (Height: 40);
+
+              TextButton #EditorSaveButton {
+                Text: "SAVE TAG";
+                FlexWeight: 1;
+                Anchor: (Height: 36);
+                Style: $M.@PrimaryBtnStyle;
+              }
+
+              Group { Anchor: (Width: 8); }
+
+              $C.@SmallSecondaryTextButton #EditorClearButton {
+                Text: "CLEAR";
+                Anchor: (Width: 110, Height: 36);
+              }
+
+              Group { Anchor: (Width: 8); }
+
+              TextButton #EditorDeleteButton {
+                Text: "DELETE";
+                Anchor: (Width: 130, Height: 36);
+                Style: $M.@DangerBtnStyle;
+              }
+            }
+          }
+        }
+      }
+
+      Group { Anchor: (Height: 10); }
+
+      $M.@PageFooter {}
+    }
+  }
+}

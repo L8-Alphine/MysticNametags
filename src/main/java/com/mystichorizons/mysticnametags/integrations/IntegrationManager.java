@@ -1,27 +1,24 @@
 package com.mystichorizons.mysticnametags.integrations;
 
-import com.airijko.endlessleveling.EndlessLeveling;
-import com.airijko.endlessleveling.data.PlayerData;
-import com.airijko.endlessleveling.managers.PlayerDataManager;
-import com.hypixel.hytale.component.Ref;
-import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.command.system.CommandSender;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
-import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.economy.*;
 import com.mystichorizons.mysticnametags.integrations.ecoquests.EcoQuestsCompat;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingStatBridge;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeCompat;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeStatBridge;
 import com.mystichorizons.mysticnametags.integrations.permissions.*;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
+import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingStatBridge;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
-import org.zuxaw.plugin.api.RPGLevelingAPI;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -99,6 +96,17 @@ public class IntegrationManager {
         setupPrefixBackends();
         setupEconomyBackends();
         setupItemRequirementHandler();
+    }
+
+    public void refreshEconomyBackends(@Nonnull String reason) {
+        setupEconomyBackends();
+        loggedEconomyStatus = false;
+
+        LOGGER.at(Level.INFO).log(
+                "[MysticNameTags] Refreshed economy backend detection (" + reason + "). "
+                        + "Any economy available: " + hasAnyEconomy());
+
+        logEconomyStatusIfNeeded();
     }
 
     public IntegrationManager(@Nonnull PlaytimeService playtimeService) {
@@ -305,18 +313,42 @@ public class IntegrationManager {
         boolean useCoins = Settings.get().isUseCoinSystem();
 
         java.util.List<EconomyBackend> chain = new java.util.ArrayList<>();
+        chain.add(LedgerBackends.vaultUnlocked(ECON_PLUGIN_NAME));
         chain.add(LedgerBackends.economySystemLedger(useCoins));
         chain.add(LedgerBackends.hyEssentialsX());
         chain.add(LedgerBackends.ecoTale());
-        chain.add(LedgerBackends.vaultUnlocked(ECON_PLUGIN_NAME));
         chain.add(LedgerBackends.eliteEssentials());
 
-        // Keep only those that are actually present
-        chain.removeIf(b -> !b.isAvailable());
-
+        // Keep the FULL chain. Every call site checks backend.isAvailable()
+        // live, so economy plugins that register their provider AFTER this
+        // plugin has started (e.g. VaultUnlocked providers) are still picked
+        // up. Pruning here used to permanently drop late-registering
+        // backends and made the plugin report "economy disabled".
         this.ledgerBackends = java.util.Collections.unmodifiableList(chain);
-        if (!ledgerBackends.isEmpty()) {
-            this.economyMode = EconomyMode.LEDGER;
+        this.economyMode = EconomyMode.LEDGER;
+
+        java.util.List<String> availableNow = new java.util.ArrayList<>();
+        for (EconomyBackend backend : chain) {
+            try {
+                if (backend.isAvailable()) {
+                    availableNow.add(backend.name());
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        if (availableNow.isEmpty()) {
+            if (VaultUnlockedSupport.isApiAvailable()) {
+                LOGGER.at(Level.INFO).log(
+                        "[MysticNameTags] VaultUnlocked API is loaded, but no ledger economy provider is ready yet. "
+                                + "Backends are re-checked on every purchase/balance request.");
+            } else {
+                LOGGER.at(Level.INFO).log(
+                        "[MysticNameTags] No ledger economy backend detected yet - will keep checking. "
+                                + "Backends are re-checked on every purchase/balance request.");
+            }
+        } else {
+            LOGGER.at(Level.INFO).log(
+                    "[MysticNameTags] Ledger economy backends available: " + String.join(", ", availableNow));
         }
     }
 
@@ -346,7 +378,32 @@ public class IntegrationManager {
     }
 
     private boolean hasAnyLedgerEconomy() {
-        return ledgerBackends != null && !ledgerBackends.isEmpty();
+        return firstAvailableLedgerBackend() != null;
+    }
+
+    @Nullable
+    private EconomyBackend firstAvailableLedgerBackend() {
+        if (ledgerBackends == null) {
+            return null;
+        }
+        for (EconomyBackend backend : ledgerBackends) {
+            try {
+                if (backend.isAvailable()) {
+                    return backend;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    @Nonnull
+    public String getActiveEconomyBackendName() {
+        if (isUsingPhysicalCoins()) {
+            return "CoinsAndMarkets";
+        }
+        EconomyBackend backend = firstAvailableLedgerBackend();
+        return backend != null ? backend.name() : "None";
     }
 
     // ----------------------------------------------------------------
@@ -513,6 +570,14 @@ public class IntegrationManager {
         }
     }
 
+    public boolean isVaultApiAvailable() {
+        try {
+            return VaultUnlockedSupport.isApiAvailable();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
+    }
+
     public boolean isEliteEconomyAvailable() {
         try {
             return EliteEconomySupport.isAvailable();
@@ -557,24 +622,42 @@ public class IntegrationManager {
             return;
         }
 
+        EconomyBackend activeLedger = firstAvailableLedgerBackend();
+        String activeLedgerName = activeLedger != null ? activeLedger.name() : null;
         boolean primary = isPrimaryEconomyAvailable();
         boolean hyex    = isHyEssentialsXAvailable();
         boolean ecoTale = isEcoTaleAvailable();
         boolean vault   = isVaultAvailable();
         boolean elite   = isEliteEconomyAvailable();
 
-        if (primary) {
-            if (hyex || ecoTale || vault || elite) {
+        if ("VaultUnlocked".equals(activeLedgerName)) {
+            if (primary || hyex || ecoTale || elite) {
                 LOGGER.at(Level.INFO).log(
-                        "[MysticNameTags] EconomySystem (com.economy) detected as primary economy. " +
-                                "HyEssentialsX: " + hyex +
+                        "[MysticNameTags] VaultUnlocked detected as primary economy backend. " +
+                                "EconomySystem: " + primary +
+                                ", HyEssentialsX: " + hyex +
                                 ", EcoTale: " + ecoTale +
-                                ", VaultUnlocked: " + vault +
                                 ", EliteEssentials: " + elite + " (fallbacks)."
                 );
             } else {
                 LOGGER.at(Level.INFO)
-                        .log("[MysticNameTags] EconomySystem (com.economy) detected – tag purchasing enabled.");
+                        .log("[MysticNameTags] VaultUnlocked detected as primary economy backend – tag purchasing enabled.");
+            }
+            loggedEconomyStatus = true;
+            return;
+        }
+
+        if (primary) {
+            if (hyex || ecoTale || elite) {
+                LOGGER.at(Level.INFO).log(
+                        "[MysticNameTags] EconomySystem (com.economy) detected as economy backend. " +
+                                "HyEssentialsX: " + hyex +
+                                ", EcoTale: " + ecoTale +
+                                ", EliteEssentials: " + elite + " (fallbacks)."
+                );
+            } else {
+                LOGGER.at(Level.INFO)
+                        .log("[MysticNameTags] EconomySystem (com.economy) detected as economy backend – tag purchasing enabled.");
             }
             loggedEconomyStatus = true;
             return;
@@ -606,18 +689,6 @@ public class IntegrationManager {
             } else {
                 LOGGER.at(Level.INFO)
                         .log("[MysticNameTags] EcoTale detected – tag purchasing enabled.");
-            }
-            loggedEconomyStatus = true;
-            return;
-        }
-
-        if (vault) {
-            if (elite) {
-                LOGGER.at(Level.INFO)
-                        .log("[MysticNameTags] VaultUnlocked + EliteEssentials detected – using VaultUnlocked as primary economy backend.");
-            } else {
-                LOGGER.at(Level.INFO)
-                        .log("[MysticNameTags] VaultUnlocked detected – tag purchasing enabled.");
             }
             loggedEconomyStatus = true;
             return;
@@ -671,51 +742,23 @@ public class IntegrationManager {
         if (amount <= 0.0D) return true;
         logEconomyStatusIfNeeded();
 
-        // Ledger chain only (physical is handled in the PlayerRef overload)
-        if (ledgerBackends != null) {
-            for (EconomyBackend backend : ledgerBackends) {
-                if (!backend.isAvailable()) continue;
-                if (backend.has(uuid, amount) && backend.withdraw(uuid, amount)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        EconomyBackend backend = firstAvailableLedgerBackend();
+        return backend != null && backend.has(uuid, amount) && backend.withdraw(uuid, amount);
     }
 
     public boolean hasBalance(@Nonnull UUID uuid, double amount) {
         if (amount <= 0.0D) return true;
         logEconomyStatusIfNeeded();
 
-        // Ledger chain only (physical is handled in the PlayerRef overload)
-        if (ledgerBackends != null) {
-            for (EconomyBackend backend : ledgerBackends) {
-                if (!backend.isAvailable()) continue;
-                if (backend.has(uuid, amount)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        EconomyBackend backend = firstAvailableLedgerBackend();
+        return backend != null && backend.has(uuid, amount);
     }
 
     public double getBalance(@Nonnull UUID uuid) {
         logEconomyStatusIfNeeded();
 
-        // Ledger chain only (physical is handled in the PlayerRef overload)
-        if (ledgerBackends != null) {
-            for (EconomyBackend backend : ledgerBackends) {
-                if (!backend.isAvailable()) continue;
-                double bal = backend.getBalance(uuid);
-                if (bal > 0.0D) {
-                    return bal;
-                }
-            }
-        }
-
-        return 0.0D;
+        EconomyBackend backend = firstAvailableLedgerBackend();
+        return backend != null ? backend.getBalance(uuid) : 0.0D;
     }
 
     @Nonnull
@@ -762,6 +805,8 @@ public class IntegrationManager {
      * Supports:
      *  - Internal PlayerStatManager-backed keys (e.g. "custom.damage_dealt")
      *  - EndlessLeveling-backed keys (keys starting with "endlessleveling.")
+     *  - RPGLeveling-backed keys (keys starting with "rpgleveling.")
+     *  - MMOSkillTree-backed keys (keys starting with "mmoskilltree.")
      */
     @Nullable
     public Integer getStatValue(@Nonnull UUID uuid, @Nonnull String key) {
@@ -786,7 +831,37 @@ public class IntegrationManager {
             }
         }
 
-        // 2) Primary StatProvider (internal PlayerStatManager)
+        // 2) RPGLeveling bridge (prefix-based)
+        if (trimmed.startsWith("rpgleveling.")) {
+            try {
+                Integer val = RPGLevelingStatBridge.getStatValue(uuid, trimmed);
+                if (val != null) {
+                    return val;
+                }
+            } catch (Throwable t) {
+                LOGGER.at(Level.FINE)
+                        .withCause(t)
+                        .log("[MysticNameTags] RPGLeveling stat bridge error for %s (key=%s)", uuid, trimmed);
+                // Fall through to internal stats if RPGLeveling is missing or fails
+            }
+        }
+
+        // 3) MMOSkillTree bridge (prefix-based)
+        if (trimmed.startsWith("mmoskilltree.")) {
+            try {
+                Integer val = MMOSkillTreeStatBridge.getStatValue(uuid, trimmed);
+                if (val != null) {
+                    return val;
+                }
+            } catch (Throwable t) {
+                LOGGER.at(Level.FINE)
+                        .withCause(t)
+                        .log("[MysticNameTags] MMOSkillTree stat bridge error for %s (key=%s)", uuid, trimmed);
+                // Fall through to internal stats if MMOSkillTree is missing or fails
+            }
+        }
+
+        // 4) Primary StatProvider (internal PlayerStatManager)
         StatProvider provider = this.statProvider;
         if (provider == null) {
             return null;
@@ -984,9 +1059,17 @@ public class IntegrationManager {
 //        return statProvider != null;
 //    }
 //
-//    public boolean isEndlessLevelingNameplateAttached() {
-//        return endlessNameplateSystem != null;
-//    }
+    public boolean isEndlessLevelingNameplateAttached() {
+        return endlessNameplateSystem != null;
+    }
+
+    public boolean isMMOSkillTreeAvailable() {
+        return MMOSkillTreeCompat.isAvailable();
+    }
+
+    public boolean isMysticVanishAvailable() {
+        return MysticVanishSupport.isAvailable();
+    }
 //
 //    public boolean isCoinsAndMarketsAvailable() {
 //        return coinsAndMarketsBackend != null && coinsAndMarketsBackend.isAvailable();
@@ -1103,19 +1186,12 @@ public class IntegrationManager {
         }
 
         try {
-            RPGLevelingAPI api = RPGLevelingAPI.get();
-            if (api == null) return "";
-
-            Ref<EntityStore> ref = playerRef.getReference();
-            if (ref == null || !ref.isValid()) return "";
-
-            Store<EntityStore> store = ref.getStore();
-            RPGLevelingAPI.PlayerLevelInfo info = api.getPlayerLevelInfo(playerRef, store);
-            if (info == null || info.getLevel() <= 0) {
+            int level = RPGLevelingCompat.getPlayerLevel(playerRef);
+            if (level <= 0) {
                 return "";
             }
 
-            return String.valueOf(info.getLevel());
+            return String.valueOf(level);
         } catch (Throwable ignored) {
             return "";
         }

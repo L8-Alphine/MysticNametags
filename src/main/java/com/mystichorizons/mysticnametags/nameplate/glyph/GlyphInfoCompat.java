@@ -1,7 +1,9 @@
 package com.mystichorizons.mysticnametags.nameplate.glyph;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -81,9 +83,14 @@ public final class GlyphInfoCompat {
 
     @Nullable
     public static String getModelAssetId(char ch) {
+        return getModelAssetId(ch, GlyphAssets.DEFAULT_FONT);
+    }
+
+    @Nullable
+    public static String getModelAssetId(char ch, String font) {
         String safe = getSafeIdLower(ch);
         if (safe == null) return null;
-        return GlyphAssets.modelId(safe);
+        return GlyphAssets.modelId(font, safe);
     }
 
     /**
@@ -93,16 +100,30 @@ public final class GlyphInfoCompat {
      */
     @Nullable
     public static String[] getModelAssetIdCandidates(char ch) {
+        return getModelAssetIdCandidates(ch, GlyphAssets.DEFAULT_FONT);
+    }
+
+    @Nullable
+    public static String[] getModelAssetIdCandidates(char ch, String font) {
         String lower = getSafeIdLower(ch);
         if (lower == null) return null;
 
         String engine = normalizeEngineCase(lower);
 
-        String idLower = GlyphAssets.modelId(lower);
-        String idEngine = GlyphAssets.modelId(engine);
+        List<String> candidates = new ArrayList<>(4);
+        addCandidate(candidates, GlyphAssets.modelId(font, lower));
+        addCandidate(candidates, GlyphAssets.modelId(font, engine));
+        addCandidate(candidates, GlyphAssets.modelId(GlyphAssets.DEFAULT_FONT, lower));
+        addCandidate(candidates, GlyphAssets.modelId(GlyphAssets.DEFAULT_FONT, engine));
 
-        if (idLower.equals(idEngine)) return new String[]{idLower};
-        return new String[]{idLower, idEngine};
+        return candidates.toArray(new String[0]);
+    }
+
+    private static void addCandidate(List<String> candidates, String id) {
+        if (id == null || id.isEmpty() || candidates.contains(id)) {
+            return;
+        }
+        candidates.add(id);
     }
 
     public static String normalizeEngineCase(String lowerRaw) {

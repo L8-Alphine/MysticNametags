@@ -3,7 +3,9 @@ package com.mystichorizons.mysticnametags.tags;
 public enum StorageBackend {
     FILE,
     SQLITE,
-    MYSQL;
+    MYSQL,
+    /** Shared Redis datastore; intended for networks running several servers. */
+    REDIS;
 
     public static StorageBackend fromString(String raw) {
         if (raw == null) return FILE;

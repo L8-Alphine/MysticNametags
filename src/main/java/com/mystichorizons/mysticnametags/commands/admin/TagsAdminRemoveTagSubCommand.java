@@ -51,7 +51,7 @@ public class TagsAdminRemoveTagSubCommand extends AbstractTagsAdminSubCommand {
         }
 
         UUID targetUuid = targetRef.getUuid();
-        boolean removed = TagManager.get().adminRemoveTag(targetUuid, tagId);
+        boolean removed = TagManager.get().adminRemoveTag(targetUuid, tagId, actorName(context));
 
         if (!removed) {
             context.sender().sendMessage(colored(lang.tr("cmd.admin.removetag.not_owned", Map.of(
