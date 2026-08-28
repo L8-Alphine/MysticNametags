@@ -22,13 +22,9 @@ public class TagsCommand extends AbstractPlayerCommand {
 
     public TagsCommand() {
         super("tags", "Open the tag selection UI");
+        this.requireNoPermission();
         this.addAliases("tag");
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private Message colored(String text) {

@@ -23,13 +23,9 @@ public class TagsSubCommand extends AbstractPlayerCommand {
 
     public TagsSubCommand() {
         super("tags", "Open the tag selection UI");
+        this.requireNoPermission();
         this.addAliases(new String[]{"select", "tagmenu"});
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private Message colored(String text) {

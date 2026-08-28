@@ -31,17 +31,17 @@ Built for servers that want:
 
 # ⚠ Compatibility Warning - Please Read
 
-**MysticNameTags v1.2.6 is built for Hytale Update 5 / Hytale `0.5.x+`.**
+**MysticNameTags v1.2.8 is built for Hytale Update 6 / Hytale `0.6.x`.**
 
-This version will **ONLY** work on Hytale `0.5.x+`.
+This version will **ONLY** work on Hytale `0.6.x`.
 
-It is **not compatible** with older dated Hytale server builds such as:
+It is **not compatible** with Hytale `0.5.x` or older dated server builds such as:
 
 ```text
 2026.03.26-*
 ```
 
-If your server is still running an older Hytale build, do not update to MysticNameTags v1.2.6 yet.
+If your server is still running Hytale Update 5 or an older build, do not update to MysticNameTags v1.2.8 yet.
 
 Before updating, back up:
 
@@ -53,7 +53,7 @@ playerdata
 
 After installing the new jar:
 
-* Make sure your server is running Hytale `0.5.x+`.
+* Make sure your server is running Hytale `0.6.x`.
 * Restart the server.
 * Confirm MysticNameTags loads without compatibility errors.
 * Run `/tagsadmin doctor`.
@@ -106,6 +106,188 @@ Recent versions introduced major progress toward a more stable glyph nameplate f
 
 ***
 
+## 🖼 Tag Banners
+
+A tag can render as **artwork instead of text**. Drop a PNG in the plugin's `images/`
+folder, point a tag at it, and that image replaces the player's nameplate.
+
+### Setup
+
+1. Put your art in `mods/MysticHorizons_MysticNameTags/images/`, e.g. `legend.png`.
+2. Reference it from `tags.json`:
+
+```json
+{
+  "id": "legend",
+  "display": "&#FFD700✦ LEGEND",
+  "banner": "legend",
+  "category": "Prestige"
+}
+```
+
+3. Run `/tags reload`.
+
+`banner` accepts `legend`, `legend.png` or `images/legend.png` — all resolve to the same file.
+
+Banner PNGs are registered as client assets and pushed to players who are **already connected**,
+so new art goes live on reload without a restart or a client-side download step.
+
+### Where the banner lands in the nameplate
+
+By default a banner **replaces the entire nameplate** — rank, name and all.
+
+Set `bannerKeepNameLine: true` and the banner instead drops into the **`{tag}` slot of your
+`nameplateFormat`**, with every other line rendering as normal glyph text. So this format:
+
+```json
+"nameplateFormat": "{rank} {name}/n{tag}/n&7Lv &7• &a{mmoskilltree.total_level}"
+```
+
+renders as:
+
+```text
+Lv • 160                     <- {rank} {name} is the FIRST format line and
+[  Founding Embers art  ]       renders at the BOTTOM; lines stack upward
+[Owner] Alphine
+```
+
+The banner takes the exact position the tag's text occupied. Notes:
+
+* Raise `experimentalGlyphMaxLines` to match your line count — it defaults to `2`, and a
+  three-line format needs `3`.
+* If something else shares the `{tag}` line, it renders on its own line just after the banner
+  rather than being dropped.
+* If your format has no `{tag}` at all, the banner is added as the topmost line.
+* A banner costs one entity where the tag's text cost one per character, so switching a tag to
+  a banner *frees* glyph budget for the remaining lines.
+
+### Licensing
+
+Tag banners are a **licensed feature** (`mysticnametags` / `tags.banner`). Everything else in the
+mod is unlicensed and always works.
+
+Put `license.mclicense` in the plugin's data directory next to `settings.json`, then restart or run
+`/tags reload`. Verification is entirely offline — the mod never contacts a licensing server and
+never needs an internet connection.
+
+On first run the mod writes two files into its data directory:
+
+* **`server-id.txt`** — this server's licensing identity. Register it in the portal to bind a
+  license here. Back it up; **do not copy it to another server**, or a license bound to it will
+  stop working there.
+* **`license-request.json`** — written only when no license is present. Upload it to the portal
+  instead of typing the UUID by hand.
+
+If `server-id.txt` is ever corrupted, the mod **will not** regenerate it. Regenerating would orphan
+your license against a UUID you can no longer produce, so it reports the problem and leaves the file
+alone. Fix or delete it, then re-register through the portal's server-replacement flow.
+
+The mod logs one line at startup and is then quiet:
+
+```text
+[MysticNameTags] License: VALID - licensed (id=lic_01K1A2…, banners=enabled)
+[MysticNameTags] Server licensing id: 20bf6b33-b798-43bb-b248-e4162a26ce28
+```
+
+| Status | What it means for you |
+| --- | --- |
+| `VALID` | Banners work. |
+| `GRACE_PERIOD` | Expired but inside its grace window. Banners still work; renew soon. Warned once per start. |
+| `MISSING` | No license file. Banner tags render their text display. |
+| `EXPIRED` | Past expiry and grace. Renew to restore banners. |
+| `NOT_YET_VALID` | The license starts later; check the server clock. |
+| `WRONG_SERVER` | Registered to a different `server-id.txt`. |
+| `WRONG_PRODUCT` | The license does not cover `mysticnametags`. |
+| `INVALID_SIGNATURE` / `DECRYPTION_FAILED` / `INVALID_FORMAT` | The file is damaged or altered. Re-download it. |
+| `UNKNOWN_SIGNING_KEY` / `UNKNOWN_ENCRYPTION_KEY` | The license needs a newer build of the mod. |
+
+**A licensing problem never breaks your server.** Any status other than `VALID`/`GRACE_PERIOD`
+switches off banner artwork and nothing else — tags, the `/tags` menu, nameplates, and every other
+feature carry on. Banner tags simply render their text `display`, exactly as they did before
+banners existed. A corrupt or truncated license file is a status, not a crash.
+
+#### Honestly, what this does and does not protect
+
+* **The Ed25519 signature is the security boundary.** The AES content key ships inside the mod and
+  should be assumed extractable; it only makes license contents opaque to casual inspection.
+  Extracting it does **not** allow forging a license — that needs the private key, which only the
+  licensing server holds.
+* **Java bytecode can be patched.** Someone determined can remove these checks. This is a licensing
+  control for honest operators, not DRM. There is deliberately no obfuscation, anti-debug tricks or
+  integrity self-checking: they cost real reliability and buy almost nothing.
+* **Offline licenses cannot be revoked remotely.** Expiry plus the grace period is what limits a
+  downloaded file. No revocation-list fetching is implemented, on purpose — a mod that hard-fails
+  when a server is unreachable is worse than one that occasionally honours a revoked license.
+
+### Requirements
+
+Banners render through the glyph nameplate pipeline, so both of these must be on in
+`settings.json`:
+
+```json
+{
+  "bannersEnabled": true,
+  "experimentalGlyphNameplatesEnabled": true
+}
+```
+
+With either disabled — or if the PNG is missing — the tag falls back to its normal text
+`display`, so a bad config never leaves a player with no nameplate.
+
+### Sizing
+
+**160 pixels = 1 block.** That is the only number you need: a `256x64` banner renders
+1.6 blocks wide by 0.4 blocks tall, at exactly one texel per pixel.
+
+| | Value |
+|---|---|
+| **Recommended size** | `256x64` (4:1) |
+| **Recommended file size** | under 32 KB |
+| **Max before downscaling** | `256` px wide, `128` px tall (at default caps) |
+| **Hard max width** | `1280` px, only if `bannerMaxWidthBlocks` is raised to its `8.0` maximum |
+| **Max file size** | 256 KB, raise via `bannerMaxFileBytes` |
+
+Anything larger still works — it is scaled down keeping its aspect ratio — but you gain
+nothing, because it renders at the same on-screen size from more bytes and looks softer
+for having been downsampled.
+
+Both `bannerMaxWidthBlocks` (default `1.6`) and `bannerMaxHeightBlocks` (default `0.8`)
+apply, and the tighter of the two wins. A tall image is therefore limited by its height
+rather than growing upward over the player's head.
+
+Banners are drawn on a bundled quad chosen from a ladder of aspect ratios — 8:1, 6:1, 4:1,
+3:1, 2:1, 3:2, 1:1, 2:3, 1:2 — and then scaled to size. The recommended `256x64` matches
+the 4:1 quad exactly, so it renders with no distortion at all. Ratios between rungs are
+snapped to the nearest one, which is the other reason to stick to a common ratio.
+
+* `bannerScale` on an individual tag multiplies its size before those caps apply, so it can
+  shrink a banner but never push it past the caps.
+* Transparency works. Banners render fullbright and double-sided.
+* Files over `bannerMaxFileBytes` (default 256 KB) are skipped with a warning in the log.
+
+Worked examples at default caps:
+
+```text
+256x64    ->  1.60 x 0.40 blocks   1:1, no scaling      <- recommended
+128x32    ->  0.80 x 0.20 blocks   1:1, no scaling
+256x128   ->  1.60 x 0.80 blocks   1:1, at the height cap
+64x64     ->  0.40 x 0.40 blocks   1:1, square badge
+512x128   ->  1.60 x 0.40 blocks   downscaled, no visual gain
+```
+
+### Notes
+
+* `display` is still required and still used — it is what appears in chat, the `/tags` menu
+  and placeholders. `banner` only changes the 3D nameplate.
+* A banner costs **one entity** regardless of how wide the art is, which makes banner tags
+  considerably cheaper than the equivalent text rendered as glyphs.
+* Set `bannerKeepNameLine: true` to keep the normal name line rendered under the banner.
+* **Animated GIFs are not supported** — the Hytale client decodes PNG and SVG only.
+* `/tagsadmin doctor` flags tags whose banner file is missing or whose settings would stop
+  the banner rendering.
+
+***
+
 ## 📦 Suggested Mods / Integrations
 
 These are **optional** but supported by MysticNameTags:
@@ -143,7 +325,6 @@ Support tickets can be created in:
 You can see MysticNameTags in action on:
 
 * **Hyzion** - _(Currently in Development)_
-* **Late Nite** - `LateNiteHytales.mooo.com`
 * **HyForger Skyblock** - `play.hyforger.com`
 
 ***
@@ -404,6 +585,19 @@ Due to current Hytale API limitations:
 * final visual rendering is still partially controlled by the client
 
 MysticNameTags will continue to expand proper nameplate styling as Hytale’s APIs mature.
+
+### Multi-color text in the menus
+
+The `/tags` menus render text as **spans**, so anything with several colors — or a gradient —
+shows every one of them rather than being flattened to a single color. This applies to:
+
+* tag displays, in the list, the detail panel and the editor preview
+* tag **descriptions**, in the detail panel, the owned-tags rows and the "How it works" popup
+* the current-nameplate previews, which now show the full plate exactly as it renders in world
+
+This also fixes a rendering bug: a label's `Style.TextColor` only applies when a page is first
+built and silently does nothing on later updates, which used to leave stale colors behind when
+paging through the tag list or switching selection.
 
 ***
 
@@ -692,6 +886,24 @@ Supported format tokens include:
 * `{endless_secondary_class}`
 * `{rpg_level}`
 * `{ecoquests_rank}`
+* `{mmoskilltree.total_level}`
+* `{mmoskilltree.total_xp}`
+* `{mmoskilltree.level.<skillId>}` / `{mmoskilltree.skill.<skillId>}`
+* `{mmoskilltree.xp.<skillId>}`
+* `{mmoskilltree.progress.<skillId>}` / `{mmoskilltree.level_progress.<skillId>}`
+* `{mmoskilltree.achievement.<id>}` / `{mmoskilltree.achievement.unlocked.<id>}`
+* `{mmoskilltree.achievement_progress.<id>}` / `{mmoskilltree.achievement.progress.<id>}`
+* `{mmoskilltree.achievement_points}`
+* `{mmoskilltree.stat.<canonicalKey>}` / `{mmoskilltree.statistics.<canonicalKey>}`
+
+MMOSkillTree nameplate tokens use the same keys as tag stat requirements and
+refresh when skill XP or achievement events fire.
+
+When a supported placeholder plugin is enabled, `nameplateFormat` also accepts
+external placeholders directly. Use `%some_placeholder%` for HelpChat
+PlaceholderAPI or `{some_placeholder}` for WiFlow PlaceholderAPI. Built-in and
+MMOSkillTree tokens are resolved first, followed by the external placeholder
+plugins.
 
 Supported newline formats:
 
@@ -736,9 +948,88 @@ When `nameplatePreset` is anything other than `CUSTOM`, it overrides `nameplateF
 
 Supported storage backends:
 
-* `FILE`
-* `SQLITE`
-* `MYSQL`
+| Backend  | Scope         | Notes |
+|----------|---------------|-------|
+| `FILE`   | Single server | `playerdata/*.json`. The default. |
+| `SQLITE` | Single server | One local database file. |
+| `MYSQL`  | Network       | Shared across every server. Recommended for networks. |
+| `REDIS`  | Network       | Shared across every server. Needs Redis persistence enabled. |
+
+`FILE` and `SQLITE` are local to one server, so a tag equipped on one server is
+invisible to the others. `MYSQL` and `REDIS` are shared: every server reads and
+writes the same record.
+
+***
+
+### Networks (Redis)
+
+```json
+"redisSyncEnabled": false,
+"redisHost": "localhost",
+"redisPort": 6379,
+"redisUser": "",
+"redisPassword": "",
+"redisDatabase": 0,
+"redisSsl": false,
+"redisKeyPrefix": "mysticnametags:",
+"redisTimeoutMs": 2000,
+"redisPoolSize": 8,
+"networkServerId": ""
+```
+
+There are two independent pieces here, and you can use either or both.
+
+**1. Redis as the storage backend** (`storageBackend: "REDIS"`)
+
+Player tag data lives in Redis instead of a file or SQL, one key per player:
+
+```
+mysticnametags:tags:<uuid>    tag ownership, equipped tag, favorites, loadouts
+mysticnametags:stats:<uuid>   tracked stats used by stat-gated tags
+```
+
+Every server re-reads a player's record as they connect, so a tag unlocked and
+equipped on Server A is already unlocked and equipped when that player joins
+Server B: their nameplate is drawn with it the first time it renders, without
+any command or relog.
+
+Redis must have RDB or AOF persistence enabled when it is your storage backend,
+otherwise tag ownership is lost if the Redis instance restarts. If you would
+rather keep durability in SQL, use `MYSQL` storage with `redisSyncEnabled`
+instead: the SQL row stays the source of truth and Redis only carries messages.
+
+**2. Cross-server sync** (`redisSyncEnabled: true`)
+
+Works alongside any shared backend. Whenever a player's tag data changes, that
+server publishes a short message on `<redisKeyPrefix>sync`; the other servers
+drop their cached copy, re-read the record, and repaint the nameplate if that
+player happens to be on them.
+
+Without sync, a shared backend already carries tags across servers **on join**.
+With sync, changes also land **immediately** — granting a tag from the lobby
+updates the player standing on the survival server right away.
+
+Setup notes:
+
+* Use the same `redisKeyPrefix` on every server, or they will not see each
+  other's data or messages.
+* `networkServerId` may be left blank. It is generated automatically and exists
+  only so a server can ignore the messages it published itself.
+* Redis settings are read at startup. Restart the server after changing them;
+  `/tags reload` does not reconnect.
+* If Redis is unreachable, MysticNameTags logs it and keeps running. A record it
+  could not read is treated as *unknown* rather than empty, and is never written
+  back over, so an outage cannot wipe a player's tags.
+
+Check the live state at any time with `/tagsadmin storage`, `/tagsadmin
+debugstorage`, or `/tagsadmin doctor`.
+
+**Migrating an existing network.** Point every server at the same Redis or
+MySQL instance and restart them. Each server imports its own `playerdata/`
+folder on first boot, skipping any player another server already imported, then
+renames the folder to `playerdata_legacy`. Import is first-writer-wins, so if
+the same player exists on several servers with different tags, start the server
+holding the data you want to keep first.
 
 ***
 
@@ -881,6 +1172,27 @@ Important notes:
 * longer formats and multiple lines need higher values
 * use plain ASCII in test configs if Hytale does not render decorative symbols reliably
 * use with care on larger servers
+
+### Tag Banners
+
+```json
+"bannersEnabled": true,
+"bannerMaxWidthBlocks": 1.6,
+"bannerMaxHeightBlocks": 0.8,
+"bannerMaxFileBytes": 262144,
+"bannerKeepNameLine": false
+```
+
+| Key | Range | Meaning |
+|---|---|---|
+| `bannersEnabled` | — | Master toggle. When `false`, banner tags render their text `display`. |
+| `bannerMaxWidthBlocks` | `0.25`–`8.0` | Widest a banner may render, in blocks. |
+| `bannerMaxHeightBlocks` | `0.25`–`8.0` | Tallest a banner may render. The tighter of the two caps wins; aspect ratio is always preserved. |
+| `bannerMaxFileBytes` | `1024`+ | PNGs larger than this are skipped at load with a warning. |
+| `bannerKeepNameLine` | — | Render the rest of `nameplateFormat` around the banner, with the banner occupying the `{tag}` slot. When `false`, the banner is the whole nameplate. |
+
+Banners also require `experimentalGlyphNameplatesEnabled: true`. See
+[Tag Banners](#-tag-banners) for the full workflow.
 
 ***
 

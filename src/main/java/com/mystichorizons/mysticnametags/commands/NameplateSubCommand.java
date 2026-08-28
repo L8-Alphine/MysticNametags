@@ -33,13 +33,9 @@ public class NameplateSubCommand extends AbstractPlayerCommand {
 
     public NameplateSubCommand() {
         super("nameplate", "Toggle your own packet nameplate visibility");
+        this.requireNoPermission();
         this.addAliases(new String[]{"selfview", "nametag"});
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private Message colored(String text) {

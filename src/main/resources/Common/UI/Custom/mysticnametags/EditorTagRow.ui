@@ -24,8 +24,8 @@ Button {
     FlexWeight: 1;
     Anchor: (Height: 30, Vertical: 0);
 
+    // Text is supplied at runtime via .TextSpans - never also set .Text on this label.
     Label #Name {
-      Text: "";
       Style: (FontSize: 13, TextColor: #e6edf3, RenderBold: true);
       Anchor: (Height: 16, Bottom: 2);
     }

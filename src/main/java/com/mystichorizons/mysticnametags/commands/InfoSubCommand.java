@@ -16,12 +16,8 @@ public class InfoSubCommand extends CommandBase {
 
     public InfoSubCommand() {
         super("info", "Show plugin information");
+        this.requireNoPermission();
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private void sendColored(CommandContext context, String text) {

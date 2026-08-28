@@ -25,6 +25,16 @@ public class TagDefinition {
     String activeUntil;
     String availabilityMessage;
 
+    /**
+     * Banner art file in {@code <dataDir>/images/}. When set (and banners are enabled), the tag
+     * renders as this image above the player's head instead of its text {@link #display}.
+     * Accepts {@code "legend"}, {@code "legend.png"} or {@code "images/legend.png"}.
+     */
+    String banner;
+
+    /** Optional size multiplier for this tag's banner. Defaults to 1.0. */
+    Double bannerScale;
+
     Integer requiredPlaytimeMinutes;
     List<String> requiredOwnedTags;
 
@@ -80,6 +90,22 @@ public class TagDefinition {
     public String getActiveFrom() { return activeFrom; }
     public String getActiveUntil() { return activeUntil; }
     public String getAvailabilityMessage() { return availabilityMessage; }
+
+    @Nullable
+    public String getBanner() { return banner; }
+
+    public void setBanner(@Nullable String banner) { this.banner = banner; }
+
+    public boolean hasBanner() { return banner != null && !banner.isBlank(); }
+
+    public double getBannerScale() {
+        if (bannerScale == null || bannerScale <= 0.0d) {
+            return 1.0d;
+        }
+        return bannerScale;
+    }
+
+    public void setBannerScale(@Nullable Double bannerScale) { this.bannerScale = bannerScale; }
 
     public String getCategory() {
         if (category == null) return "General";

@@ -59,6 +59,30 @@ public final class Settings {
     private String mysqlUser = "root";
     private String mysqlPassword = "password";
 
+    // Redis options (used by storageBackend=REDIS and by redisSyncEnabled)
+    private String redisHost = "localhost";
+    private int redisPort = 6379;
+    private String redisUser = "";
+    private String redisPassword = "";
+    private int redisDatabase = 0;
+    private boolean redisSsl = false;
+    private String redisKeyPrefix = "mysticnametags:";
+    private int redisTimeoutMs = 2000;
+    private int redisPoolSize = 8;
+
+    /**
+     * Cross-server tag sync over Redis pub/sub. Independent of the storage
+     * backend: pair it with MYSQL to keep durability in SQL while still
+     * pushing tag changes to the rest of the network instantly.
+     */
+    private boolean redisSyncEnabled = false;
+
+    /**
+     * Identifies this server in sync messages so it ignores its own
+     * broadcasts. Blank = derive one automatically at startup.
+     */
+    private String networkServerId = "";
+
     // Playtime Setup
     private String playtimeProvider = "AUTO"; // AUTO, INTERNAL, ZIB_PLAYTIME, NONE
 
@@ -163,6 +187,14 @@ public final class Settings {
     private double experimentalGlyphLineSpacing = 0.30d;
     private double experimentalGlyphTintStrength = 0.65d;
 
+    // --- Tag banners ---------------------------------------------------------
+
+    private boolean bannersEnabled = true;
+    private double bannerMaxWidthBlocks = 1.6d;
+    private double bannerMaxHeightBlocks = 0.8d;
+    private long bannerMaxFileBytes = 262_144L;
+    private boolean bannerKeepNameLine = false;
+
     // ---------------------------------------------------------------------
 
     // Not serialized
@@ -211,6 +243,18 @@ public final class Settings {
                 this.mysqlDatabase = nonBlankOr(loaded.mysqlDatabase, this.mysqlDatabase);
                 this.mysqlUser = nonBlankOr(loaded.mysqlUser, this.mysqlUser);
                 this.mysqlPassword = (loaded.mysqlPassword == null ? this.mysqlPassword : loaded.mysqlPassword);
+
+                this.redisHost = nonBlankOr(loaded.redisHost, this.redisHost);
+                this.redisPort = (loaded.redisPort <= 0 ? this.redisPort : loaded.redisPort);
+                this.redisUser = (loaded.redisUser == null ? this.redisUser : loaded.redisUser);
+                this.redisPassword = (loaded.redisPassword == null ? this.redisPassword : loaded.redisPassword);
+                this.redisDatabase = loaded.redisDatabase;
+                this.redisSsl = loaded.redisSsl;
+                this.redisKeyPrefix = nonBlankOr(loaded.redisKeyPrefix, this.redisKeyPrefix);
+                this.redisTimeoutMs = (loaded.redisTimeoutMs <= 0 ? this.redisTimeoutMs : loaded.redisTimeoutMs);
+                this.redisPoolSize = (loaded.redisPoolSize <= 0 ? this.redisPoolSize : loaded.redisPoolSize);
+                this.redisSyncEnabled = loaded.redisSyncEnabled;
+                this.networkServerId = (loaded.networkServerId == null ? this.networkServerId : loaded.networkServerId);
 
                 // Playtime
                 this.playtimeProvider = nonBlankOr(loaded.playtimeProvider, this.playtimeProvider);
@@ -274,6 +318,13 @@ public final class Settings {
                 this.experimentalGlyphMaxCharsPerLine = loaded.experimentalGlyphMaxCharsPerLine;
                 this.experimentalGlyphLineSpacing = loaded.experimentalGlyphLineSpacing;
                 this.experimentalGlyphTintStrength = loaded.experimentalGlyphTintStrength;
+
+                // Banners
+                this.bannersEnabled = loaded.bannersEnabled;
+                this.bannerMaxWidthBlocks = loaded.bannerMaxWidthBlocks;
+                this.bannerMaxHeightBlocks = loaded.bannerMaxHeightBlocks;
+                this.bannerMaxFileBytes = loaded.bannerMaxFileBytes;
+                this.bannerKeepNameLine = loaded.bannerKeepNameLine;
             }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
@@ -310,6 +361,34 @@ public final class Settings {
         before = this.mysqlDatabase;
         this.mysqlDatabase = getMysqlDatabase();
         if (!safeEquals(before, this.mysqlDatabase)) dirty = true;
+
+        before = this.redisHost;
+        this.redisHost = getRedisHost();
+        if (!safeEquals(before, this.redisHost)) dirty = true;
+
+        int oldRedisPort = this.redisPort;
+        this.redisPort = getRedisPort();
+        if (oldRedisPort != this.redisPort) dirty = true;
+
+        int oldRedisDb = this.redisDatabase;
+        this.redisDatabase = getRedisDatabase();
+        if (oldRedisDb != this.redisDatabase) dirty = true;
+
+        before = this.redisKeyPrefix;
+        this.redisKeyPrefix = getRedisKeyPrefix();
+        if (!safeEquals(before, this.redisKeyPrefix)) dirty = true;
+
+        int oldRedisTimeout = this.redisTimeoutMs;
+        this.redisTimeoutMs = getRedisTimeoutMs();
+        if (oldRedisTimeout != this.redisTimeoutMs) dirty = true;
+
+        int oldRedisPool = this.redisPoolSize;
+        this.redisPoolSize = getRedisPoolSize();
+        if (oldRedisPool != this.redisPoolSize) dirty = true;
+
+        before = this.networkServerId;
+        this.networkServerId = getNetworkServerId();
+        if (!safeEquals(before, this.networkServerId)) dirty = true;
 
         before = this.defaultTagId;
         this.defaultTagId = (this.defaultTagId == null ? "mystic" : this.defaultTagId.trim());
@@ -389,6 +468,18 @@ public final class Settings {
         double oldGlyphTintStrength = this.experimentalGlyphTintStrength;
         this.experimentalGlyphTintStrength = Math.max(0.0d, Math.min(1.0d, this.experimentalGlyphTintStrength));
         if (Double.compare(oldGlyphTintStrength, this.experimentalGlyphTintStrength) != 0) dirty = true;
+
+        double oldBannerWidth = this.bannerMaxWidthBlocks;
+        this.bannerMaxWidthBlocks = Math.max(0.25d, Math.min(8.0d, this.bannerMaxWidthBlocks));
+        if (Double.compare(oldBannerWidth, this.bannerMaxWidthBlocks) != 0) dirty = true;
+
+        double oldBannerHeight = this.bannerMaxHeightBlocks;
+        this.bannerMaxHeightBlocks = Math.max(0.25d, Math.min(8.0d, this.bannerMaxHeightBlocks));
+        if (Double.compare(oldBannerHeight, this.bannerMaxHeightBlocks) != 0) dirty = true;
+
+        long oldBannerBytes = this.bannerMaxFileBytes;
+        this.bannerMaxFileBytes = Math.max(1024L, this.bannerMaxFileBytes);
+        if (oldBannerBytes != this.bannerMaxFileBytes) dirty = true;
     }
 
     private void saveIfDirty() {
@@ -453,7 +544,13 @@ public final class Settings {
 
                 addInfoBlock(out, "__storage",
                         "Storage backend for tag ownership data.",
-                        "storageBackend = FILE / SQLITE / MYSQL"
+                        "storageBackend = FILE / SQLITE / MYSQL / REDIS",
+                        "FILE and SQLITE are single-server only.",
+                        "MYSQL and REDIS are shared: every server reads the same tag data,",
+                        "so a tag equipped on one server is already equipped on the next",
+                        "server the player joins.",
+                        "REDIS needs Redis persistence (RDB/AOF) turned on, or tag ownership",
+                        "is lost when the Redis instance restarts."
                 );
                 copy.accept("storageBackend");
                 copy.accept("sqliteFile");
@@ -462,6 +559,30 @@ public final class Settings {
                 copy.accept("mysqlDatabase");
                 copy.accept("mysqlUser");
                 copy.accept("mysqlPassword");
+
+                addInfoBlock(out, "__network",
+                        "Redis connection + cross-server sync (multi-server networks).",
+                        "Used when storageBackend = REDIS, and whenever redisSyncEnabled is true.",
+                        "redisSyncEnabled = broadcast tag changes to the other servers over",
+                        "Redis pub/sub so they update live instead of only on next join.",
+                        "Pair redisSyncEnabled with storageBackend = MYSQL to keep durability",
+                        "in SQL and use Redis purely as the message bus.",
+                        "redisKeyPrefix namespaces the keys; keep it identical on every server.",
+                        "networkServerId = blank to auto-generate. It only exists so a server",
+                        "can ignore the messages it published itself.",
+                        "Redis settings apply at startup; restart the server after changing them."
+                );
+                copy.accept("redisSyncEnabled");
+                copy.accept("redisHost");
+                copy.accept("redisPort");
+                copy.accept("redisUser");
+                copy.accept("redisPassword");
+                copy.accept("redisDatabase");
+                copy.accept("redisSsl");
+                copy.accept("redisKeyPrefix");
+                copy.accept("redisTimeoutMs");
+                copy.accept("redisPoolSize");
+                copy.accept("networkServerId");
 
                 addInfoBlock(out, "__nameplates",
                         "Nameplate behavior.",
@@ -550,6 +671,23 @@ public final class Settings {
                 copy.accept("experimentalGlyphMaxCharsPerLine");
                 copy.accept("experimentalGlyphLineSpacing");
                 copy.accept("experimentalGlyphTintStrength");
+
+                addInfoBlock(out, "__banners",
+                        "Tag banners: render a PNG above the player instead of the tag's text.",
+                        "Drop art in the plugin's images/ folder, then set \"banner\": \"<file>\" on a tag in tags.json.",
+                        "Banners ride the glyph nameplate pipeline, so experimentalGlyphNameplatesEnabled must also be true.",
+                        "bannersEnabled = master toggle; when false, banner tags render their normal text display",
+                        "bannerMaxWidthBlocks = widest a banner may render; larger art is scaled down keeping its aspect",
+                        "bannerMaxHeightBlocks = tallest a banner may render; the tighter of the two caps wins",
+                        "bannerMaxFileBytes = PNGs larger than this are skipped at load with a warning",
+                        "bannerKeepNameLine = render the rest of nameplateFormat around the banner, with the banner",
+                        "                     taking the {tag} slot. When false the banner is the whole nameplate."
+                );
+                copy.accept("bannersEnabled");
+                copy.accept("bannerMaxWidthBlocks");
+                copy.accept("bannerMaxHeightBlocks");
+                copy.accept("bannerMaxFileBytes");
+                copy.accept("bannerKeepNameLine");
 
                 JsonObject other = new JsonObject();
                 for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
@@ -708,6 +846,62 @@ public final class Settings {
         return mysqlPassword == null ? "" : mysqlPassword;
     }
 
+    // ---------------------------------------------------------------------
+    // Redis / network sync
+    // ---------------------------------------------------------------------
+
+    public String getRedisHost() {
+        return (redisHost == null || redisHost.isBlank()) ? "localhost" : redisHost.trim();
+    }
+
+    public int getRedisPort() {
+        return redisPort <= 0 ? 6379 : redisPort;
+    }
+
+    public String getRedisUser() {
+        return redisUser == null ? "" : redisUser.trim();
+    }
+
+    public String getRedisPassword() {
+        return redisPassword == null ? "" : redisPassword;
+    }
+
+    /** Redis ships with databases 0-15, but the limit is configurable server-side. */
+    public int getRedisDatabase() {
+        if (redisDatabase < 0) return 0;
+        return Math.min(redisDatabase, 255);
+    }
+
+    public boolean isRedisSsl() {
+        return redisSsl;
+    }
+
+    /** Always ends with a colon so keys read as prefix:tags:uuid. */
+    public String getRedisKeyPrefix() {
+        String raw = (redisKeyPrefix == null || redisKeyPrefix.isBlank())
+                ? "mysticnametags:" : redisKeyPrefix.trim();
+        return raw.endsWith(":") ? raw : raw + ":";
+    }
+
+    public int getRedisTimeoutMs() {
+        if (redisTimeoutMs < 250) return 250;
+        return Math.min(redisTimeoutMs, 60_000);
+    }
+
+    public int getRedisPoolSize() {
+        if (redisPoolSize < 2) return 2;
+        return Math.min(redisPoolSize, 64);
+    }
+
+    public boolean isRedisSyncEnabled() {
+        return redisSyncEnabled;
+    }
+
+    public String getNetworkServerId() {
+        if (networkServerId == null) return "";
+        return networkServerId.trim().replaceAll("[^A-Za-z0-9._-]", "-");
+    }
+
     public boolean isEconomySystemEnabled() {
         return economySystemEnabled;
     }
@@ -864,5 +1058,27 @@ public final class Settings {
 
     public double getExperimentalGlyphTintStrength() {
         return Math.max(0.0d, Math.min(1.0d, experimentalGlyphTintStrength));
+    }
+
+    // --- Tag banners ---------------------------------------------------------
+
+    public boolean isBannersEnabled() {
+        return bannersEnabled;
+    }
+
+    public double getBannerMaxWidthBlocks() {
+        return Math.max(0.25d, Math.min(8.0d, bannerMaxWidthBlocks));
+    }
+
+    public double getBannerMaxHeightBlocks() {
+        return Math.max(0.25d, Math.min(8.0d, bannerMaxHeightBlocks));
+    }
+
+    public long getBannerMaxFileBytes() {
+        return Math.max(1024L, bannerMaxFileBytes);
+    }
+
+    public boolean isBannerKeepNameLine() {
+        return bannerKeepNameLine;
     }
 }

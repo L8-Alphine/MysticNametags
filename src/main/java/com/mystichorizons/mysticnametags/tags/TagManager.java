@@ -15,9 +15,13 @@ import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventBus;
 import com.mystichorizons.mysticnametags.api.events.MysticNameTagsEventType;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
 import com.mystichorizons.mysticnametags.nameplate.GlyphNameplateManager;
 import com.mystichorizons.mysticnametags.nameplate.NameplateManager;
 import com.mystichorizons.mysticnametags.nameplate.NameplateTextResolver;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerAssetManager;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerInfo;
+import com.mystichorizons.mysticnametags.network.NetworkSyncService;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.mystichorizons.mysticnametags.util.ConsoleCommandRunner;
 
@@ -58,10 +62,15 @@ public class TagManager {
     private volatile List<TagDefinition> tagList = Collections.emptyList();
     private final Map<String, TagDefinition> tags = new LinkedHashMap<>();
     private final PlayerTagStore playerTagStore;
-    private final Map<UUID, PlayerTagData> playerData = new HashMap<>();
+    // Concurrent because the Redis sync subscriber invalidates entries from
+    // its own thread while world threads are reading them.
+    private final Map<UUID, PlayerTagData> playerData = new ConcurrentHashMap<>();
 
     // Cache of the last applied nameplate text (colored or plain)
     private final Map<UUID, String> lastNameplateText = new ConcurrentHashMap<>();
+
+    /** Tag ids already warned about for a missing banner file; keeps the log to one line each. */
+    private final Set<String> loggedMissingBanners = ConcurrentHashMap.newKeySet();
 
     private final Map<UUID, PlayerRef> onlinePlayers = new ConcurrentHashMap<>();
     private final Map<UUID, World> onlineWorlds = new ConcurrentHashMap<>();
@@ -146,6 +155,12 @@ public class TagManager {
                         "?useSSL=false&autoReconnect=true&characterEncoding=UTF-8";
 
                 store = new SqlPlayerTagStore(jdbcUrl, user, pass, GSON);
+                store.migrateFromFolder(playerDataFolder, GSON);
+                break;
+            }
+
+            case REDIS: {
+                store = new RedisPlayerTagStore(GSON);
                 store.migrateFromFolder(playerDataFolder, GSON);
                 break;
             }
@@ -460,7 +475,77 @@ public class TagManager {
     private void savePlayerData(UUID uuid) {
         PlayerTagData data = playerData.get(uuid);
         if (data == null) return;
+
+        if (data.isLoadFailed()) {
+            // We never got a clean read of this record, so writing it back would
+            // replace real ownership with an empty set. Drop the cached copy and
+            // let the next access retry the load instead.
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Not saving tag data for " + uuid
+                    + ": it was never loaded successfully, so the change was discarded"
+                    + " rather than overwriting stored data.");
+            playerData.remove(uuid);
+            clearCanUseCache(uuid);
+            return;
+        }
+
         playerTagStore.save(uuid, data);
+        publishPlayerDataChanged(uuid);
+    }
+
+    /**
+     * Tells the rest of the network that this player's stored record changed.
+     * No-op unless redisSyncEnabled is on.
+     */
+    private void publishPlayerDataChanged(@Nonnull UUID uuid) {
+        NetworkSyncService sync = NetworkSyncService.get();
+        if (sync != null) {
+            sync.publishPlayerDataChanged(uuid);
+        }
+    }
+
+    /**
+     * Re-reads this player's tag data from storage as they connect.
+     *
+     * On a network this is what carries a tag across servers: the copy cached
+     * from their last visit here is dropped, and the shared MYSQL/REDIS record
+     * written by whichever server they were last on is read fresh. A tag they
+     * unlocked and equipped elsewhere is therefore already unlocked and
+     * equipped by the time their nameplate is first drawn here.
+     */
+    public void onPlayerJoin(@Nonnull UUID uuid) {
+        playerData.remove(uuid);
+        clearCanUseCache(uuid);
+        getOrLoad(uuid);
+    }
+
+    /**
+     * Drops the cached copy on disconnect. Every mutation already writes
+     * through to storage, so there is nothing to flush; keeping the copy would
+     * only let this server later serve data another server has since changed.
+     */
+    public void onPlayerQuit(@Nonnull UUID uuid) {
+        playerData.remove(uuid);
+    }
+
+    /**
+     * Another server changed this player's tag data. Drop our cached copy so
+     * the next read comes from shared storage, and repaint the nameplate if
+     * the player happens to be on this server right now.
+     *
+     * Called on the Redis subscriber thread.
+     */
+    public void handleRemotePlayerDataChanged(@Nonnull UUID uuid) {
+        playerData.remove(uuid);
+        clearCanUseCache(uuid);
+
+        if (!onlinePlayers.containsKey(uuid)) {
+            return;
+        }
+
+        // Warm the cache here rather than on a world thread; the reload is a
+        // storage round trip. forceRefreshNameplate marshals the ECS work.
+        getOrLoad(uuid);
+        forceRefreshIfOnline(uuid);
     }
 
     // ------------- Public API -------------
@@ -1458,10 +1543,13 @@ public class TagManager {
         String plainFallback = resolved.getPlain();
 
         boolean glyphEnabled = settings.isExperimentalGlyphNameplatesEnabled();
-        String compareKey = glyphEnabled ? resolvedGlyphColored : plainFallback;
+        EquippedBanner banner = glyphEnabled ? resolveActiveBanner(uuid) : null;
+        String compareKey = bannerCompareKey(banner, glyphEnabled ? resolvedGlyphColored : plainFallback);
 
         String finalBaseName = baseName;
-        String finalResolvedColored = glyphEnabled ? resolvedGlyphColored : resolvedColored;
+        String finalResolvedColored = banner != null
+                ? bannerFormatText(playerRef, baseName, uuid, settings)
+                : (glyphEnabled ? resolvedGlyphColored : resolvedColored);
         String finalPlainFallback = plainFallback;
 
         world.execute(() -> applyNameplateNow(
@@ -1473,8 +1561,42 @@ public class TagManager {
                 finalResolvedColored,
                 finalPlainFallback,
                 glyphEnabled,
+                banner,
                 0
         ));
+    }
+
+    /**
+     * Folds the active banner into the nameplate change-detection key so swapping between a banner
+     * tag and a text tag — or between two banners — always triggers a rebuild.
+     */
+    /**
+     * The player's full nameplate format with the {@code {tag}} token swapped for a marker, so the
+     * banner renders on that exact line and every other line of the format still renders as text.
+     *
+     * <p>Returns empty when {@code bannerKeepNameLine} is off, which makes the banner the whole
+     * nameplate.</p>
+     */
+    @Nonnull
+    private String bannerFormatText(@Nonnull PlayerRef playerRef,
+                                    @Nonnull String baseName,
+                                    @Nullable UUID uuid,
+                                    @Nonnull Settings settings) {
+        if (!settings.isBannerKeepNameLine()) {
+            return "";
+        }
+
+        NameplateTextResolver.Context ctx = buildNameplateContext(
+                playerRef, baseName, uuid, GlyphNameplateManager.BANNER_SLOT_TOKEN);
+        return NameplateTextResolver.resolve(ctx).getGlyphColored();
+    }
+
+    @Nonnull
+    private static String bannerCompareKey(@Nullable EquippedBanner banner, @Nonnull String textKey) {
+        if (banner == null) {
+            return textKey;
+        }
+        return "[[banner]]:" + banner.info().renderKey() + "@" + banner.scale() + "|" + textKey;
     }
 
     // ------------- Helper builder -------------
@@ -2306,6 +2428,7 @@ public class TagManager {
             playerTagStore.delete(uuid);
         } catch (Throwable ignored) {
         }
+        publishPlayerDataChanged(uuid);
 
         forceRefreshIfOnline(uuid);
 
@@ -2346,6 +2469,7 @@ public class TagManager {
             playerTagStore.delete(uuid);
         } catch (Throwable ignored) {
         }
+        publishPlayerDataChanged(uuid);
 
         TagAuditLogger.log("admin_reset_permissions", actor, uuid, null, null, "reset", null);
 
@@ -2364,6 +2488,48 @@ public class TagManager {
         if (id == null || id.trim().isEmpty()) return null;
 
         return getTag(id.trim());
+    }
+
+    /**
+     * Banner art for the tag a player is currently showing, or {@code null} if that tag is
+     * text-only, banners are disabled, or the configured image is missing.
+     */
+    @Nullable
+    public EquippedBanner resolveActiveBanner(@Nonnull UUID uuid) {
+        if (!Settings.get().isBannersEnabled()) {
+            return null;
+        }
+
+        // Licensed feature. Unlicensed servers keep the tag, it just renders as text.
+        if (!MysticNameTagsLicense.bannersLicensed()) {
+            return null;
+        }
+
+        TagDefinition active = resolveActiveOrDefaultTag(uuid);
+        if (active == null || !active.hasBanner()) {
+            return null;
+        }
+
+        BannerAssetManager banners = BannerAssetManager.get();
+        if (banners == null) {
+            return null;
+        }
+
+        BannerInfo info = banners.find(active.getBanner());
+        if (info == null) {
+            if (loggedMissingBanners.add(active.getId())) {
+                LOGGER.at(Level.WARNING).log("[MysticNameTags] Tag '" + active.getId()
+                        + "' references banner '" + active.getBanner()
+                        + "' but no matching PNG was found in the images folder. Using its text display.");
+            }
+            return null;
+        }
+
+        return new EquippedBanner(info, active.getBannerScale());
+    }
+
+    /** A resolved banner plus the per-tag size multiplier to render it at. */
+    public record EquippedBanner(@Nonnull BannerInfo info, double scale) {
     }
 
     private void runOnFirstUnlockCommands(@Nonnull TagDefinition def, @Nonnull PlayerRef playerRef) {
@@ -2452,6 +2618,7 @@ public class TagManager {
                                    @Nonnull String resolvedColored,
                                    @Nonnull String plainFallback,
                                    boolean glyphEnabled,
+                                   @Nullable EquippedBanner banner,
                                    int attempt) {
         try {
             EntityStore entityStore = world.getEntityStore();
@@ -2469,6 +2636,7 @@ public class TagManager {
                             resolvedColored,
                             plainFallback,
                             glyphEnabled,
+                            banner,
                             attempt + 1
                     ));
                 } else {
@@ -2489,7 +2657,11 @@ public class TagManager {
                 }
             }
 
-            if (glyphEnabled) {
+            if (banner != null && glyphEnabled) {
+                NameplateManager.get().apply(uuid, store, ref, " ");
+                GlyphNameplateManager.get().applyBanner(
+                        uuid, world, store, ref, banner.info(), banner.scale(), resolvedColored);
+            } else if (glyphEnabled) {
                 NameplateManager.get().apply(uuid, store, ref, " ");
                 GlyphNameplateManager.get().apply(uuid, world, store, ref, resolvedColored);
             } else {
@@ -2514,6 +2686,7 @@ public class TagManager {
                         resolvedColored,
                         plainFallback,
                         glyphEnabled,
+                        banner,
                         attempt + 1
                 ));
                 return;
@@ -2546,10 +2719,13 @@ public class TagManager {
         String plainFallback = resolved.getPlain();
 
         boolean glyphEnabled = settings.isExperimentalGlyphNameplatesEnabled();
-        String compareKey = glyphEnabled ? resolvedGlyphColored : plainFallback;
+        EquippedBanner banner = glyphEnabled ? resolveActiveBanner(uuid) : null;
+        String compareKey = bannerCompareKey(banner, glyphEnabled ? resolvedGlyphColored : plainFallback);
 
         String finalBaseName = baseName;
-        String finalResolvedColored = glyphEnabled ? resolvedGlyphColored : resolvedColored;
+        String finalResolvedColored = banner != null
+                ? bannerFormatText(playerRef, baseName, uuid, settings)
+                : (glyphEnabled ? resolvedGlyphColored : resolvedColored);
         String finalPlainFallback = plainFallback;
 
         world.execute(() -> forceApplyNameplateNow(
@@ -2561,6 +2737,7 @@ public class TagManager {
                 finalResolvedColored,
                 finalPlainFallback,
                 glyphEnabled,
+                banner,
                 0
         ));
     }
@@ -2573,6 +2750,7 @@ public class TagManager {
                                         @Nonnull String resolvedColored,
                                         @Nonnull String plainFallback,
                                         boolean glyphEnabled,
+                                        @Nullable EquippedBanner banner,
                                         int attempt) {
         try {
             EntityStore entityStore = world.getEntityStore();
@@ -2590,6 +2768,7 @@ public class TagManager {
                             resolvedColored,
                             plainFallback,
                             glyphEnabled,
+                            banner,
                             attempt + 1
                     ));
                 } else {
@@ -2598,7 +2777,11 @@ public class TagManager {
                 return;
             }
 
-            if (glyphEnabled) {
+            if (banner != null && glyphEnabled) {
+                NameplateManager.get().apply(uuid, store, ref, " ");
+                GlyphNameplateManager.get().applyBanner(
+                        uuid, world, store, ref, banner.info(), banner.scale(), resolvedColored);
+            } else if (glyphEnabled) {
                 NameplateManager.get().apply(uuid, store, ref, " ");
                 GlyphNameplateManager.get().apply(uuid, world, store, ref, resolvedColored);
             } else {
@@ -2623,6 +2806,7 @@ public class TagManager {
                         resolvedColored,
                         plainFallback,
                         glyphEnabled,
+                        banner,
                         attempt + 1
                 ));
                 return;
@@ -2642,6 +2826,19 @@ public class TagManager {
     private NameplateTextResolver.Context buildNameplateContext(@Nullable PlayerRef playerRef,
                                                                 @Nullable String baseName,
                                                                 @Nullable UUID uuid) {
+        return buildNameplateContext(playerRef, baseName, uuid, (String) null);
+    }
+
+    /**
+     * @param tagOverride replaces the {@code {tag}} token when non-null. Used to drop a banner
+     *                    marker into the format so the renderer knows which line the artwork
+     *                    belongs on, instead of printing the tag's text display there.
+     */
+    @Nonnull
+    private NameplateTextResolver.Context buildNameplateContext(@Nullable PlayerRef playerRef,
+                                                                @Nullable String baseName,
+                                                                @Nullable UUID uuid,
+                                                                @Nullable String tagOverride) {
         String safeName = (baseName == null || baseName.isBlank()) ? "Player" : baseName;
 
         String rank = "";
@@ -2659,7 +2856,9 @@ public class TagManager {
             rank = prefix == null ? "" : prefix;
 
             TagDefinition active = resolveActiveOrDefaultTag(uuid);
-            if (active != null && active.getDisplay() != null) {
+            if (tagOverride != null) {
+                tag = tagOverride;
+            } else if (active != null && active.getDisplay() != null) {
                 tag = active.getDisplay();
             }
         }
@@ -2676,6 +2875,7 @@ public class TagManager {
 
         return NameplateTextResolver.Context.builder()
                 .playerRef(playerRef)
+                .playerUuid(uuid)
                 .rank(rank)
                 .name(safeName)
                 .tag(tag)

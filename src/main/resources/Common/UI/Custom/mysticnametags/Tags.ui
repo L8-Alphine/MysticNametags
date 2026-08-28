@@ -43,7 +43,8 @@ $C.@PageOverlay {
               LayoutMode: Left;
               Anchor: (Height: 20, Bottom: 6);
               Label #PlayerLabel { Text: "Player:"; Style: $M.@StatLabelStyle; Anchor: (Width: 92, Vertical: 0); }
-              Label #PlayerNameLabel { Text: "Player"; Style: $M.@StatValueStyle; FlexWeight: 1; }
+              // Set at runtime via .TextSpans so the nameplate keeps all of its colors.
+              Label #PlayerNameLabel { Style: $M.@StatValueStyle; FlexWeight: 1; }
             }
 
             Group {
@@ -57,7 +58,7 @@ $C.@PageOverlay {
               LayoutMode: Left;
               Anchor: (Height: 20, Bottom: 12);
               Label #CurrentTagPrefixLabel { Text: "Current Tag:"; Style: $M.@StatLabelStyle; Anchor: (Width: 92, Vertical: 0); }
-              Label #CurrentNameplateLabel { Text: "(loading...)"; Style: $M.@StatValueStyle; FlexWeight: 1; }
+              Label #CurrentNameplateLabel { Style: $M.@StatValueStyle; FlexWeight: 1; }
             }
 
             $M.@Divider {}
@@ -141,8 +142,10 @@ $C.@PageOverlay {
             FlexWeight: 1;
             Visible: false;
 
+            // Height covers the banner preview row. Reclaimed from the requirements /
+            // how-it-works block below, so the panel total is unchanged.
             $M.@Card {
-              Anchor: (Height: 420, Bottom: 18);
+              Anchor: (Height: 500, Bottom: 18);
               Padding: (Full: 20);
 
               $M.@Divider {}
@@ -161,9 +164,9 @@ $C.@PageOverlay {
                   FlexWeight: 1;
                   Anchor: (Vertical: 0);
 
+                  // Text is supplied at runtime via .TextSpans - never also set .Text here.
                   Label #DetailName {
                     Style: (FontSize: 22, RenderBold: true, RenderUppercase: true, TextColor: #41f1ff);
-                    Text: "";
                     Anchor: (Height: 28, Bottom: 2);
                   }
 
@@ -192,9 +195,10 @@ $C.@PageOverlay {
                   Group {
                     LayoutMode: Top;
 
+                    // Text is supplied at runtime via .TextSpans - never also set .Text here.
+                    // TextColor is mirrored as COLOR_TEXT_DESCRIPTION in MysticNameTagsTagsUI.
                     Label #DetailDesc {
                       Style: (FontSize: 12, TextColor: #c9d1d9, Wrap: true);
-                      Text: "";
                       FlexWeight: 1;
                     }
                   }
@@ -230,7 +234,21 @@ $C.@PageOverlay {
                 LayoutMode: Left;
                 Anchor: (Height: 24, Bottom: 10);
                 Label #DetailPreviewPrefix { Text: "Preview"; Style: $M.@StatLabelStyle; Anchor: (Width: 90, Vertical: 0); }
-                Label #DetailPreview { Text: ""; Style: $M.@StatValueStyle; FlexWeight: 1; }
+                Label #DetailPreview { Style: $M.@StatValueStyle; FlexWeight: 1; }
+              }
+
+              // Banner art preview. Hidden unless the selected tag has a banner;
+              // AssetPath is set at runtime to the registered banner asset.
+              // Sized to the recommended 256x64 banner so the art draws at one texel per pixel.
+              Group #DetailBannerRow {
+                LayoutMode: Left;
+                Anchor: (Height: 64, Bottom: 10);
+                Visible: false;
+                Label #DetailBannerPrefix { Text: "Banner"; Style: $M.@StatLabelStyle; Anchor: (Width: 90, Vertical: 0); }
+                AssetImage #DetailBanner {
+                  Anchor: (Width: 256, Height: 64, Vertical: 0);
+                  FallbackTexturePath: "UI/Custom/Pages/Memories/MissingIcon.png";
+                }
               }
 
               $M.@Divider {}
@@ -251,11 +269,11 @@ $C.@PageOverlay {
 
             Group {
               LayoutMode: Left;
-              Anchor: (Height: 250, Bottom: 18);
+              Anchor: (Height: 170, Bottom: 18);
 
               Group #RequirementsPanel {
                 FlexWeight: 1;
-                Anchor: (Height: 250, Right: 10);
+                Anchor: (Height: 170, Right: 10);
                 Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
                 Padding: (Full: 14);
                 LayoutMode: Top;
@@ -273,8 +291,8 @@ $C.@PageOverlay {
                   Group {
                     LayoutMode: Top;
 
+                    // Text is supplied at runtime via .TextSpans - never also set .Text here.
                     Label #RequirementsText {
-                      Text: "";
                       Style: $M.@BodyTextStyle;
                       FlexWeight: 1;
                     }
@@ -284,7 +302,7 @@ $C.@PageOverlay {
 
               Group #HowItWorksPopup {
                 FlexWeight: 1;
-                Anchor: (Height: 250);
+                Anchor: (Height: 170);
                 Background: (TexturePath: "../Common/ContainerFullPatch.png", Border: 23);
                 Padding: (Full: 14);
                 LayoutMode: Top;
@@ -316,8 +334,9 @@ $C.@PageOverlay {
                   Group {
                     LayoutMode: Top;
 
+                    // Text is supplied at runtime via .TextSpans - never also set .Text here.
+                    // TextColor comes from @BodyTextStyle, mirrored as COLOR_TEXT_BODY in Java.
                     Label #HowItWorksText {
-                      Text: "";
                       Style: $M.@BodyTextStyle;
                       FlexWeight: 1;
                     }

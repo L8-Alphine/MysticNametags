@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.2.7'
+version = '1.2.8'
 
 repositories {
     mavenCentral()
@@ -24,7 +24,7 @@ repositories {
 
 dependencies {
     // Hytale Server API from official Maven repository
-    compileOnly 'com.hypixel.hytale:Server:0.5.6'
+    compileOnly 'com.hypixel.hytale:Server:0.6.0'
 
     // JSR305 annotations (@Nonnull, @Nullable)
     compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
@@ -36,6 +36,9 @@ dependencies {
 
     // SQLite JDBC Driver
     implementation 'org.xerial:sqlite-jdbc:3.45.1.0'
+
+    // Redis client (network-wide tag storage + cross-server sync)
+    implementation 'redis.clients:jedis:5.2.0'
 
     // PlaceholderAPI
     compileOnly files('libs/WiFlowPlaceholderAPI-1.0.0.jar')

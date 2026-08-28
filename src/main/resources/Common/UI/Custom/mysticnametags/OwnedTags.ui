@@ -43,8 +43,8 @@ $C.@PageOverlay {
             Style: $M.@StatLabelStyle;
             Anchor: (Width: 86, Vertical: 0);
           }
+          // Set at runtime via .TextSpans so the nameplate keeps all of its colors.
           Label #CurrentNameplateLabel {
-            Text: "(loading...)";
             Style: $M.@StatValueStyle;
             FlexWeight: 1;
           }

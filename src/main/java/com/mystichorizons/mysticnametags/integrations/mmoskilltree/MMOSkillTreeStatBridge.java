@@ -39,6 +39,46 @@ public final class MMOSkillTreeStatBridge {
     private MMOSkillTreeStatBridge() {
     }
 
+    /**
+     * Returns whether a key uses one of the MMOSkillTree stat shapes supported
+     * by this bridge. This check is purely syntactic and does not require the
+     * optional MMOSkillTree mod to be installed.
+     */
+    public static boolean supportsKey(@Nullable String key) {
+        if (key == null) {
+            return false;
+        }
+
+        String trimmed = key.trim();
+        if (!trimmed.startsWith(PREFIX)) {
+            return false;
+        }
+
+        String tail = trimmed.substring(PREFIX.length()).trim().toLowerCase(Locale.ROOT);
+        if (tail.isBlank()) {
+            return false;
+        }
+
+        if (tail.equals("total_level") || tail.equals("totallevel") || tail.equals("total.level")
+                || tail.equals("total_xp") || tail.equals("totalxp") || tail.equals("total.xp")
+                || tail.equals("achievement_points") || tail.equals("achievementpoints")
+                || tail.equals("achievements.points")) {
+            return true;
+        }
+
+        return hasValueAfterPrefix(tail, "level.")
+                || hasValueAfterPrefix(tail, "skill.")
+                || hasValueAfterPrefix(tail, "xp.")
+                || hasValueAfterPrefix(tail, "progress.")
+                || hasValueAfterPrefix(tail, "level_progress.")
+                || hasValueAfterPrefix(tail, "achievement_progress.")
+                || hasValueAfterPrefix(tail, "achievement.progress.")
+                || hasValueAfterPrefix(tail, "achievement.unlocked.")
+                || hasValueAfterPrefix(tail, "achievement.")
+                || hasValueAfterPrefix(tail, "stat.")
+                || hasValueAfterPrefix(tail, "statistics.");
+    }
+
     @Nullable
     public static Integer getStatValue(@Nonnull UUID uuid, @Nonnull String key) {
         String trimmed = key.trim();
@@ -236,6 +276,10 @@ public final class MMOSkillTreeStatBridge {
             return Integer.MAX_VALUE;
         }
         return (int) value;
+    }
+
+    private static boolean hasValueAfterPrefix(@Nonnull String value, @Nonnull String prefix) {
+        return value.startsWith(prefix) && value.length() > prefix.length();
     }
 
     private static final class PlayerContext {

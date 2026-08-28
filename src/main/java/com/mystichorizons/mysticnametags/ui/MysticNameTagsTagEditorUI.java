@@ -365,15 +365,14 @@ public class MysticNameTagsTagEditorUI extends InteractiveCustomUIPage<MysticNam
         LanguageManager lang = LanguageManager.get();
 
         if (draftDisplay == null || draftDisplay.isBlank()) {
-            cmd.set("#EditorPreviewLine.Text", lang.tr("dashboard.editor_preview_empty"));
-            cmd.set("#EditorPreviewLine.Style.TextColor", "#6e7681");
+            cmd.set("#EditorPreviewLine.TextSpans",
+                    ColorFormatter.toFlatTextSpans(lang.tr("dashboard.editor_preview_empty"), "#6e7681"));
             return;
         }
 
-        String preview = ColorFormatter.colorizeForUi(draftDisplay);
-        String hex = ColorFormatter.extractUiTextColor(draftDisplay);
-        cmd.set("#EditorPreviewLine.Text", preview);
-        cmd.set("#EditorPreviewLine.Style.TextColor", hex != null ? "#" + hex : "#e6edf3");
+        // Spans render the draft with every color it actually declares, so the editor preview
+        // shows gradients and multi-color displays truthfully.
+        cmd.set("#EditorPreviewLine.TextSpans", ColorFormatter.toTextSpans(draftDisplay));
     }
 
     private void rebuildList(@Nonnull UICommandBuilder cmd,
@@ -400,13 +399,10 @@ public class MysticNameTagsTagEditorUI extends InteractiveCustomUIPage<MysticNam
             String rowSel = "#EditorTagList[" + row + "]";
 
             String display = def.getDisplay();
-            String nameText = ColorFormatter.colorizeForUi(display != null ? display : def.getId());
-            String nameHex = display != null ? ColorFormatter.extractUiTextColor(display) : null;
-
             boolean isSelected = def.getId().equalsIgnoreCase(selectedTagId);
 
-            cmd.set(rowSel + " #Name.Text", nameText);
-            cmd.set(rowSel + " #Name.Style.TextColor", nameHex != null ? "#" + nameHex : "#e6edf3");
+            cmd.set(rowSel + " #Name.TextSpans",
+                    ColorFormatter.toTextSpans(display != null ? display : def.getId()));
             cmd.set(rowSel + " #Meta.Text", def.getId()
                     + (def.getCategory() == null || def.getCategory().isBlank() ? "" : "  |  " + def.getCategory()));
             cmd.set(rowSel + " #Accent.OutlineColor", isSelected ? "#3fb950" : "#3a3a3a");

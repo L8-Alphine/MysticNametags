@@ -27,13 +27,9 @@ public class RandomTagSubCommand extends AbstractPlayerCommand {
 
     public RandomTagSubCommand() {
         super("randomtag", "Equip a random owned or favorite tag");
+        this.requireNoPermission();
         this.addAliases("random", "tagrandom");
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private Message colored(String text) {

@@ -1,7 +1,7 @@
 {
   "Group": "MysticHorizons",
   "Name": "MysticNameTags",
-  "Version": "1.2.7",
+  "Version": "1.2.8",
   "Description": "A Hytale mod that customizes nameplates and supports luckperms, permissionsplus, prefixplus, vaultunlocked, economysystem, wiflow's placeholderapi, placeholders, and custom tags.",
   "Authors": [
     {
@@ -9,7 +9,7 @@
     }
   ],
   "Main": "com.mystichorizons.mysticnametags.MysticNameTagsPlugin",
-  "ServerVersion": ">=0.5.6 <0.6.0",
+  "ServerVersion": ">=0.6.0 <0.7.0",
   "Dependencies": {},
   "OptionalDependencies": {
     "WiFlowPlaceholderAPI:WiFlowPlaceholderAPI": "*",

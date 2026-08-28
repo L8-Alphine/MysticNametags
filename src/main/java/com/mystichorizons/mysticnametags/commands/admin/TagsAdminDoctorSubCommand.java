@@ -6,6 +6,8 @@ import com.mystichorizons.mysticnametags.commands.AbstractTagsAdminSubCommand;
 import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.network.NetworkSyncService;
+import com.mystichorizons.mysticnametags.network.RedisManager;
 import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeCompat;
 import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
@@ -141,6 +143,40 @@ public class TagsAdminDoctorSubCommand extends AbstractTagsAdminSubCommand {
                         .append("&r\n");
                 sb.append("&7User: &f").append(settings.getMysqlUser()).append("&r\n");
             }
+            case REDIS -> {
+                sb.append("&7Redis: &f")
+                        .append(settings.getRedisHost())
+                        .append(":")
+                        .append(settings.getRedisPort())
+                        .append("/")
+                        .append(settings.getRedisDatabase())
+                        .append("&r\n");
+                sb.append("&7Key prefix: &f").append(settings.getRedisKeyPrefix()).append("&r\n");
+
+                RedisManager redis = RedisManager.get();
+                sb.append("&7Connected: ")
+                        .append(redis != null && redis.isHealthy() ? "&aYES" : "&cNO")
+                        .append("&r\n");
+            }
+        }
+
+        appendNetworkSyncSummary(sb, settings);
+    }
+
+    private static void appendNetworkSyncSummary(@Nonnull StringBuilder sb,
+                                                 @Nonnull Settings settings) {
+        if (!settings.isRedisSyncEnabled()) {
+            return;
+        }
+
+        NetworkSyncService sync = NetworkSyncService.get();
+        sb.append("&7Cross-server sync: ")
+                .append(sync != null ? "&aACTIVE" : "&cENABLED BUT NOT RUNNING")
+                .append("&r\n");
+
+        if (sync != null) {
+            sb.append("&7Server id: &f").append(sync.getServerId()).append("&r\n");
+            sb.append("&7Sync channel: &f").append(sync.getChannel()).append("&r\n");
         }
     }
 
@@ -237,6 +273,10 @@ public class TagsAdminDoctorSubCommand extends AbstractTagsAdminSubCommand {
                 yield (parent != null && parent.canWrite()) ? 0 : 1;
             }
             case MYSQL -> 0;
+            case REDIS -> {
+                RedisManager redis = RedisManager.get();
+                yield (redis != null && redis.isHealthy()) ? 0 : 1;
+            }
         };
     }
 

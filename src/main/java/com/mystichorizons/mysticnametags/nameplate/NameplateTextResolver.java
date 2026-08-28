@@ -1,13 +1,17 @@
 package com.mystichorizons.mysticnametags.nameplate;
 
-import at.helpch.placeholderapi.PlaceholderAPI;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeStatBridge;
+import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Central place for building and resolving nameplate text.
@@ -26,18 +30,8 @@ import javax.annotation.Nullable;
  */
 public final class NameplateTextResolver {
 
-    private static final boolean HELPCH_AVAILABLE;
-
-    static {
-        boolean helpch;
-        try {
-            Class.forName("at.helpch.placeholderapi.PlaceholderAPI");
-            helpch = true;
-        } catch (ClassNotFoundException ex) {
-            helpch = false;
-        }
-        HELPCH_AVAILABLE = helpch;
-    }
+    private static final Pattern MMO_SKILL_TREE_TOKEN =
+            Pattern.compile("\\{(mmoskilltree\\.[^{}\\s]+)}");
 
     private NameplateTextResolver() {
     }
@@ -87,6 +81,7 @@ public final class NameplateTextResolver {
      */
     public static final class Context {
         private final PlayerRef playerRef;
+        private final UUID playerUuid;
         private final String rank;
         private final String name;
         private final String tag;
@@ -100,6 +95,9 @@ public final class NameplateTextResolver {
 
         private Context(Builder builder) {
             this.playerRef = builder.playerRef;
+            this.playerUuid = builder.playerUuid != null
+                    ? builder.playerUuid
+                    : builder.playerRef == null ? null : builder.playerRef.getUuid();
             this.rank = normalizeSegment(builder.rank);
             this.name = normalizeSegment(builder.name);
             this.tag = normalizeSegment(builder.tag);
@@ -115,6 +113,11 @@ public final class NameplateTextResolver {
         @Nullable
         public PlayerRef getPlayerRef() {
             return playerRef;
+        }
+
+        @Nullable
+        public UUID getPlayerUuid() {
+            return playerUuid;
         }
 
         @Nonnull
@@ -173,6 +176,7 @@ public final class NameplateTextResolver {
 
         public static final class Builder {
             private PlayerRef playerRef;
+            private UUID playerUuid;
             private String rank;
             private String name;
             private String tag;
@@ -186,6 +190,11 @@ public final class NameplateTextResolver {
 
             public Builder playerRef(@Nullable PlayerRef playerRef) {
                 this.playerRef = playerRef;
+                return this;
+            }
+
+            public Builder playerUuid(@Nullable UUID playerUuid) {
+                this.playerUuid = playerUuid;
                 return this;
             }
 
@@ -256,6 +265,9 @@ public final class NameplateTextResolver {
      *  - {endless_prestige}
      *  - {endless_race}
      *  - {rpg_level}
+     *  - {mmoskilltree.total_level}
+     *  - {mmoskilltree.level.<skillId>} and every other supported
+     *    MMOSkillTree requirement/stat key
      *
      * Any remaining placeholders can still be resolved by external placeholder APIs.
      */
@@ -277,6 +289,8 @@ public final class NameplateTextResolver {
                 .replace("{rpg_level}", context.getRpgLevel())
                 .replace("{ecoquests_rank}", context.getEcoquestsRank());
 
+        raw = resolveMMOSkillTreeTokens(raw, context.getPlayerUuid());
+
         raw = expandEscapedNewlines(raw);
 
         if (settings.isStripExtraSpacesEnabled()) {
@@ -293,10 +307,9 @@ public final class NameplateTextResolver {
         }
 
         if (playerRef != null
-                && settings.isHelpchPlaceholderApiEnabled()
-                && HELPCH_AVAILABLE) {
+                && settings.isHelpchPlaceholderApiEnabled()) {
             try {
-                raw = PlaceholderAPI.setPlaceholders(playerRef, raw);
+                raw = HelpchPlaceholderHook.apply(playerRef, raw);
             } catch (Throwable ignored) {
             }
         }
@@ -355,6 +368,29 @@ public final class NameplateTextResolver {
             return "";
         }
         return input.trim();
+    }
+
+    @Nonnull
+    private static String resolveMMOSkillTreeTokens(@Nonnull String text,
+                                                    @Nullable UUID playerUuid) {
+        Matcher matcher = MMO_SKILL_TREE_TOKEN.matcher(text);
+        StringBuffer out = new StringBuffer(text.length());
+
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            if (!MMOSkillTreeStatBridge.supportsKey(key)) {
+                matcher.appendReplacement(out, Matcher.quoteReplacement(matcher.group()));
+                continue;
+            }
+
+            Integer value = playerUuid == null
+                    ? null
+                    : MMOSkillTreeStatBridge.getStatValue(playerUuid, key);
+            matcher.appendReplacement(out, value == null ? "" : value.toString());
+        }
+
+        matcher.appendTail(out);
+        return out.toString();
     }
 
     @Nonnull

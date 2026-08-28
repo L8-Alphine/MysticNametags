@@ -155,10 +155,12 @@ public final class ColorFormatter {
     }
 
     /**
-     * Custom UI labels do not render legacy color markup in Text values.
-     * Return only the visible text; callers should set Style.TextColor using
-     * extractUiTextColor/extractFirstHexColor when a representative color is
-     * needed.
+     * Custom UI labels do not render legacy color markup in Text values, so this returns only the
+     * visible characters.
+     *
+     * <p>For anything that needs color, prefer {@link #toTextSpans(String)} and a label's
+     * {@code .TextSpans} property — it keeps every color in the source and, unlike
+     * {@code Style.TextColor}, still applies when the page is updated rather than first built.</p>
      */
     public static String colorizeForUi(String input) {
         return stripFormatting(colorizeCompact(input));
@@ -585,8 +587,142 @@ public final class ColorFormatter {
     }
 
     public static Message toMessage(String text, Color baseColor) {
-        if (text == null || text.isEmpty()) {
+        List<Message> parts = buildSegments(text, baseColor);
+        if (parts.isEmpty()) {
             return Message.raw("");
+        }
+        return Message.join(parts.toArray(new Message[0]));
+    }
+
+    /**
+     * Builds a span tree for a UI label's {@code .TextSpans} property.
+     *
+     * <p>Use this instead of {@code .Text} plus {@code .Style.TextColor} whenever a label's color
+     * comes from config: {@code Style.TextColor} only applies on a page's first build batch and
+     * silently no-ops on later updates, so a label restyled after a refresh keeps its stale color.
+     * Spans apply on every update and carry one color each, which is also what makes multi-colored
+     * and gradient displays render properly.</p>
+     *
+     * <p>Never set both {@code .Text} and {@code .TextSpans} on the same label.</p>
+     */
+    public static Message toTextSpans(String text) {
+        return toTextSpans(text, DEFAULT_COLOR);
+    }
+
+    public static Message toTextSpans(String text, Color baseColor) {
+        Message root = Message.empty();
+        for (Message part : buildSegments(text, baseColor)) {
+            root.insert(part);
+        }
+        return root;
+    }
+
+    /**
+     * Same as {@link #toTextSpans(String, Color)} but takes the base color as {@code #RRGGBB}.
+     *
+     * <p>Pass the color the label declares in its {@code .ui} style. Spans do not inherit that
+     * style color, so without it text carrying no color codes of its own would render white
+     * instead of matching the rest of the panel.</p>
+     */
+    public static Message toTextSpans(String text, String hexBaseColor) {
+        return toTextSpans(text, parseHexColor(hexBaseColor, DEFAULT_COLOR));
+    }
+
+    /**
+     * Shortens text to a visible-character budget without counting or cutting through color codes.
+     *
+     * @param maxVisible maximum rendered characters, ignoring formatting markup
+     * @param ellipsis   appended only when something was actually cut; may be null
+     */
+    public static String truncateVisible(String input, int maxVisible, String ellipsis) {
+        if (input == null || input.isEmpty() || maxVisible <= 0) {
+            return "";
+        }
+
+        // MiniMessage -> legacy so only one markup syntax has to be skipped below.
+        String text = colorizeCompact(input);
+
+        StringBuilder out = new StringBuilder(text.length());
+        int visible = 0;
+        int i = 0;
+        boolean truncated = false;
+
+        while (i < text.length()) {
+            char c = text.charAt(i);
+
+            if ((c == '&' || c == '§') && i + 7 < text.length() && text.charAt(i + 1) == '#') {
+                out.append(text, i, i + 8);
+                i += 8;
+                continue;
+            }
+
+            if ((c == '&' || c == '§') && i + 13 < text.length()
+                    && (text.charAt(i + 1) == 'x' || text.charAt(i + 1) == 'X')) {
+                out.append(text, i, i + 14);
+                i += 14;
+                continue;
+            }
+
+            if ((c == '&' || c == '§') && i + 1 < text.length()
+                    && "0123456789abcdefABCDEFklmnorKLMNORxX".indexOf(text.charAt(i + 1)) >= 0) {
+                out.append(c).append(text.charAt(i + 1));
+                i += 2;
+                continue;
+            }
+
+            if (visible >= maxVisible) {
+                truncated = true;
+                break;
+            }
+
+            out.append(c);
+            visible++;
+            i++;
+        }
+
+        if (truncated && ellipsis != null) {
+            out.append(ellipsis);
+        }
+
+        return out.toString();
+    }
+
+    private static Color parseHexColor(String hex, Color fallback) {
+        if (hex == null || hex.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Color.decode(hex.startsWith("#") ? hex : "#" + hex);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    /**
+     * One span of plain text in a single color, for labels whose color the UI forces (a muted
+     * locked row, a selected row, a status badge) rather than taking from the tag's own display.
+     * Any formatting in {@code text} is stripped so the forced color actually wins.
+     *
+     * @param hexColor {@code #RRGGBB}; falls back to the default color if unparsable
+     */
+    public static Message toFlatTextSpans(String text, String hexColor) {
+        String plain = colorizeForUi(text);
+        if (plain == null) {
+            plain = "";
+        }
+
+        Message root = Message.empty();
+        root.insert(Message.raw(plain).color(parseHexColor(hexColor, DEFAULT_COLOR)));
+        return root;
+    }
+
+    /**
+     * Splits formatted text into per-color/style runs. Every returned segment carries an explicit
+     * color, because spans do not inherit the label's style color.
+     */
+    private static List<Message> buildSegments(String text, Color baseColor) {
+        if (text == null || text.isEmpty()) {
+            return new ArrayList<>();
         }
 
         // MiniMessage -> legacy so existing parsing handles everything
@@ -691,10 +827,7 @@ public final class ColorFormatter {
             }
         }
 
-        if (parts.isEmpty()) {
-            return Message.raw("");
-        }
-        return Message.join(parts.toArray(new Message[0]));
+        return parts;
     }
 
     private static Message buildSegment(String text, Color color, boolean bold, boolean italic) {

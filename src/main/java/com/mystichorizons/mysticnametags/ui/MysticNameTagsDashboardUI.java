@@ -23,10 +23,12 @@ import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
+import com.mystichorizons.mysticnametags.network.RedisManager;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
 import com.mystichorizons.mysticnametags.tags.TagAuditLogger;
 import com.mystichorizons.mysticnametags.tags.TagConfigValidator;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
+import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
@@ -281,6 +283,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 yield (parent != null && parent.canWrite()) ? 0 : 1;
             }
             case MYSQL -> 0;
+            case REDIS -> {
+                RedisManager redis = RedisManager.get();
+                yield (redis != null && redis.isHealthy()) ? 0 : 1;
+            }
         };
     }
 
@@ -1082,8 +1088,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         commands.set("#PlaceholderBackendsLabel.Text", placeholderText.toString());
 
         DashboardHealth health = captureDashboardHealth(settings, integrations, plugin.getDataDirectory().toFile());
-        commands.set("#HealthLabel.Text", health.label);
-        commands.set("#HealthLabel.Style.TextColor", health.color);
+        commands.set("#HealthLabel.TextSpans", ColorFormatter.toFlatTextSpans(health.label, health.color));
         populateDoctorDebugLines(commands, health);
 
         populateResourceStats(commands);
@@ -1298,6 +1303,11 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     "port", String.valueOf(settings.getMysqlPort()),
                     "database", settings.getMysqlDatabase()
             ));
+            case REDIS -> lang.tr("dashboard.storage_redis", Map.of(
+                    "host", settings.getRedisHost(),
+                    "port", String.valueOf(settings.getRedisPort()),
+                    "database", String.valueOf(settings.getRedisDatabase())
+            ));
         };
     }
 
@@ -1307,6 +1317,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
             case SQLITE -> "SQLITE file=" + settings.getSqliteFile();
             case MYSQL -> "MYSQL " + settings.getMysqlHost() + ":" + settings.getMysqlPort()
                     + "/" + settings.getMysqlDatabase();
+            case REDIS -> "REDIS " + settings.getRedisHost() + ":" + settings.getRedisPort()
+                    + "/" + settings.getRedisDatabase()
+                    + " prefix=" + settings.getRedisKeyPrefix()
+                    + " connected=" + (RedisManager.get() != null && RedisManager.get().isHealthy());
         };
     }
 

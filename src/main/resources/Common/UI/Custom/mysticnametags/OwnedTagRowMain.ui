@@ -24,14 +24,14 @@ Button {
     FlexWeight: 1;
     Anchor: (Height: 34, Vertical: 0);
 
+    // Text is supplied at runtime via .TextSpans - never also set .Text on this label.
     Label #Name {
-      Text: "";
       Style: $M.@RowNameStyle;
       Anchor: (Height: 18, Bottom: 2);
     }
 
+    // Text is supplied at runtime via .TextSpans - never also set .Text on this label.
     Label #Description {
-      Text: "";
       Style: $M.@RowDescStyle;
       Anchor: (Height: 14);
     }
@@ -45,7 +45,6 @@ Button {
     LayoutMode: Middle;
 
     Label #State {
-      Text: "";
       Style: $M.@PillLabelStyle;
     }
   }

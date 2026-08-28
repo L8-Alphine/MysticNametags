@@ -31,13 +31,9 @@ public class TagLoadoutSubCommand extends AbstractPlayerCommand {
 
     public TagLoadoutSubCommand() {
         super("loadout", "Save and equip tag loadouts");
+        this.requireNoPermission();
         this.addAliases("tagloadout", "loadouts");
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private Message colored(String text) {

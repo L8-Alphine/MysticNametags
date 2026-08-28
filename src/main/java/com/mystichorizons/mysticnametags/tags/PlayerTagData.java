@@ -13,6 +13,14 @@ public class PlayerTagData {
     private String equipped;
     private boolean ownNameplateVisible = true;
 
+    /**
+     * Set by a store when the record could not be read (network storage down,
+     * corrupt JSON). Not persisted: it only travels with the in-memory copy so
+     * TagManager knows this object is "unknown" rather than "empty" and
+     * refuses to write it back over good data.
+     */
+    private transient boolean loadFailed;
+
     public Set<String> getOwned() {
         if (owned == null) {
             owned = new HashSet<>();
@@ -77,6 +85,14 @@ public class PlayerTagData {
 
     public boolean removeLoadout(String name) {
         return name != null && getLoadouts().remove(name) != null;
+    }
+
+    public boolean isLoadFailed() {
+        return loadFailed;
+    }
+
+    public void setLoadFailed(boolean loadFailed) {
+        this.loadFailed = loadFailed;
     }
 
     public boolean isOwnNameplateVisible() {

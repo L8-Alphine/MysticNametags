@@ -45,7 +45,6 @@ Button {
     LayoutMode: Middle;
 
     Label #State {
-      Text: "";
       Style: $M.@PillLabelStyle;
     }
   }

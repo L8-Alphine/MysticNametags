@@ -94,6 +94,26 @@ public final class HelpchPlaceholderHook {
     }
 
     /**
+     * Apply all HelpChat PlaceholderAPI placeholders in a nameplate format.
+     * The original text is returned if the optional API is unavailable or an
+     * expansion fails.
+     */
+    @Nullable
+    public static String apply(@Nonnull PlayerRef playerRef,
+                               @Nullable String text) {
+        if (text == null || text.isEmpty() || !isApiReady()) {
+            return text;
+        }
+
+        try {
+            Object out = setPlaceholdersMethod.invoke(null, playerRef, text);
+            return out instanceof String result ? result : text;
+        } catch (Throwable ignored) {
+            return text;
+        }
+    }
+
+    /**
      * Resolve a *single* placeholder using Helpch PlaceholderAPI.
      *
      * Returns:
@@ -107,25 +127,16 @@ public final class HelpchPlaceholderHook {
             return null;
         }
 
-        if (!isApiReady()) {
+        String result = apply(playerRef, placeholder);
+        if (result == null) {
             return null;
         }
 
-        try {
-            Object out = setPlaceholdersMethod.invoke(null, playerRef, placeholder);
-            if (!(out instanceof String result)) {
-                return null;
-            }
-
-            result = result.trim();
-            if (result.isEmpty() || result.equals(placeholder)) {
-                return null;
-            }
-
-            return result;
-        } catch (Throwable t) {
-            // Don't spam logs – this is called quite frequently in some contexts.
+        result = result.trim();
+        if (result.isEmpty() || result.equals(placeholder)) {
             return null;
         }
+
+        return result;
     }
 }

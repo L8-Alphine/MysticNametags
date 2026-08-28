@@ -53,6 +53,15 @@
           "type": "string",
           "description": "Optional text shown in commands/UIs when the tag is outside its seasonal availability window."
         },
+        "banner": {
+          "type": "string",
+          "description": "Optional banner image in the plugin's images/ folder, such as legend or legend.png. When set, the tag renders as this picture above the player instead of its text display. Requires bannersEnabled and experimentalGlyphNameplatesEnabled."
+        },
+        "bannerScale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Optional size multiplier for this tag's banner. Defaults to 1.0; the result is still capped by bannerMaxWidthBlocks."
+        },
         "requiredPlaytimeMinutes": {
           "type": "integer",
           "minimum": 1

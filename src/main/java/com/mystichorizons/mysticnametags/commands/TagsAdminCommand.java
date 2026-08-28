@@ -16,6 +16,7 @@ public class TagsAdminCommand extends AbstractCommandCollection {
 
     public TagsAdminCommand() {
         super("tagsadmin", "Admin tools for MysticNameTags tags");
+        this.requireNoPermission();
         this.addAliases("tagadmin", "mntagadmin");
 
         this.addSubCommand(new TagsAdminOpenSubCommand());
@@ -29,11 +30,5 @@ public class TagsAdminCommand extends AbstractCommandCollection {
         this.addSubCommand(new TagsAdminDebugStorageSubCommand());
         this.addSubCommand(new TagsAdminStorageSubCommand());
         this.addSubCommand(new TagsAdminStatsSubCommand());
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        // We’ll handle permissions manually via IntegrationManager in each subcommand
-        return false;
     }
 }

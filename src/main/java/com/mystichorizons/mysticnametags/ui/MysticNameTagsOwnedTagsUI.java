@@ -31,6 +31,9 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
     private static final int PAGE_SIZE = 10;
 
+    /** Must match @RowDescStyle's TextColor - spans don't inherit the label style color. */
+    private static final String COLOR_TEXT_DESCRIPTION = "#94a3b8";
+
     /**
      * Inline row container appended into #OwnedList; the three row widgets
      * (main button, favorite button, equip button) are appended into it and
@@ -227,17 +230,14 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
             String rawDisplay = def.getDisplay();
             String rawDescription = def.getDescription();
 
-            String nameText = ColorFormatter.colorizeForUi(rawDisplay != null ? rawDisplay : def.getId());
-            String nameHex = rawDisplay != null ? ColorFormatter.extractUiTextColor(rawDisplay) : null;
+            // Truncate on visible characters so color codes neither eat the budget nor get cut
+            // in half. Base color matches #Description's own style, since spans don't inherit it.
+            String descText = ColorFormatter.truncateVisible(rawDescription, 107, "...");
 
-            String descText = rawDescription != null ? ColorFormatter.stripFormatting(rawDescription) : "";
-            if (descText.length() > 110) {
-                descText = descText.substring(0, 107) + "...";
-            }
-
-            cmd.set(mainSel + " #Name.Text", nameText);
-            cmd.set(mainSel + " #Description.Text", descText);
-            cmd.set(mainSel + " #Name.Style.TextColor", nameHex != null ? "#" + nameHex : "#ffffff");
+            cmd.set(mainSel + " #Description.TextSpans",
+                    ColorFormatter.toTextSpans(descText, COLOR_TEXT_DESCRIPTION));
+            cmd.set(mainSel + " #Name.TextSpans",
+                    ColorFormatter.toTextSpans(rawDisplay != null ? rawDisplay : def.getId()));
 
             boolean isEquipped = equippedId != null && equippedId.equalsIgnoreCase(def.getId());
             boolean favorite = tagManager.getFavoriteTags(uuid).contains(def.getId().toLowerCase(Locale.ROOT));
@@ -262,8 +262,7 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
                 stateText = lang.tr("ui.tags.badge_owned");
                 stateColor = "#58a6ff";
             }
-            cmd.set(mainSel + " #State.Text", stateText);
-            cmd.set(mainSel + " #State.Style.TextColor", stateColor);
+            cmd.set(mainSel + " #State.TextSpans", ColorFormatter.toFlatTextSpans(stateText, stateColor));
             cmd.set(mainSel + " #StatePill.OutlineColor", stateColor);
             cmd.set(mainSel + " #Accent.OutlineColor", stateColor);
             cmd.set(rowSel + ".OutlineColor", isEquipped ? "#58a6ff" : "#333333");
@@ -317,27 +316,16 @@ public class MysticNameTagsOwnedTagsUI extends InteractiveCustomUIPage<MysticNam
         cmd.set("#EquipQuickLoadoutButton.Visible", quickTag != null && !quickTag.isBlank());
         cmd.set("#DeleteQuickLoadoutButton.Visible", quickTag != null && !quickTag.isBlank());
 
-        String previewText;
-        String previewHex = null;
-
+        // Spans preserve each colored segment of the nameplate, so this preview matches the
+        // real thing instead of flattening to one color.
+        String previewSource;
         try {
-            String baseName = playerRef.getUsername();
-            String coloredNameplate = tagManager.buildNameplate(playerRef, baseName, uuid);
-            previewText = ColorFormatter.colorizeForUi(coloredNameplate);
-
-            // Full nameplates can contain multiple colors, but this UI field is
-            // a single label. Keep the whole-nameplate preview neutral.
-            previewHex = null;
+            previewSource = tagManager.buildNameplate(playerRef, playerRef.getUsername(), uuid);
         } catch (Throwable ignored) {
-            previewText = playerRef.getUsername();
+            previewSource = playerRef.getUsername();
         }
 
-        cmd.set("#CurrentNameplateLabel.Text", previewText);
-        if (previewHex != null) {
-            cmd.set("#CurrentNameplateLabel.Style.TextColor", "#" + previewHex);
-        } else {
-            cmd.set("#CurrentNameplateLabel.Style.TextColor", "#e6edf3");
-        }
+        cmd.set("#CurrentNameplateLabel.TextSpans", ColorFormatter.toTextSpans(previewSource));
     }
 
     @Override

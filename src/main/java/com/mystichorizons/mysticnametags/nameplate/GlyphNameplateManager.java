@@ -23,6 +23,9 @@ import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.MysticVanishSupport;
+import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerInfo;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerQuadModels;
 import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphAssets;
 import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphInfoCompat;
 import com.mystichorizons.mysticnametags.nameplate.packet.PacketGlyphIdFactory;
@@ -49,6 +52,13 @@ public final class GlyphNameplateManager {
     private static final GlyphNameplateManager INSTANCE = new GlyphNameplateManager();
 
     private static final double ANCHOR_Y_OFFSET = 2.25d;
+
+    /**
+     * Substituted for {@code {tag}} when the equipped tag has a banner, so the renderer knows
+     * which line of the player's nameplateFormat the artwork belongs on. Plain letters, so no
+     * colorize or strip pass mangles it before it gets here.
+     */
+    public static final String BANNER_SLOT_TOKEN = "MNTBANNERSLOT";
 
     private static final float BILLBOARD_YAW_DIRTY_DEGREES = 0.75f;
     private static final float BILLBOARD_YAW_DIRTY_RADIANS = (float) Math.toRadians(BILLBOARD_YAW_DIRTY_DEGREES);
@@ -470,57 +480,18 @@ public final class GlyphNameplateManager {
             lineState.glyphFont = glyphFont;
             lineState.yOffset = lineIndex * lineSpacing;
 
-            List<ColoredChar> chars = SimpleColorParser.parse(lineText);
+            LineBuildResult built = populateTextLine(
+                    lineState,
+                    lineText,
+                    glyphFont,
+                    settings,
+                    charAdvance,
+                    hardCap - spawnedCount
+            );
 
-            int visibleCount = 0;
-            for (ColoredChar cc : chars) {
-                if (cc.ch == '\n' || cc.ch == '\r') continue;
-                visibleCount++;
-            }
-
-            int logicalIndex = 0;
-
-            for (ColoredChar cc : chars) {
-                char ch = cc.ch;
-                if (ch == '\n' || ch == '\r') continue;
-
-                double offset = ((visibleCount - 1) / 2.0d - logicalIndex) * charAdvance;
-                logicalIndex++;
-
-                if (ch == ' ') continue;
-                if (spawnedCount >= hardCap) break;
-                if (!GlyphInfoCompat.isSupported(ch)) continue;
-
-                spawnAttemptedForVisibleGlyph = true;
-
-                String assetId = resolveGlyphModelId(ch, glyphFont);
-                if (assetId == null) {
-                    if (loggedMissingGlyphModels.add(ch)) {
-                        LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph model not found for char='"
-                                + ch + "' font=" + glyphFont
-                                + " candidates=" + Arrays.toString(GlyphInfoCompat.getModelAssetIdCandidates(ch, glyphFont)));
-                    }
-                    continue;
-                }
-
-                com.hypixel.hytale.protocol.Model packetModel = resolveGlyphModelPacket(assetId);
-                if (packetModel == null) {
-                    if (loggedMissingGlyphModels.add(ch)) {
-                        LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph model could not convert to packet for char='"
-                                + ch + "', asset=" + assetId);
-                    }
-                    continue;
-                }
-
-                lineState.glyphChars.add(ch);
-                lineState.glyphAssetIds.add(assetId);
-                lineState.glyphModels.add(packetModel);
-                lineState.glyphOffsets.add(offset);
-                lineState.glyphTintEffectIndexes.add(resolveTintEffectIndex(scaleColor(cc.color, settings.getExperimentalGlyphTintStrength())));
-
-                spawnedCount++;
-                spawnedAnyGlyph = true;
-            }
+            spawnedCount += built.glyphsAdded;
+            spawnAttemptedForVisibleGlyph |= built.attemptedVisibleGlyph;
+            spawnedAnyGlyph |= built.glyphsAdded > 0;
 
             rebuildLineRuns(lineState, state.scale);
             state.lines.add(lineState);
@@ -539,6 +510,269 @@ public final class GlyphNameplateManager {
         }
 
         return spawnedAnyGlyph;
+    }
+
+    @Nonnull
+    private static LineRenderState newBannerLine(@Nonnull BannerInfo banner,
+                                                 @Nonnull BannerQuadModels.Rendered rendered,
+                                                 @Nonnull String glyphFont,
+                                                 double stateScale) {
+        LineRenderState line = new LineRenderState();
+        line.text = banner.name();
+        line.glyphFont = glyphFont;
+        line.bannerModel = rendered.model();
+        line.scaleMultiplier = rendered.entityScale();
+        rebuildLineRuns(line, stateScale);
+        return line;
+    }
+
+    /** True when the line has something to render once color markup is stripped. */
+    private static boolean hasVisibleText(@Nullable String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        String plain = ColorFormatter.stripFormatting(text);
+        return plain != null && !plain.isBlank();
+    }
+
+    /**
+     * Turns one line of formatted text into glyph entities.
+     *
+     * @param remainingCap glyph budget left for this player across all lines
+     */
+    @Nonnull
+    private LineBuildResult populateTextLine(@Nonnull LineRenderState lineState,
+                                             @Nonnull String lineText,
+                                             @Nonnull String glyphFont,
+                                             @Nonnull Settings settings,
+                                             double charAdvance,
+                                             int remainingCap) {
+
+        LineBuildResult result = new LineBuildResult();
+
+        List<ColoredChar> chars = SimpleColorParser.parse(lineText);
+
+        int visibleCount = 0;
+        for (ColoredChar cc : chars) {
+            if (cc.ch == '\n' || cc.ch == '\r') continue;
+            visibleCount++;
+        }
+
+        int logicalIndex = 0;
+
+        for (ColoredChar cc : chars) {
+            char ch = cc.ch;
+            if (ch == '\n' || ch == '\r') continue;
+
+            double offset = ((visibleCount - 1) / 2.0d - logicalIndex) * charAdvance;
+            logicalIndex++;
+
+            if (ch == ' ') continue;
+            if (result.glyphsAdded >= remainingCap) break;
+            if (!GlyphInfoCompat.isSupported(ch)) continue;
+
+            result.attemptedVisibleGlyph = true;
+
+            String assetId = resolveGlyphModelId(ch, glyphFont);
+            if (assetId == null) {
+                if (loggedMissingGlyphModels.add(ch)) {
+                    LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph model not found for char='"
+                            + ch + "' font=" + glyphFont
+                            + " candidates=" + Arrays.toString(GlyphInfoCompat.getModelAssetIdCandidates(ch, glyphFont)));
+                }
+                continue;
+            }
+
+            com.hypixel.hytale.protocol.Model packetModel = resolveGlyphModelPacket(assetId);
+            if (packetModel == null) {
+                if (loggedMissingGlyphModels.add(ch)) {
+                    LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph model could not convert to packet for char='"
+                            + ch + "', asset=" + assetId);
+                }
+                continue;
+            }
+
+            lineState.glyphChars.add(ch);
+            lineState.glyphAssetIds.add(assetId);
+            lineState.glyphModels.add(packetModel);
+            lineState.glyphOffsets.add(offset);
+            lineState.glyphTintEffectIndexes.add(resolveTintEffectIndex(scaleColor(cc.color, settings.getExperimentalGlyphTintStrength())));
+
+            result.glyphsAdded++;
+        }
+
+        return result;
+    }
+
+    /**
+     * Renders a tag's banner art above the player instead of text.
+     *
+     * <p>The banner is one entity riding the same follow/billboard machinery as glyphs, so it
+     * costs a single model regardless of how wide the art is.</p>
+     *
+     * @param nameLineText formatted nameplate text, rendered under the banner only when
+     *                     {@code bannerKeepNameLine} is enabled
+     */
+    public void applyBanner(@Nonnull UUID uuid,
+                            @Nonnull World world,
+                            @Nonnull Store<EntityStore> store,
+                            @Nonnull Ref<EntityStore> playerRef,
+                            @Nonnull BannerInfo banner,
+                            double bannerScale,
+                            @Nullable String nameLineText) {
+
+        store.assertThread();
+
+        Settings settings = Settings.get();
+
+        // Callers already gate on TagManager.resolveActiveBanner, which checks both of these. This
+        // is the render entry point and it is public, so it re-checks rather than trusting them.
+        if (!settings.isExperimentalGlyphNameplatesEnabled()
+                || !settings.isBannersEnabled()
+                || !MysticNameTagsLicense.bannersLicensed()) {
+            remove(uuid, world, store);
+            return;
+        }
+
+        // The surrounding nameplate lines, with BANNER_SLOT_TOKEN marking where {tag} sat.
+        String formatText = clampMultilineVisibleLength(
+                nameLineText == null ? "" : nameLineText,
+                settings.getExperimentalGlyphMaxLines(),
+                settings.getExperimentalGlyphMaxCharsPerLine());
+
+        // Discriminator that text nameplates can never produce, so the shared change detection
+        // below correctly rebuilds when swapping between a banner and a text tag.
+        String renderKey = "[[banner]]:" + banner.renderKey() + "@" + bannerScale + "|" + formatText;
+
+        RenderState state = states.computeIfAbsent(uuid, RenderState::new);
+
+        String previousWorldName = state.worldName;
+        boolean worldChanged = previousWorldName != null && !Objects.equals(previousWorldName, world.getName());
+
+        boolean needsRebuild =
+                worldChanged
+                        || !Objects.equals(state.lastText, renderKey)
+                        || !hasLiveRender(state);
+
+        if (needsRebuild) {
+            boolean rebuilt = rebuildBanner(world, store, playerRef, state, banner, bannerScale, formatText, settings);
+            if (!rebuilt) {
+                state.lastText = null;
+                state.lastGlyphFont = null;
+                state.worldName = world.getName();
+                return;
+            }
+
+            state.lastText = renderKey;
+            state.lastGlyphFont = settings.getExperimentalGlyphFont();
+        }
+
+        state.worldName = world.getName();
+        follow(uuid, world, store, playerRef, state);
+    }
+
+    private boolean rebuildBanner(@Nonnull World world,
+                                  @Nonnull Store<EntityStore> store,
+                                  @Nonnull Ref<EntityStore> playerRef,
+                                  @Nonnull RenderState state,
+                                  @Nonnull BannerInfo banner,
+                                  double bannerScale,
+                                  @Nonnull String formatText,
+                                  @Nonnull Settings settings) {
+
+        despawnAll(store, world.getEntityStore(), state);
+        state.lines.clear();
+        state.packetGeneration++;
+
+        TransformComponent playerTx = store.getComponent(playerRef, TransformComponent.getComponentType());
+        if (playerTx == null) {
+            return false;
+        }
+
+        BannerQuadModels.Rendered rendered = BannerQuadModels.resolve(
+                banner,
+                settings.getBannerMaxWidthBlocks(),
+                settings.getBannerMaxHeightBlocks(),
+                bannerScale
+        );
+
+        if (rendered == null) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Could not build a quad for banner '"
+                    + banner.name() + "'; falling back to a text nameplate.");
+            return false;
+        }
+
+        String glyphFont = settings.getExperimentalGlyphFont();
+        double lineSpacing = settings.getExperimentalGlyphLineSpacing();
+
+        // Banner-only nameplate: no surrounding format to honour.
+        if (!hasVisibleText(formatText)) {
+            LineRenderState only = newBannerLine(banner, rendered, glyphFont, state.scale);
+            only.yOffset = 0.0d;
+            state.lines.add(only);
+            return true;
+        }
+
+        double charAdvance = getGlyphAdvance(state.scale);
+        int hardCap = settings.getExperimentalGlyphMaxEntitiesPerPlayer();
+        int spawnedCount = 0;
+
+        // Built in format order first, then offset by index, so inserting the banner cannot
+        // disturb the spacing of the lines around it.
+        List<LineRenderState> planned = new ArrayList<>();
+        boolean bannerPlaced = false;
+
+        for (String lineText : splitLines(formatText, settings.getExperimentalGlyphMaxLines())) {
+            if (lineText == null) {
+                lineText = "";
+            }
+
+            if (lineText.contains(BANNER_SLOT_TOKEN)) {
+                planned.add(newBannerLine(banner, rendered, glyphFont, state.scale));
+                bannerPlaced = true;
+
+                // Anything sharing the {tag} line still deserves to render, on its own line
+                // directly after the banner. A line that held only {tag} becomes just the banner.
+                lineText = lineText.replace(BANNER_SLOT_TOKEN, "");
+                if (!hasVisibleText(lineText)) {
+                    continue;
+                }
+            }
+
+            // Blank lines are kept, matching the text-only path, so they still take up space.
+            LineRenderState textLine = new LineRenderState();
+            textLine.text = lineText;
+            textLine.glyphFont = glyphFont;
+
+            spawnedCount += populateTextLine(
+                    textLine,
+                    lineText,
+                    glyphFont,
+                    settings,
+                    charAdvance,
+                    hardCap - spawnedCount
+            ).glyphsAdded;
+
+            rebuildLineRuns(textLine, state.scale);
+            planned.add(textLine);
+
+            if (spawnedCount >= hardCap) {
+                break;
+            }
+        }
+
+        // Format has no {tag} at all: the banner becomes the topmost line rather than vanishing.
+        if (!bannerPlaced) {
+            planned.add(newBannerLine(banner, rendered, glyphFont, state.scale));
+        }
+
+        for (int i = 0; i < planned.size(); i++) {
+            planned.get(i).yOffset = i * lineSpacing;
+        }
+
+        state.lines.addAll(planned);
+
+        return true;
     }
 
     private void follow(@Nonnull UUID uuid,
@@ -648,7 +882,7 @@ public final class GlyphNameplateManager {
                         yawRadians = continuousYaw(yawRadians, packetState.lastYawRadians);
                     }
 
-                    float modelScale = GlyphInfoCompat.BASE_MODEL_SCALE * (float) state.scale;
+                    float modelScale = GlyphInfoCompat.BASE_MODEL_SCALE * (float) state.scale * line.scaleMultiplier;
                     float lineOffsetY = (float) (ANCHOR_Y_OFFSET + line.yOffset);
                     int mountedToNetworkId = playerNetworkId.getId();
                     double anchorX = playerPos.x();
@@ -826,6 +1060,13 @@ public final class GlyphNameplateManager {
 
     private static void rebuildLineRuns(@Nonnull LineRenderState line, double scale) {
         line.glyphRuns.clear();
+
+        // A banner is a single entity carrying the image quad. No tint: the art brings its own
+        // colors and the HtTint_* effect would wash them out.
+        if (line.bannerModel != null) {
+            line.glyphRuns.add(new GlyphRunState(0, 1, null, line.bannerModel));
+            return;
+        }
 
         int count = Math.min(
                 Math.min(Math.min(line.glyphChars.size(), line.glyphOffsets.size()), line.glyphTintEffectIndexes.size()),
@@ -1298,6 +1539,23 @@ public final class GlyphNameplateManager {
         String glyphFont = GlyphAssets.DEFAULT_FONT;
         double yOffset = 0.0d;
         Ref<EntityStore> anchorRef = null;
+
+        /**
+         * Set when this line is a banner image rather than text. The whole line is then one
+         * entity carrying this model, so the per-character machinery above stays empty.
+         */
+        com.hypixel.hytale.protocol.Model bannerModel = null;
+
+        /**
+         * Per-line entity scale multiplier. Banners size themselves this way so one bundled quad
+         * per aspect ratio covers every banner, without resizing a name line rendered beside it.
+         */
+        float scaleMultiplier = 1.0f;
+    }
+
+    private static final class LineBuildResult {
+        int glyphsAdded = 0;
+        boolean attemptedVisibleGlyph = false;
     }
 
     private static final class GlyphRunState {

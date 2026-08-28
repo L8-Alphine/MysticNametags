@@ -32,13 +32,9 @@ public class FavoriteTagSubCommand extends AbstractPlayerCommand {
 
     public FavoriteTagSubCommand() {
         super("favorite", "Manage favorite tags");
+        this.requireNoPermission();
         this.addAliases("fav", "favorites");
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private Message colored(String text) {

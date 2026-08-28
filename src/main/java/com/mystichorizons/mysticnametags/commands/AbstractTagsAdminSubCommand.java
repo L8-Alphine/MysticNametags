@@ -28,13 +28,8 @@ public abstract class AbstractTagsAdminSubCommand extends AbstractCommand {
 
     protected AbstractTagsAdminSubCommand(@Nonnull String name, @Nonnull String description) {
         super(name, description);
+        this.requireNoPermission();
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        // We handle permissions manually via IntegrationManager.
-        return false;
     }
 
     protected Message colored(String text) {

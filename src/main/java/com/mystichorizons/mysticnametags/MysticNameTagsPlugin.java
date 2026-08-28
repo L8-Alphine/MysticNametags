@@ -17,12 +17,18 @@ import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingCompat;
 import com.mystichorizons.mysticnametags.integrations.endlessleveling.EndlessLevelingNameplateSystem;
 import com.mystichorizons.mysticnametags.integrations.economy.VaultUnlockedSupport;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeCompat;
+import com.mystichorizons.mysticnametags.integrations.mmoskilltree.MMOSkillTreeNameplateHook;
 import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCompat;
+import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.*;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerAssetManager;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
+import com.mystichorizons.mysticnametags.network.NetworkSyncService;
+import com.mystichorizons.mysticnametags.network.RedisManager;
 import com.mystichorizons.mysticnametags.stats.PlayerStatManager;
 import com.mystichorizons.mysticnametags.stats.systems.BlockBreakStatSystem;
 import com.mystichorizons.mysticnametags.stats.systems.BlockPlaceStatSystem;
@@ -130,10 +136,36 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         LanguageManager.init();
 
         // ------------------------------------------------------
+        // Redis (network storage + cross-server sync)
+        // Connects before the tag/stat stores are built, since the
+        // Redis-backed stores resolve their connection through it.
+        // ------------------------------------------------------
+        RedisManager.init();
+
+        // ------------------------------------------------------
+        // Licensing (gates tag banners; never blocks startup)
+        // ------------------------------------------------------
+        MysticNameTagsLicense.init(getDataDirectory(), version, null);
+
+        // ------------------------------------------------------
+        // Tag banner art (registers images/*.png as client assets)
+        // ------------------------------------------------------
+        try {
+            BannerAssetManager.init(getDataDirectory());
+            BannerAssetManager.get().scanAndRegister();
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize tag banners.");
+        }
+
+        // ------------------------------------------------------
         // Tags + ECS systems + commands + listeners
         // ------------------------------------------------------
         TagManager.init(integrations);
         PlayerStatManager.init(this.integrations);
+
+        // Subscriber starts last: incoming sync messages need a live TagManager.
+        NetworkSyncService.init();
 
         // Register commands
         registerCommands();
@@ -283,6 +315,16 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         // RPGLeveling nameplate refresher (lazy-guarded by config + API checks)
         startLevelSchedulerIfNeeded();
 
+        // MMOSkillTree nameplate refreshes are event-driven.
+        try {
+            if (MMOSkillTreeCompat.isAvailable()) {
+                MMOSkillTreeNameplateHook.register();
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to initialize MMOSkillTree nameplate listeners.");
+        }
+
         // Glyph nameplate follow refresher
         startGlyphFollowSchedulerIfNeeded();
 
@@ -321,6 +363,13 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop level scheduler");
         }
         try {
+            if (MMOSkillTreeCompat.isAvailable()) {
+                MMOSkillTreeNameplateHook.unregister();
+            }
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to unregister MMOSkillTree nameplate listeners");
+        }
+        try {
             stopGlyphFollowScheduler();
         } catch (Throwable ignored) {
             LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop glyph follow scheduler");
@@ -336,6 +385,12 @@ public class MysticNameTagsPlugin extends JavaPlugin {
             PlayerStatManager.shutdownGlobal();
         } catch (Throwable ignored) {
             LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to stop PlayerStatManager");
+        }
+        try {
+            NetworkSyncService.shutdown();
+            RedisManager.shutdown();
+        } catch (Throwable ignored) {
+            LOGGER.at(Level.WARNING).log("[MysticNameTags] Failed to close the Redis connection");
         }
         try {
             NameplateManager.get().clearAll();
@@ -449,6 +504,24 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING).withCause(t)
                     .log("[MysticNameTags] Failed to re-initialize integrations during reload.");
+        }
+
+        // 3a) Re-read the license so an operator can drop one in without a restart
+        MysticNameTagsLicense.reload();
+
+        // 3b) Re-scan banner art so new/changed PNGs reach connected players
+        try {
+            BannerAssetManager banners = BannerAssetManager.get();
+            if (banners == null) {
+                BannerAssetManager.init(getDataDirectory());
+                banners = BannerAssetManager.get();
+            }
+            if (banners != null) {
+                banners.scanAndRegister();
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to re-scan tag banners during reload.");
         }
 
         // 4) Reload tags.json and refresh all online nameplates

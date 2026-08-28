@@ -21,6 +21,9 @@ import com.mystichorizons.mysticnametags.config.LanguageManager;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
 import com.mystichorizons.mysticnametags.integrations.WiFlowPlaceholderSupport;
+import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerAssetManager;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerInfo;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.tags.TagManager;
 import com.mystichorizons.mysticnametags.tags.TagManager.TagPurchaseResult;
@@ -54,6 +57,10 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
     private static final String COLOR_TEXT_MUTED = "#6b7280";
     private static final String COLOR_TEXT_SELECTED = "#ffffff";
     private static final String COLOR_TEXT_CATEGORY = "#cbd5f5";
+    /** Must match #DetailDesc's TextColor in Tags.ui - spans don't inherit the label style color. */
+    private static final String COLOR_TEXT_DESCRIPTION = "#c9d1d9";
+    /** Must match @BodyTextStyle's TextColor in MysticCommon.ui, for the same reason. */
+    private static final String COLOR_TEXT_BODY = "#cbd5f5";
     private static final String COLOR_OUTLINE_ROW = "#3a3a3a";
     private static final String COLOR_OUTLINE_SELECT = "#58a6ff";
     private static final String QUICK_LOADOUT_NAME = "quick";
@@ -598,11 +605,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             String rowSel = "#TagList[" + row + "]";
 
             String rawDisplay = def.getDisplay();
-            String nameText = ColorFormatter.colorizeForUi(rawDisplay != null ? rawDisplay : def.getId());
-            String nameHex = rawDisplay != null ? ColorFormatter.extractUiTextColor(rawDisplay) : null;
+            String nameSource = rawDisplay != null ? rawDisplay : def.getId();
             String priceText = buildPriceText(def, econEnabled, usingCash, lang);
 
-            cmd.set(rowSel + " #Name.Text", nameText);
             cmd.set(rowSel + " #Price.Text", priceText);
 
             boolean canUse = canUseTag(tagManager, def);
@@ -616,25 +621,24 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
                     && selected.getId() != null
                     && selected.getId().equalsIgnoreCase(def.getId());
 
-            String resolvedNameColor = nameHex != null ? "#" + nameHex : COLOR_TEXT_PRIMARY;
+            // Locked/selected rows force one color; otherwise the tag's own colors come through.
             if (isLockedByPerm && debugShowHidden) {
-                resolvedNameColor = COLOR_TEXT_MUTED;
+                cmd.set(rowSel + " #Name.TextSpans", ColorFormatter.toFlatTextSpans(nameSource, COLOR_TEXT_MUTED));
             } else if (isSelected) {
-                resolvedNameColor = COLOR_TEXT_SELECTED;
+                cmd.set(rowSel + " #Name.TextSpans", ColorFormatter.toFlatTextSpans(nameSource, COLOR_TEXT_SELECTED));
+            } else {
+                cmd.set(rowSel + " #Name.TextSpans", ColorFormatter.toTextSpans(nameSource));
             }
-            cmd.set(rowSel + " #Name.Style.TextColor", resolvedNameColor);
 
             String category = def.getCategory();
             if (category == null || category.trim().isEmpty()) {
                 cmd.set(rowSel + " #CategoryPill.Visible", false);
             } else {
-                cmd.set(rowSel + " #Category.Text", category);
-                cmd.set(rowSel + " #Category.Style.TextColor", COLOR_TEXT_CATEGORY);
+                cmd.set(rowSel + " #Category.TextSpans", ColorFormatter.toFlatTextSpans(category, COLOR_TEXT_CATEGORY));
             }
 
             RowBadge badge = buildRowBadge(def, canUse, owns, isEquipped, hasCost);
-            cmd.set(rowSel + " #State.Text", badge.text);
-            cmd.set(rowSel + " #State.Style.TextColor", badge.textColor);
+            cmd.set(rowSel + " #State.TextSpans", ColorFormatter.toFlatTextSpans(badge.text, badge.textColor));
             cmd.set(rowSel + " #StatePill.OutlineColor", badge.textColor);
             cmd.set(rowSel + " #Accent.OutlineColor", isSelected ? COLOR_OUTLINE_SELECT : badge.textColor);
 
@@ -692,52 +696,29 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         String username = playerRef.getUsername() != null ? playerRef.getUsername() : "Player";
 
-        String playerDisplayText = username;
-        String playerDisplayHex = null;
-
+        // Spans keep every independently-colored segment of the nameplate intact, so this preview
+        // matches what actually renders above the player's head.
+        String playerDisplaySource = username;
         try {
             String fullNameplate = TagManager.get().buildNameplate(playerRef, username, uuid);
-            String colored = ColorFormatter.colorizeForUi(fullNameplate);
-            if (colored != null && !colored.isBlank()) {
-                playerDisplayText = colored;
+            if (fullNameplate != null && !fullNameplate.isBlank()) {
+                playerDisplaySource = fullNameplate;
             }
-
-            // Full nameplates can contain multiple independently-colored
-            // segments. A single Custom UI label can only use one TextColor, so
-            // keep this preview neutral instead of falsely tinting all text.
-            playerDisplayHex = null;
         } catch (Throwable ignored) {
         }
 
-        cmd.set("#PlayerNameLabel.Text", playerDisplayText);
-        if (playerDisplayHex != null) {
-            cmd.set("#PlayerNameLabel.Style.TextColor", "#" + playerDisplayHex);
+        cmd.set("#PlayerNameLabel.TextSpans", ColorFormatter.toTextSpans(playerDisplaySource));
+
+        String activeDisplay = active != null ? active.getDisplay() : null;
+
+        if (activeDisplay != null && !activeDisplay.isBlank()) {
+            cmd.set("#CurrentNameplateLabel.TextSpans", ColorFormatter.toTextSpans(activeDisplay));
+        } else if (active != null && active.getId() != null && !active.getId().isBlank()) {
+            cmd.set("#CurrentNameplateLabel.TextSpans",
+                    ColorFormatter.toFlatTextSpans(prettifyId(active.getId()), COLOR_TEXT_PRIMARY));
         } else {
-            cmd.set("#PlayerNameLabel.Style.TextColor", COLOR_TEXT_PRIMARY);
-        }
-
-        String currentTagText = lang.tr("ui.tags.current_tag_none");
-        String currentTagHex = null;
-
-        if (active != null) {
-            String activeDisplay = active.getDisplay();
-            if (activeDisplay != null && !activeDisplay.isBlank()) {
-                currentTagText = ColorFormatter.colorizeForUi(activeDisplay);
-                String hex = ColorFormatter.extractUiTextColor(activeDisplay);
-                if (hex == null) {
-                    hex = ColorFormatter.extractFirstHexColor(activeDisplay);
-                }
-                currentTagHex = hex;
-            } else if (active.getId() != null && !active.getId().isBlank()) {
-                currentTagText = prettifyId(active.getId());
-            }
-        }
-
-        cmd.set("#CurrentNameplateLabel.Text", currentTagText);
-        if (currentTagHex != null) {
-            cmd.set("#CurrentNameplateLabel.Style.TextColor", "#" + currentTagHex);
-        } else {
-            cmd.set("#CurrentNameplateLabel.Style.TextColor", COLOR_TEXT_PRIMARY);
+            cmd.set("#CurrentNameplateLabel.TextSpans",
+                    ColorFormatter.toFlatTextSpans(lang.tr("ui.tags.current_tag_none"), COLOR_TEXT_PRIMARY));
         }
     }
 
@@ -1148,8 +1129,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             cmd.set("#DetailContent.Visible", false);
             cmd.set("#RequirementsPanel.Visible", false);
             cmd.set("#HowItWorksPopup.Visible", false);
-            cmd.set("#RequirementsText.Text", "");
-            cmd.set("#HowItWorksText.Text", "");
+            // Clear through TextSpans too - mixing .Text and .TextSpans on one label breaks it.
+            cmd.set("#RequirementsText.TextSpans", ColorFormatter.toTextSpans("", COLOR_TEXT_BODY));
+            cmd.set("#HowItWorksText.TextSpans", ColorFormatter.toTextSpans("", COLOR_TEXT_BODY));
             return;
         }
 
@@ -1162,12 +1144,9 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         boolean hasCost = def.isPurchasable() && def.getPrice() > 0.0D;
 
-        String detailName = ColorFormatter.colorizeForUi(def.getDisplay() != null ? def.getDisplay() : def.getId());
-        String detailNameHex = def.getDisplay() != null ? ColorFormatter.extractUiTextColor(def.getDisplay()) : null;
+        String detailNameSource = def.getDisplay() != null ? def.getDisplay() : def.getId();
 
-        String detailDesc = def.getDescription() != null
-                ? ColorFormatter.stripFormatting(def.getDescription())
-                : "";
+        String detailDesc = def.getDescription() != null ? def.getDescription() : "";
 
         String category = (def.getCategory() != null && !def.getCategory().isBlank())
                 ? def.getCategory()
@@ -1194,9 +1173,6 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             status = lang.tr("ui.tags.detail_status_free");
         }
 
-        String preview = detailName;
-        String previewHex = detailNameHex;
-
         String selectButtonText;
         if (isEquipped) {
             selectButtonText = lang.tr("ui.tags.button_unequip");
@@ -1215,20 +1191,18 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
         cmd.set("#DetailEmpty.Visible", false);
         cmd.set("#DetailContent.Visible", true);
 
-        cmd.set("#DetailName.Text", detailName);
-        if (detailNameHex != null) {
-            cmd.set("#DetailName.Style.TextColor", "#" + detailNameHex);
-        } else {
-            cmd.set("#DetailName.Style.TextColor", COLOR_TEXT_PRIMARY);
-        }
+        cmd.set("#DetailName.TextSpans", ColorFormatter.toTextSpans(detailNameSource));
 
         cmd.set("#DetailLore.Text", def.getId() != null ? def.getId() : "");
-        cmd.set("#DetailDesc.Text", detailDesc);
+        // Base color matches #DetailDesc's own style, since spans don't inherit it.
+        cmd.set("#DetailDesc.TextSpans", ColorFormatter.toTextSpans(detailDesc, COLOR_TEXT_DESCRIPTION));
         cmd.set("#DetailCategory.Text", category);
         cmd.set("#DetailPrice.Text", price);
         cmd.set("#DetailStatus.Text", status);
-        cmd.set("#DetailPreview.Text", preview);
+        cmd.set("#DetailPreview.TextSpans", ColorFormatter.toTextSpans(detailNameSource));
         cmd.set("#SelectBtn.Text", selectButtonText);
+
+        applyBannerPreview(cmd, def);
 
         if (cooldownWarningText != null && !cooldownWarningText.isBlank()) {
             cmd.set("#CooldownWarning.Text", cooldownWarningText);
@@ -1238,27 +1212,49 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
             cmd.set("#CooldownWarning.Visible", false);
         }
 
-        if (previewHex != null) {
-            cmd.set("#DetailPreview.Style.TextColor", "#" + previewHex);
-        } else {
-            cmd.set("#DetailPreview.Style.TextColor", COLOR_TEXT_PRIMARY);
-        }
-
         List<String> reqLines = buildRequirementLines(def, canUse, owns, econEnabled, usingCash);
         boolean showReq = !reqLines.isEmpty();
 
         cmd.set("#RequirementsPanel.Visible", showReq);
-        cmd.set("#RequirementsText.Text", toLineBlock(reqLines));
+        cmd.set("#RequirementsText.TextSpans",
+                ColorFormatter.toTextSpans(toLineBlock(reqLines), COLOR_TEXT_BODY));
 
         List<String> helpLines = buildHelpLines(def, canUse, owns, isEquipped, hasCost);
         cmd.set("#HowItWorksTitle.Text", lang.getHowItWorksPanelTitle());
         cmd.set("#HowItWorksPopup.Visible", detailHelpVisible);
-        cmd.set("#HowItWorksText.Text", toLineBlock(helpLines));
+        cmd.set("#HowItWorksText.TextSpans",
+                ColorFormatter.toTextSpans(toLineBlock(helpLines), COLOR_TEXT_BODY));
 
         double progress = calculateProgressFraction(def, canUse, owns);
         progress = Math.max(0.0D, Math.min(1.0D, progress));
         cmd.set("#DetailProgressBar.Value", progress);
         cmd.set("#DetailProgressText.Text", buildProgressText(def, progress, canUse, owns));
+    }
+
+    /**
+     * Shows the tag's banner art in the detail panel. The row stays hidden for text-only tags and
+     * for banners whose PNG is missing, so a bad config never leaves a broken image on screen.
+     */
+    private void applyBannerPreview(@Nonnull UICommandBuilder cmd, @Nonnull TagDefinition def) {
+        BannerInfo banner = null;
+
+        if (def.hasBanner() && Settings.get().isBannersEnabled()
+                && MysticNameTagsLicense.bannersLicensed()) {
+            BannerAssetManager banners = BannerAssetManager.get();
+            if (banners != null) {
+                banner = banners.find(def.getBanner());
+            }
+        }
+
+        if (banner == null) {
+            cmd.set("#DetailBannerRow.Visible", false);
+            return;
+        }
+
+        cmd.set("#DetailBannerRow.Visible", true);
+        // AssetImage's runtime property is AssetPath. TexturePath belongs to Background, not to
+        // AssetImage, and setting it disconnects the client with a markup-property error.
+        cmd.set("#DetailBanner.AssetPath", banner.texturePath());
     }
 
     @Nonnull
@@ -1603,11 +1599,13 @@ public class MysticNameTagsTagsUI extends InteractiveCustomUIPage<MysticNameTags
 
         String rawDesc = def.getDescription();
         if (rawDesc != null && !rawDesc.isBlank()) {
-            String clean = ColorFormatter.stripFormatting(rawDesc).trim();
-            if (!clean.isEmpty()) {
+            String desc = rawDesc.trim();
+            if (!ColorFormatter.stripFormatting(desc).trim().isEmpty()) {
+                // Trailing reset so an unterminated color in the description cannot bleed into
+                // the help lines that follow it in the same span block.
                 lines.add(lang.tr("ui.tags.howitworks.description_line", Map.of(
-                        "description", clean
-                )));
+                        "description", desc
+                )) + "&r");
             }
         }
 

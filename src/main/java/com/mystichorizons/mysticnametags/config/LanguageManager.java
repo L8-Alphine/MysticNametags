@@ -693,6 +693,7 @@ public final class LanguageManager {
         defaults.put("dashboard.storage_file", "Storage: File (playerdata/*.json)");
         defaults.put("dashboard.storage_sqlite", "Storage: SQLite ({file})");
         defaults.put("dashboard.storage_mysql", "Storage: MySQL {host}:{port}/{database}");
+        defaults.put("dashboard.storage_redis", "Storage: Redis {host}:{port}/{database}");
         defaults.put("dashboard.placeholders_prefix", "Placeholders:");
         defaults.put("dashboard.placeholders_none", "none");
         defaults.put("dashboard.cpu_label", "CPU (process): {percent}% ({cores} cores)");

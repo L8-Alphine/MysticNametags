@@ -7,6 +7,8 @@ import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.integrations.IntegrationManager;
+import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
+import com.mystichorizons.mysticnametags.nameplate.banner.BannerAssetManager;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 
 import javax.annotation.Nonnull;
@@ -194,6 +196,44 @@ public final class TagConfigValidator {
         validatePlaceholderRequirements(def, path, report);
         validateUnlockCommands(def, path, report);
         validateAvailability(def, path, report);
+        validateBanner(def, path, report);
+    }
+
+    private static void validateBanner(@Nonnull TagDefinition def,
+                                       @Nonnull String path,
+                                       @Nonnull Report report) {
+        if (!def.hasBanner()) {
+            return;
+        }
+
+        if (!MysticNameTagsLicense.bannersLicensed()) {
+            report.add(Severity.INFO, path, "Banner is configured, but tag banners are not licensed on this server ("
+                    + MysticNameTagsLicense.service().status().operatorSummary()
+                    + "). The tag renders its text display.");
+            return;
+        }
+
+        Settings settings = Settings.get();
+        if (settings != null && !settings.isBannersEnabled()) {
+            report.add(Severity.INFO, path, "Banner is configured, but bannersEnabled=false; the tag renders its text display.");
+        } else if (settings != null && !settings.isExperimentalGlyphNameplatesEnabled()) {
+            report.add(Severity.WARNING, path,
+                    "Banner is configured, but experimentalGlyphNameplatesEnabled=false. Banners need glyph nameplates; the tag renders its text display.");
+        }
+
+        BannerAssetManager banners = BannerAssetManager.get();
+        if (banners == null) {
+            return;
+        }
+
+        if (!banners.has(def.getBanner())) {
+            report.add(Severity.ERROR, path, "Banner '" + def.getBanner()
+                    + "' was not found. Put the PNG in the plugin's images/ folder and run /tags reload.");
+        }
+
+        if (def.bannerScale != null && def.bannerScale <= 0.0d) {
+            report.add(Severity.ERROR, path, "bannerScale must be greater than 0.");
+        }
     }
 
     private static void validateFormattedText(@Nonnull String text,

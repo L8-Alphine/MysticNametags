@@ -23,9 +23,9 @@ Button {
     OutlineSize: 2;
   }
 
+  // Text is supplied at runtime via .TextSpans - never also set .Text on this label.
   Label #Name {
     Style: $M.@RowNameStyle;
-    Text: "";
     FlexWeight: 1;
     Anchor: (Vertical: 0);
   }
@@ -38,7 +38,6 @@ Button {
     LayoutMode: Middle;
 
     Label #Category {
-      Text: "";
       Style: $M.@PillLabelStyle;
     }
   }
@@ -51,7 +50,6 @@ Button {
     LayoutMode: Middle;
 
     Label #State {
-      Text: "";
       Style: $M.@PillLabelStyle;
     }
   }

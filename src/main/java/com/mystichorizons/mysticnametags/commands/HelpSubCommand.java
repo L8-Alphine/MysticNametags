@@ -14,12 +14,8 @@ public class HelpSubCommand extends CommandBase {
 
     public HelpSubCommand() {
         super("help", "Show available commands");
+        this.requireNoPermission();
         this.setPermissionGroups();
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 
     private void sendColored(CommandContext context, String text) {

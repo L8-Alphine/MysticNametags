@@ -85,6 +85,15 @@ public class PlayerListener {
         UUID uuid = playerRef.getUuid();
 
         try {
+            // Re-read tag data before anything renders. On a network this is
+            // what picks up a tag the player equipped on another server.
+            TagManager.get().onPlayerJoin(uuid);
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to refresh tag data on join for %s", uuid);
+        }
+
+        try {
             PlayerStatManager mgr = PlayerStatManager.get();
             if (mgr != null) {
                 mgr.onPlayerJoin(uuid);
@@ -253,6 +262,7 @@ public class PlayerListener {
         }
 
         TagManager.get().untrackOnlinePlayer(uuid);
+        TagManager.get().onPlayerQuit(uuid);
         PacketGlyphSender.evictReceiverCache(uuid);
     }
 }

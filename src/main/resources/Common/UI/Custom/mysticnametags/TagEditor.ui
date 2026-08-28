@@ -143,8 +143,8 @@ $C.@PageOverlay {
                 OutlineSize: 1;
                 LayoutMode: Middle;
 
+                // Text is supplied at runtime via .TextSpans - never also set .Text here.
                 Label #EditorPreviewLine {
-                  Text: "";
                   Style: (FontSize: 14, RenderBold: true, TextColor: #e6edf3, HorizontalAlignment: Center, VerticalAlignment: Center);
                 }
               }

@@ -315,8 +315,8 @@ public class MysticNameTagsPackManagerUI extends InteractiveCustomUIPage<MysticN
 
             cmd.set(rowSel + " #StatePill.Visible", isSelected);
             if (isSelected) {
-                cmd.set(rowSel + " #State.Text", lang.tr("ui.packs.badge_selected"));
-                cmd.set(rowSel + " #State.Style.TextColor", "#3fb950");
+                cmd.set(rowSel + " #State.TextSpans",
+                        ColorFormatter.toFlatTextSpans(lang.tr("ui.packs.badge_selected"), "#3fb950"));
                 cmd.set(rowSel + " #StatePill.OutlineColor", "#3fb950");
                 cmd.set(rowSel + " #Accent.OutlineColor", "#3fb950");
             } else {

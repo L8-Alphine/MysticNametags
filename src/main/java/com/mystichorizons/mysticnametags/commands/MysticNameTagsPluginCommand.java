@@ -15,6 +15,7 @@ public class MysticNameTagsPluginCommand extends AbstractCommandCollection {
 
     public MysticNameTagsPluginCommand() {
         super("mnametags", "MysticNameTags plugin commands");
+        this.requireNoPermission();
         this.addAliases("mysticnametags", "mntags");
 
         this.addSubCommand(new HelpSubCommand());
@@ -26,10 +27,5 @@ public class MysticNameTagsPluginCommand extends AbstractCommandCollection {
         this.addSubCommand(new FavoriteTagSubCommand());
         this.addSubCommand(new RandomTagSubCommand());
         this.addSubCommand(new TagLoadoutSubCommand());
-    }
-
-    @Override
-    protected boolean canGeneratePermission() {
-        return false;
     }
 }

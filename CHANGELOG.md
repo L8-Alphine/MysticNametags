@@ -6,6 +6,91 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
+## [1.2.8] - 2026-08-28 - Update 6
+
+### Added
+
+- Added **Redis support for networks**, so tag state follows a player between servers.
+    - New `REDIS` value for `storageBackend`, storing tag data and tracked stats in
+      Redis (`<prefix>tags:<uuid>` / `<prefix>stats:<uuid>`) instead of a local file
+      or SQL.
+    - New `redisSyncEnabled` setting: cross-server sync over Redis pub/sub, usable
+      alongside `MYSQL` storage so durability stays in SQL while Redis carries the
+      messages. Changes made on one server reach the others immediately instead of
+      only on next join.
+    - New settings: `redisHost`, `redisPort`, `redisUser`, `redisPassword`,
+      `redisDatabase`, `redisSsl`, `redisKeyPrefix`, `redisTimeoutMs`,
+      `redisPoolSize`, `networkServerId`.
+    - A player joining any server now re-reads their record from storage, so a tag
+      unlocked and equipped on one server is already unlocked and equipped on the
+      next one they join.
+    - `/tagsadmin storage`, `/tagsadmin debugstorage` and `/tagsadmin doctor` report
+      the Redis connection, key prefix, and cross-server sync status.
+
+### Fixed
+
+- Cached player tag data is now dropped on disconnect and re-read on connect.
+  Previously it was kept for the lifetime of the server, so a returning player
+  could be served a stale copy (and the cache grew without bound).
+- A player record that could not be read is now marked unknown instead of being
+  treated as empty, and is never written back over stored data. A database or
+  Redis outage can no longer wipe a player's tags.
+- Migrating `playerdata/*.json` into a shared backend now skips players that are
+  already present, instead of overwriting them. On a network, the second server to
+  boot no longer clobbers what the first one imported.
+
+- Added **tag banners**: a tag can now render a PNG above the player instead of its
+  text display.
+    - New `banner` and `bannerScale` fields on tag definitions in `tags.json`.
+    - Drop art in the plugin's `images/` folder; `banner` accepts `legend`,
+      `legend.png` or `images/legend.png`.
+    - Images are registered as client assets and pushed to already-connected players,
+      so `/tags reload` picks up new or changed art without a restart.
+    - Each banner renders as a single entity at its true aspect ratio, making banner
+      tags much cheaper than the same text rendered as glyphs.
+    - New settings: `bannersEnabled`, `bannerMaxWidthBlocks`, `bannerMaxHeightBlocks`,
+      `bannerMaxFileBytes`, `bannerKeepNameLine`.
+    - Requires `experimentalGlyphNameplatesEnabled`; banner tags fall back to their text
+      display when banners are unavailable or the PNG is missing.
+    - `/tagsadmin doctor` now reports missing banner files and settings that would
+      prevent a configured banner from rendering.
+    - The `/tags` detail panel shows a preview of the selected tag's banner.
+    - Banners are a licensed feature (`mysticnametags` / `tags.banner`), verified offline from
+      `license.mclicense` in the plugin data directory. Without a license, banner tags render
+      their text display; nothing else in the mod is affected and the server never fails to
+      start. A `server-id.txt` is written on first run for binding a license to this server.
+    - With `bannerKeepNameLine`, the banner renders in the `{tag}` slot of `nameplateFormat`
+      and every other line of the format still renders as glyph text.
+- Added MMOSkillTree nameplate format tokens using the same
+  `mmoskilltree.*` keys supported by tag stat requirements.
+- Added event-driven nameplate refreshes for MMOSkillTree XP and achievement
+  changes.
+- Added explicit WiFlow and HelpChat PlaceholderAPI expansion support in
+  `nameplateFormat`.
+
+### Changed
+
+- Updated the Hytale Server compile target from `0.5.6` to `0.6.0` and the
+  manifest compatibility range to `>=0.6.0 <0.7.0` for Hytale Update 6.
+- Migrated public commands from the removed `canGeneratePermission()` override
+  to Update 6's explicit `requireNoPermission()` declaration.
+- Tag displays in the `/tags`, owned-tags, editor, pack manager and dashboard UIs now
+  render as text spans instead of flat single-color labels, so multi-color and gradient
+  displays show every color they declare.
+- Tag **descriptions** now support color codes in the UIs. They previously had their
+  formatting stripped before display, in the detail panel, the owned-tags rows and the
+  "How it works" popup — even though `/tagsadmin doctor` already validated description
+  color syntax.
+- The "How it works" and requirements blocks render as spans, so color codes in their
+  language strings display as colors instead of as literal `&#RRGGBB` text.
+
+### Fixed
+
+- Fixed stale label colors throughout the UIs. Colors were applied via a label's
+  `Style.TextColor`, which only takes effect on a page's first build batch and silently
+  does nothing on later updates — so paging through the tag list or changing selection
+  could leave a row showing a previous tag's color.
+
 ## [1.2.7] - 2026-07-06
 
 ### Added
