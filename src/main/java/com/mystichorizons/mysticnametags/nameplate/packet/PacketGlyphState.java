@@ -48,6 +48,21 @@ public final class PacketGlyphState {
         viewersBySubject.remove(subjectUuid);
     }
 
+    /**
+     * Forgets everything recorded for one viewer, across every subject.
+     *
+     * <p>Used when a client becomes ready. Glyph packets written before the client sent
+     * {@code ClientReady} are discarded on arrival, but they were still recorded here as
+     * spawned, so {@code follow()} would never resend them and those nameplates stayed
+     * invisible for the rest of the session. Dropping the bookkeeping without despawning is
+     * correct precisely because the client never received the entities in the first place.</p>
+     */
+    public void forgetViewer(@Nonnull UUID viewerUuid) {
+        for (Map<Integer, ViewerState> viewers : viewersBySubject.values()) {
+            viewers.values().removeIf(state -> viewerUuid.equals(state.viewerUuid));
+        }
+    }
+
     public static final class ViewerState {
         public final int viewerNetworkId;
         public UUID viewerUuid;

@@ -6,6 +6,63 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- Updated the LuckPerms API compile dependency to 5.5.
+- Removed the obsolete local `HytaleServer.jar` copy task; Update 6's server API is
+  resolved from Hytale's official Maven repository as version 0.6.0.
+- Reworked the glyph nameplate renderer to call the Update 6 server API directly instead
+  of reflecting for it. Update 6 promoted the pieces the renderer had been probing for to
+  stable public API, so the compatibility shims that guessed at signatures are gone:
+    - Glyph, anchor and banner transforms are now built with the public `Position` and
+      `ModelTransform` constructors through a single `billboardTransform` helper, replacing
+      five copies of the same field-poking block.
+    - Glyph entity removal calls `Store#removeEntity(Ref, RemoveReason)` directly instead of
+      probing five candidate method signatures in turn.
+    - Native nameplate writes call `Store#putComponent` directly instead of searching the
+      store class for `putComponent`/`setComponent`/`updateComponent` by parameter count.
+- Removed the unused `MountCompat` helper. It reflected for the Update 5
+  `MountedComponent(Ref, Rotation3f, MountController)` constructor, which Update 6 changed
+  to take a `Vector3f` attachment offset, so the lookup could no longer have succeeded.
+  Glyph mounting is handled by the packet path, which already sends the correct offset.
+- Recreated the glyph carrier and slot assets for Update 6's attachment-based packet model:
+    - The carrier is now a valid but invisible quad, preventing the fallback question-mark
+      texture from being painted behind every glyph run.
+    - Glyph attachments reference their PNGs directly, so the packaged mod no longer loads
+      768 legacy per-character/base server `ModelAsset` descriptors.
+    - Slot models are generated on the renderer's real four-unit grid, reducing the bundled
+      set from 257 models to 65 without changing layout precision.
+    - The build now verifies all eight 96-character font families, image dimensions,
+      transparency, tint-safe pixels, matching filenames, and the Update 6 quad/carrier schema.
+
+### Fixed
+
+- **Glyph nameplate text renders again on Update 6.** Every character was being dropped
+  before it could be drawn: `populateTextLine` resolved a per-character `ModelAsset`
+  (`mysticnametags:Glyph_lo_a` and friends) and skipped the glyph when the lookup missed.
+  Those descriptors are not shipped -- only the carrier `GlyphLineBase` is -- so the lookup
+  missed for every character, every line came out empty, and no glyph entity was ever
+  spawned. Banner tags were unaffected because they bypass this path, which is why a banner
+  could render above a player whose name line stayed invisible. The lookup is gone; glyph
+  attachments now reference their PNG directly, which is all the packet ever needed.
+- Long glyph lines no longer collapse at the edges. Slot offsets are clamped to the
+  generated grid, and the old +/-128 range only spanned 33 characters per line, so anything
+  longer piled its outermost glyphs onto the clamp. The grid now spans +/-256 (65 characters
+  per line) at the same four-unit step, which is still far fewer models than the original
+  257-model set.
+- Native nameplates now flatten configured line breaks into spaces. Formats such as
+  `{rank} {name}/n{tag}` keep every resolved placeholder visible on Update 6, while
+  experimental glyph nameplates continue to preserve multiline layouts.
+- Glyph nameplates no longer fail silently when the server API changes shape. The removed
+  shims each ended in a fallback that swallowed the failure: an unresolved transform left
+  glyphs at the world origin, an unmatched removal signature leaked anchor entities, and an
+  unmatched nameplate setter mutated the component in place without replicating it, so
+  nameplates froze at their last value. These paths now use the real API and log failures.
+
+---
+
 ## [1.2.8] - 2026-08-28 - Update 6
 
 ### Added

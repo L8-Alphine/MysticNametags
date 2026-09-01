@@ -24,6 +24,7 @@ import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
 import com.mystichorizons.mysticnametags.listeners.PlayerListener;
 import com.mystichorizons.mysticnametags.nameplate.*;
 import com.mystichorizons.mysticnametags.nameplate.banner.BannerAssetManager;
+import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphAssetManager;
 import com.mystichorizons.mysticnametags.placeholders.HelpchPlaceholderHook;
 import com.mystichorizons.mysticnametags.placeholders.WiFlowPlaceholderHook;
 import com.mystichorizons.mysticnametags.playtime.PlaytimeService;
@@ -156,6 +157,15 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING).withCause(t)
                     .log("[MysticNameTags] Failed to initialize tag banners.");
+        }
+
+        // Bundled glyph textures need the same client-side push as banner art, or glyph quads
+        // arrive untextured.
+        try {
+            GlyphAssetManager.registerFont(getDataDirectory(), Settings.get().getExperimentalGlyphFont());
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to register glyph textures.");
         }
 
         // ------------------------------------------------------
@@ -522,6 +532,14 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         } catch (Throwable t) {
             LOGGER.at(Level.WARNING).withCause(t)
                     .log("[MysticNameTags] Failed to re-scan tag banners during reload.");
+        }
+
+        // 3c) Push glyph textures for the configured font if it changed since the last load
+        try {
+            GlyphAssetManager.registerFontIfChanged(getDataDirectory(), Settings.get().getExperimentalGlyphFont());
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to re-register glyph textures during reload.");
         }
 
         // 4) Reload tags.json and refresh all online nameplates

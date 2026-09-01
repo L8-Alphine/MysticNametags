@@ -531,7 +531,7 @@ public final class Settings {
                         "When nameplatePreset is CUSTOM, nameplateFormat is used directly.",
                         "nameplateFormat = tokens: {rank}, {name}, {tag}, {endless_level}, {endless_prestige}, {endless_race}, {endless_primary_class}, {endless_secondary_class}, {rpg_level}, {ecoquests_rank}",
                         "nameplateFormat supports /n, \\n, {nl}, {newline}, and <br> for a new line.",
-                        "Native Hytale nameplates may render as one line; glyph nameplates are the reliable multiline path.",
+                        "Native Hytale nameplates flatten configured lines into one line; glyph nameplates preserve multiline layout.",
                         "stripExtraSpaces = condense multiple spaces",
                         "language = locale bundle (e.g. en_US)",
                         "tagDelaysecs = cooldown (seconds) before equipping a DIFFERENT tag again (0 = off)"

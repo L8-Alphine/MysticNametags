@@ -64,8 +64,8 @@ dependencies {
     // CoinsAndMarkets Support
     compileOnly files('libs/CoinsAndMarkets-0.2.6.jar')
 
-    // Luckperms Support
-    compileOnly 'net.luckperms:api:5.4'
+    // LuckPerms Support
+    compileOnly 'net.luckperms:api:5.5'
 
     // HyperPerms Support
     compileOnly files('libs/HyperPerms-2.9.0.jar')
@@ -198,6 +198,12 @@ tasks.named('build') {
 }
 
 def generatedGlyphSlotDir = layout.buildDirectory.dir('generated/glyph-slot-models')
+// Keep in sync with GlyphAssets.MIN_SLOT_OFFSET / MAX_SLOT_OFFSET / SLOT_OFFSET_STEP.
+// A line of n glyphs needs offsets up to 4*(n-1), so +/-256 covers 65 chars per line;
+// the renderer clamps beyond that and the outermost glyphs would pile up.
+def glyphSlotMin = -256
+def glyphSlotMax = 256
+def glyphSlotStep = 4
 
 tasks.register('generateGlyphSlotModels') {
     outputs.dir(generatedGlyphSlotDir)
@@ -208,11 +214,11 @@ tasks.register('generateGlyphSlotModels') {
         delete outDir
         outDir.mkdirs()
 
-        (-128..128).each { int x ->
+        for (int x = glyphSlotMin; x <= glyphSlotMax; x += glyphSlotStep) {
             def sign = x < 0 ? 'm' : 'p'
             def name = String.format('GlyphSlot_%s%03d.blockymodel', sign, Math.abs(x))
             def file = new File(outDir, name)
-            file.text = """{
+            file.setText("""{
   "nodes": [
     {
       "id": "1",
@@ -245,37 +251,107 @@ tasks.register('generateGlyphSlotModels') {
   "format": "character",
   "lod": "auto"
 }
-"""
+""", 'UTF-8')
+        }
+    }
+}
+
+tasks.register('verifyGlyphAssets') {
+    def glyphRoot = file('src/main/resources/Common/NPC/MysticNameTags')
+    inputs.files(fileTree(glyphRoot) {
+        include '**/glyph_*.png'
+        include 'Glyph*.blockymodel'
+    })
+    inputs.file('src/main/resources/Server/Models/MysticNameTags/GlyphLineBase.json')
+
+    doLast {
+        def families = [
+                default: [dir: glyphRoot, size: 16],
+                comic: [dir: file("${glyphRoot}/comic"), size: 32],
+                cursive: [dir: file("${glyphRoot}/cursive"), size: 32],
+                impact: [dir: file("${glyphRoot}/impact"), size: 32],
+                mono: [dir: file("${glyphRoot}/mono"), size: 32],
+                sans: [dir: file("${glyphRoot}/sans"), size: 32],
+                serif: [dir: file("${glyphRoot}/serif"), size: 32],
+                thin: [dir: file("${glyphRoot}/thin"), size: 32]
+        ]
+
+        Set<String> expectedNames = null
+        families.each { String family, Map spec ->
+            def pngs = spec.dir.listFiles({ File dir, String name ->
+                name.startsWith('glyph_') && name.endsWith('.png')
+            } as FilenameFilter)?.toList()?.sort { it.name } ?: []
+
+            if (pngs.size() != 96) {
+                throw new GradleException("Glyph family '${family}' must contain 96 PNGs; found ${pngs.size()}")
+            }
+
+            Set<String> names = pngs.collect { it.name } as Set
+            if (expectedNames == null) {
+                expectedNames = names
+            } else if (names != expectedNames) {
+                throw new GradleException("Glyph family '${family}' does not match the default glyph filename set")
+            }
+
+            pngs.each { File png ->
+                def image = javax.imageio.ImageIO.read(png)
+                if (image == null) {
+                    throw new GradleException("Unreadable glyph PNG: ${png}")
+                }
+                if (image.width != spec.size || image.height != spec.size) {
+                    throw new GradleException("${png} must be ${spec.size}x${spec.size}; found ${image.width}x${image.height}")
+                }
+                if (!image.colorModel.hasAlpha()) {
+                    throw new GradleException("Glyph PNG requires transparency: ${png}")
+                }
+
+                for (int y = 0; y < image.height; y++) {
+                    for (int x = 0; x < image.width; x++) {
+                        int argb = image.getRGB(x, y)
+                        if (((argb >>> 24) & 0xFF) != 0 && (argb & 0xFFFFFF) != 0xFFFFFF) {
+                            throw new GradleException("Glyph pixels must be white for runtime tinting: ${png} at ${x},${y}")
+                        }
+                    }
+                }
+            }
+        }
+
+        def parser = new groovy.json.JsonSlurper()
+        def carrier = parser.parse(file("${glyphRoot}/GlyphLineBase.blockymodel"))
+        // Structure only. Node visibility is a rendering choice, not a validity property, and
+        // pinning it to false here previously made the carrier-visibility question untestable.
+        if (carrier.format != 'character' || carrier.nodes?.size() != 1
+                || carrier.nodes[0].shape?.type != 'quad') {
+            throw new GradleException('GlyphLineBase must be a single-quad Update 6 carrier model')
+        }
+
+        [[name: 'GlyphQuad.blockymodel', size: 16], [name: 'GlyphQuad32.blockymodel', size: 32]].each { spec ->
+            def quad = parser.parse(file("${glyphRoot}/${spec.name}"))
+            def shape = quad.nodes?.getAt(0)?.shape
+            if (quad.format != 'character' || shape?.type != 'quad' || shape?.visible != true
+                    || shape?.settings?.size?.x != spec.size || shape?.settings?.size?.y != spec.size) {
+                throw new GradleException("Invalid Update 6 glyph quad: ${spec.name}")
+            }
+        }
+
+        def carrierAsset = parser.parse(file('src/main/resources/Server/Models/MysticNameTags/GlyphLineBase.json'))
+        if (carrierAsset.Model != 'NPC/MysticNameTags/GlyphLineBase.blockymodel') {
+            throw new GradleException('GlyphLineBase model asset does not reference the carrier blockymodel')
         }
     }
 }
 
 tasks.named('processResources') {
-    dependsOn 'generateGlyphSlotModels'
+    dependsOn 'generateGlyphSlotModels', 'verifyGlyphAssets'
+    // Update 6 run models reference glyph textures directly. The old per-character
+    // ModelAssets are intentionally omitted to avoid decoding 768 unused JSON assets.
+    exclude 'Server/Models/MysticNameTags/Glyph_*.json'
+    exclude 'Server/Models/MysticNameTags/GlyphBase*.json'
     from(generatedGlyphSlotDir)
 }
 
-// Task to copy server JAR to libs folder if not present
-tasks.register('copyServerJar') {
-    doLast {
-        def destJar = file('libs/HytaleServer.jar')
-        if (!destJar.exists()) {
-            def sources = [file('server/HytaleServer.jar'), file('../server/HytaleServer.jar')]
-            for (src in sources) {
-                if (src.exists()) {
-                    copy {
-                        from src
-                        into 'libs'
-                    }
-                    break
-                }
-            }
-        }
-    }
-}
-
 tasks.named('compileJava') {
-    dependsOn 'copyServerJar', 'generateHStatsIdentity'
+    dependsOn 'generateHStatsIdentity'
 }
 
 // Deploy plugin JAR to server mods folder

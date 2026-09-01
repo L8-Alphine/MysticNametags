@@ -1,15 +1,13 @@
 package com.mystichorizons.mysticnametags.nameplate;
 
 import com.hypixel.hytale.component.AddReason;
-import com.hypixel.hytale.component.Holder;
 import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.component.RemoveReason;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.math.vector.Rotation3f;
 import com.hypixel.hytale.protocol.EntityUpdate;
-import com.hypixel.hytale.protocol.ModelAttachment;
 import com.hypixel.hytale.server.core.asset.type.entityeffect.config.EntityEffect;
-import com.hypixel.hytale.server.core.asset.type.model.config.ModelAsset;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.modules.entity.EntityModule;
 import com.hypixel.hytale.server.core.modules.entity.component.Intangible;
@@ -37,10 +35,7 @@ import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import org.joml.Vector3d;
-import org.joml.Vector3f;
 import java.awt.*;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,7 +69,6 @@ public final class GlyphNameplateManager {
     private final Map<UUID, RenderState> states = new ConcurrentHashMap<>();
     private final PacketGlyphState packetGlyphState = new PacketGlyphState();
     private final Set<String> loggedPacketSpawns = ConcurrentHashMap.newKeySet();
-    private final Set<Character> loggedMissingGlyphModels = ConcurrentHashMap.newKeySet();
     private final Map<Integer, Integer> tintEffectIndexCache = new ConcurrentHashMap<>();
     private final Set<Integer> loggedMissingTintEffects = ConcurrentHashMap.newKeySet();
 
@@ -280,7 +274,7 @@ public final class GlyphNameplateManager {
         RenderState state = states.remove(uuid);
         if (state == null) return;
 
-        despawnAll(store, world.getEntityStore(), state);
+        despawnAll(store, state);
     }
 
     public void remove(@Nonnull UUID uuid, @Nonnull World world) {
@@ -290,7 +284,7 @@ public final class GlyphNameplateManager {
         world.execute(() -> {
             Store<EntityStore> store = world.getEntityStore().getStore();
             store.assertThread();
-            despawnAll(store, world.getEntityStore(), state);
+            despawnAll(store, state);
         });
     }
 
@@ -343,10 +337,7 @@ public final class GlyphNameplateManager {
                     for (LineRenderState line : state.lines) {
                         if (line == null) continue;
                         if (line.anchorRef != null && line.anchorRef.isValid()) {
-                            try {
-                                EntityRemoveCompat.remove(store, world.getEntityStore(), line.anchorRef);
-                            } catch (Throwable ignored) {
-                            }
+                            removeEntity(store, line.anchorRef);
                             line.anchorRef = null;
                         }
                     }
@@ -409,6 +400,19 @@ public final class GlyphNameplateManager {
         follow(uuid, world, store, playerRef, state);
     }
 
+    /**
+     * Re-arms glyph delivery for a client that has just become ready.
+     *
+     * <p>Nothing is despawned: the packets this discards were written to a client that was
+     * not yet accepting entity spawns, so the entities do not exist on it. The next follow
+     * tick resends them.</p>
+     */
+    public void onViewerReady(@Nonnull UUID viewerUuid) {
+        packetGlyphState.forgetViewer(viewerUuid);
+        String viewerKey = ":" + viewerUuid + ":";
+        loggedPacketSpawns.removeIf(key -> key.contains(viewerKey));
+    }
+
     public boolean hasState(@Nonnull UUID uuid) {
         RenderState state = states.get(uuid);
         return hasLiveRender(state);
@@ -446,7 +450,7 @@ public final class GlyphNameplateManager {
                             @Nonnull String text,
                             @Nonnull Settings settings) {
 
-        despawnAll(store, world.getEntityStore(), state);
+        despawnAll(store, state);
         state.lines.clear();
         state.packetGeneration++;
 
@@ -573,28 +577,8 @@ public final class GlyphNameplateManager {
 
             result.attemptedVisibleGlyph = true;
 
-            String assetId = resolveGlyphModelId(ch, glyphFont);
-            if (assetId == null) {
-                if (loggedMissingGlyphModels.add(ch)) {
-                    LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph model not found for char='"
-                            + ch + "' font=" + glyphFont
-                            + " candidates=" + Arrays.toString(GlyphInfoCompat.getModelAssetIdCandidates(ch, glyphFont)));
-                }
-                continue;
-            }
-
-            com.hypixel.hytale.protocol.Model packetModel = resolveGlyphModelPacket(assetId);
-            if (packetModel == null) {
-                if (loggedMissingGlyphModels.add(ch)) {
-                    LOGGER.at(Level.INFO).log("[MysticNameTags] Packet glyph model could not convert to packet for char='"
-                            + ch + "', asset=" + assetId);
-                }
-                continue;
-            }
-
             lineState.glyphChars.add(ch);
-            lineState.glyphAssetIds.add(assetId);
-            lineState.glyphModels.add(packetModel);
+            lineState.glyphTexturePaths.add(GlyphAssets.texturePath(ch, GlyphInfoCompat.getSafeIdLower(ch), glyphFont));
             lineState.glyphOffsets.add(offset);
             lineState.glyphTintEffectIndexes.add(resolveTintEffectIndex(scaleColor(cc.color, settings.getExperimentalGlyphTintStrength())));
 
@@ -680,7 +664,7 @@ public final class GlyphNameplateManager {
                                   @Nonnull String formatText,
                                   @Nonnull Settings settings) {
 
-        despawnAll(store, world.getEntityStore(), state);
+        despawnAll(store, state);
         state.lines.clear();
         state.packetGeneration++;
 
@@ -983,7 +967,7 @@ public final class GlyphNameplateManager {
 
                         if (sent) {
                             logPacketSpawnOnce(uuid, viewerUuid, selfView, line.glyphChars.size(), mountedToNetworkId,
-                                    line.glyphAssetIds.isEmpty() ? "none" : line.glyphAssetIds.get(0));
+                                    line.glyphTexturePaths.isEmpty() ? "none" : line.glyphTexturePaths.get(0));
 
                             Map<Integer, Integer> tintUpdates = new LinkedHashMap<>();
                             for (int runIndex = 0; runIndex < count; runIndex++) {
@@ -1070,176 +1054,66 @@ public final class GlyphNameplateManager {
 
         int count = Math.min(
                 Math.min(Math.min(line.glyphChars.size(), line.glyphOffsets.size()), line.glyphTintEffectIndexes.size()),
-                line.glyphAssetIds.size()
+                line.glyphTexturePaths.size()
         );
 
-        int start = -1;
-        Integer currentTint = null;
-
+        // One entity per glyph. Batching a run into a single carrier entity with N
+        // ModelAttachment entries does not render on Update 6: the carrier spawns, mounts,
+        // positions and even accepts its tint effect, but the attachments are never drawn.
+        // A banner is the one model shape proven to render, and it is just a model plus a
+        // texture - so each glyph is now sent that same way. The per-glyph x offset still
+        // rides in the GlyphSlot_* model geometry, so layout is unchanged.
         for (int i = 0; i < count; i++) {
-            Integer tint = line.glyphTintEffectIndexes.get(i);
-            if (start < 0) {
-                start = i;
-                currentTint = tint;
-                continue;
-            }
-
-            if (!Objects.equals(currentTint, tint)) {
-                addLineRun(line, start, i, currentTint, scale);
-                start = i;
-                currentTint = tint;
-            }
-        }
-
-        if (start >= 0) {
-            addLineRun(line, start, count, currentTint, scale);
+            addGlyphEntity(line, i, line.glyphTintEffectIndexes.get(i), scale);
         }
     }
 
-    private static void addLineRun(@Nonnull LineRenderState line,
-                                   int startInclusive,
-                                   int endExclusive,
-                                   @Nullable Integer tintEffectIndex,
-                                   double scale) {
-        if (startInclusive >= endExclusive) {
-            return;
-        }
-
-        com.hypixel.hytale.protocol.Model model = buildLineRunPacketModel(line, startInclusive, endExclusive, scale);
+    private static void addGlyphEntity(@Nonnull LineRenderState line,
+                                       int index,
+                                       @Nullable Integer tintEffectIndex,
+                                       double scale) {
+        com.hypixel.hytale.protocol.Model model = buildGlyphPacketModel(line, index, scale);
         if (model == null) {
             return;
         }
 
-        line.glyphRuns.add(new GlyphRunState(startInclusive, endExclusive, tintEffectIndex, model));
+        line.glyphRuns.add(new GlyphRunState(index, index + 1, tintEffectIndex, model));
     }
 
     @Nullable
-    private static com.hypixel.hytale.protocol.Model buildLineRunPacketModel(@Nonnull LineRenderState line,
-                                                                             int startInclusive,
-                                                                             int endExclusive,
-                                                                             double scale) {
-        com.hypixel.hytale.protocol.Model model = resolveGlyphLineBasePacket();
-        if (model == null) {
-            model = new com.hypixel.hytale.protocol.Model();
-            model.assetId = GlyphAssets.NAMESPACE + ":GlyphLineBase";
-            model.path = "NPC/MysticNameTags/GlyphLineBase.blockymodel";
-            model.texture = "NPC/MysticNameTags/glyph_fallback.png";
-        } else {
-            model = new com.hypixel.hytale.protocol.Model(model);
+    private static com.hypixel.hytale.protocol.Model buildGlyphPacketModel(@Nonnull LineRenderState line,
+                                                                           int index,
+                                                                           double scale) {
+        if (index < 0 || index >= line.glyphOffsets.size() || index >= line.glyphTexturePaths.size()) {
+            return null;
         }
 
-        List<ModelAttachment> attachments = new ArrayList<>(Math.max(0, endExclusive - startInclusive));
         double safeScale = Math.max(0.0001d, scale);
+        double offset = line.glyphOffsets.get(index);
+        int offsetPx = (int) Math.round((-offset / safeScale) * GLYPH_RUN_SLOT_UNITS_PER_BLOCK);
 
-        for (int i = startInclusive; i < endExclusive; i++) {
-            char ch = line.glyphChars.get(i);
-            String safeId = GlyphInfoCompat.getSafeIdLower(ch);
-            if (safeId == null) {
-                continue;
-            }
+        // The slot model carries this glyph's horizontal offset in its own geometry, so the
+        // entity can sit on the line anchor and still land in the right column.
+        String slotModel = GlyphAssets.slotModelPath(offsetPx);
 
-            double offset = line.glyphOffsets.get(i);
-            int offsetPx = (int) Math.round((-offset / safeScale) * GLYPH_RUN_SLOT_UNITS_PER_BLOCK);
-            String slotModel = GlyphAssets.slotModelPath(offsetPx);
-            String texture = GlyphAssets.texturePath(ch, safeId, line.glyphFont);
-            attachments.add(new ModelAttachment(slotModel, texture, null, null));
-        }
+        String texture = line.glyphTexturePaths.get(index);
 
-        if (attachments.isEmpty()) {
-            return null;
-        }
 
-        model.attachments = attachments.toArray(new ModelAttachment[0]);
+        // Shaped exactly like a banner: path + texture + scale, no attachments and no
+        // ModelAsset lookup. protocol.Model's no-arg constructor initialises only `phobia`,
+        // so `scale` must be set explicitly or the model draws at zero size.
+        //
+        // assetId must be unique per model+texture pair. Banners get one per quad size
+        // (BannerQuad_256x64) and render correctly; a shared constant here made every glyph
+        // in a line share one cache entry, so they all drew blank - correctly positioned and
+        // correctly tinted, but with the first entry's texture rather than their own.
+        com.hypixel.hytale.protocol.Model model = new com.hypixel.hytale.protocol.Model();
+        model.assetId = GlyphAssets.slotAssetId(slotModel, texture);
+        model.path = slotModel;
+        model.texture = texture;
+        model.scale = 1.0f;
+
         return model;
-    }
-
-    @Nullable
-    private static com.hypixel.hytale.protocol.Model resolveGlyphLineBasePacket() {
-        try {
-            ModelAsset asset = (ModelAsset) ModelAsset.getAssetMap().getAsset(GlyphAssets.NAMESPACE + ":GlyphLineBase");
-            if (asset == null) {
-                asset = (ModelAsset) ModelAsset.getAssetMap().getAsset("GlyphLineBase");
-            }
-            if (asset == null) {
-                return null;
-            }
-
-            com.hypixel.hytale.server.core.asset.type.model.config.Model model =
-                    com.hypixel.hytale.server.core.asset.type.model.config.Model.createUnitScaleModel(asset);
-            return model == null ? null : model.toPacket();
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    @Nullable
-    private static String resolveGlyphModelId(char ch, @Nonnull String glyphFont) {
-        try {
-            String[] candidates = GlyphInfoCompat.getModelAssetIdCandidates(ch, glyphFont);
-            if (candidates == null || candidates.length == 0) {
-                return null;
-            }
-
-            for (String id : candidates) {
-                if (id == null || id.isEmpty()) {
-                    continue;
-                }
-
-                ModelAsset asset = (ModelAsset) ModelAsset.getAssetMap().getAsset(id);
-                if (asset != null) {
-                    return id;
-                }
-            }
-
-            Set<String> lowerShortNames = new LinkedHashSet<>();
-            for (String candidate : candidates) {
-                if (candidate == null || candidate.isEmpty()) {
-                    continue;
-                }
-                String shortName = candidate;
-                int colon = shortName.lastIndexOf(':');
-                if (colon >= 0) {
-                    shortName = shortName.substring(colon + 1);
-                }
-                lowerShortNames.add(shortName.toLowerCase(Locale.ROOT));
-            }
-
-            for (Map.Entry<String, ?> entry : ModelAsset.getAssetMap().getAssetMap().entrySet()) {
-                String key = entry.getKey();
-                if (key == null) {
-                    continue;
-                }
-                String lowerKey = key.toLowerCase(Locale.ROOT);
-                for (String lowerShortName : lowerShortNames) {
-                    if (lowerKey.endsWith(lowerShortName)) {
-                        return key;
-                    }
-                }
-            }
-
-            if (!GlyphAssets.DEFAULT_FONT.equals(GlyphAssets.normalizeFont(glyphFont))) {
-                return resolveGlyphModelId(ch, GlyphAssets.DEFAULT_FONT);
-            }
-        } catch (Throwable ignored) {
-        }
-
-        return null;
-    }
-
-    @Nullable
-    private static com.hypixel.hytale.protocol.Model resolveGlyphModelPacket(@Nonnull String assetId) {
-        try {
-            ModelAsset asset = (ModelAsset) ModelAsset.getAssetMap().getAsset(assetId);
-            if (asset == null) {
-                return null;
-            }
-
-            com.hypixel.hytale.server.core.asset.type.model.config.Model model =
-                    com.hypixel.hytale.server.core.asset.type.model.config.Model.createUnitScaleModel(asset);
-            return model == null ? null : model.toPacket();
-        } catch (Throwable ignored) {
-            return null;
-        }
     }
 
     @Nullable
@@ -1424,7 +1298,6 @@ public final class GlyphNameplateManager {
     }
 
     private void despawnAll(@Nonnull Store<EntityStore> store,
-                            @Nonnull EntityStore entityStore,
                             @Nonnull RenderState state) {
 
         try {
@@ -1456,16 +1329,12 @@ public final class GlyphNameplateManager {
             if (line == null) continue;
 
             if (line.anchorRef != null && line.anchorRef.isValid()) {
-                try {
-                    EntityRemoveCompat.remove(store, entityStore, line.anchorRef);
-                } catch (Throwable ignored) {
-                }
+                removeEntity(store, line.anchorRef);
                 line.anchorRef = null;
             }
 
             line.glyphChars.clear();
-            line.glyphAssetIds.clear();
-            line.glyphModels.clear();
+            line.glyphTexturePaths.clear();
             line.glyphOffsets.clear();
             line.glyphTintEffectIndexes.clear();
         }
@@ -1529,8 +1398,7 @@ public final class GlyphNameplateManager {
 
     private static final class LineRenderState {
         final List<Character> glyphChars = new ArrayList<>();
-        final List<String> glyphAssetIds = new ArrayList<>();
-        final List<com.hypixel.hytale.protocol.Model> glyphModels = new ArrayList<>();
+        final List<String> glyphTexturePaths = new ArrayList<>();
         final List<Double> glyphOffsets = new ArrayList<>();
         final List<Integer> glyphTintEffectIndexes = new ArrayList<>();
         final List<GlyphRunState> glyphRuns = new ArrayList<>();
@@ -1769,93 +1637,21 @@ public final class GlyphNameplateManager {
         }
     }
 
-    private static final class MountCompat {
-        private static Class<?> mountedClass;
-        private static Constructor<?> mountedConstructor;
-        private static Object defaultController;
-        private static Method getComponentTypeMethod;
-        private static Method putComponentMethod;
-
-        static {
-            try {
-                mountedClass = Class.forName("com.hypixel.hytale.builtin.mounts.MountedComponent");
-                Class<?> controllerClass = Class.forName("com.hypixel.hytale.protocol.MountController");
-
-                for (Object c : controllerClass.getEnumConstants()) {
-                    String name = c.toString().toUpperCase(Locale.ROOT);
-                    if ("NONE".equals(name)) {
-                        defaultController = c;
-                        break;
-                    }
-                }
-                if (defaultController == null) defaultController = controllerClass.getEnumConstants()[0];
-
-                mountedConstructor = mountedClass.getConstructor(Ref.class, Rotation3f.class, controllerClass);
-                getComponentTypeMethod = mountedClass.getMethod("getComponentType");
-
-                for (Method m : Holder.class.getMethods()) {
-                    if (m.getName().equals("putComponent") && m.getParameterCount() == 2) {
-                        putComponentMethod = m;
-                        break;
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        static boolean isSupported() {
-            return mountedClass != null
-                    && mountedConstructor != null
-                    && getComponentTypeMethod != null
-                    && putComponentMethod != null;
-        }
-
-        static boolean mount(Holder holder, Ref<EntityStore> target, Vector3f offset) {
-            if (!isSupported()) return false;
-            try {
-                Object comp = mountedConstructor.newInstance(
-                        target,
-                        new Rotation3f(offset.x(), offset.y(), offset.z()),
-                        defaultController
-                );
-                Object compType = getComponentTypeMethod.invoke(null);
-                putComponentMethod.invoke(holder, compType, comp);
-                return true;
-            } catch (Throwable ignored) {
-                return false;
-            }
-        }
-    }
-
-    private static final class EntityRemoveCompat {
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        static void remove(@Nonnull Store<EntityStore> store,
-                           @Nonnull EntityStore entityStore,
-                           @Nonnull Ref<EntityStore> ref) {
-            try {
-                Class<?> rr = Class.forName("com.hypixel.hytale.component.RemoveReason");
-                Object remove = Enum.valueOf((Class<? extends Enum>) rr.asSubclass(Enum.class), "REMOVE");
-
-                if (tryInvoke(store, "removeEntity", new Class[]{Ref.class, rr}, ref, remove)) return;
-                if (tryInvoke(entityStore, "removeEntity", new Class[]{Ref.class, rr}, ref, remove)) return;
-            } catch (Throwable ignored) {
-            }
-
-            if (tryInvoke(store, "removeEntity", new Class[]{Ref.class, Object.class}, ref, null)) return;
-            if (tryInvoke(store, "removeEntity", new Class[]{Ref.class}, ref)) return;
-            if (tryInvoke(store, "deleteEntity", new Class[]{Ref.class}, ref)) return;
-            if (tryInvoke(entityStore, "removeEntity", new Class[]{Ref.class, Object.class}, ref, null)) return;
-            if (tryInvoke(entityStore, "removeEntity", new Class[]{Ref.class}, ref)) return;
-        }
-
-        private static boolean tryInvoke(Object target, String name, Class<?>[] sig, Object... args) {
-            try {
-                Method m = target.getClass().getMethod(name, sig);
-                m.invoke(target, args);
-                return true;
-            } catch (Throwable ignored) {
-                return false;
-            }
+    /**
+     * Removes a glyph/anchor entity from the ECS.
+     *
+     * <p>Update 6 settled {@code Store#removeEntity(Ref, RemoveReason)} as public API, so the
+     * old reflective probe over five candidate signatures is gone. A failure here is logged
+     * rather than swallowed: silently leaking anchor entities is what the probe used to do
+     * once every candidate missed.
+     */
+    private static void removeEntity(@Nonnull Store<EntityStore> store,
+                                     @Nonnull Ref<EntityStore> ref) {
+        try {
+            store.removeEntity(ref, RemoveReason.REMOVE);
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed to remove glyph entity");
         }
     }
 

@@ -89,9 +89,9 @@ This system is still under active development and should be treated as **experim
 
 Important notes:
 
-* glyph nameplates are far more expensive than normal text-based nameplates
-* each visible character is effectively rendered through spawned glyph entities
-* lower entity limits can cause wording to be cut off
+* glyph nameplates are more expensive than normal text-based nameplates
+* contiguous characters of the same color share one spawned run entity; each character is a model attachment
+* lower glyph limits can cause wording to be cut off
 * Hytale may not support every decorative Unicode symbol
 * this system is best suited for testing, roleplay events, or smaller servers while it continues to mature
 
@@ -103,6 +103,7 @@ Recent versions introduced major progress toward a more stable glyph nameplate f
 * crash fail-safes for nameplate load failures
 * selectable glyph font folders
 * safer behavior in multi-world environments
+* Update 6 attachment-run rendering and a reduced 65-model positioning grid
 
 ***
 
@@ -580,7 +581,7 @@ Examples:
 Due to current Hytale API limitations:
 
 * full colored native nameplate rendering is still limited
-* multi-line native nameplates are still constrained by the game/client
+* native nameplates flatten configured lines into one line so every placeholder remains visible
 * decorative symbols may not render in all Hytale text paths
 * final visual rendering is still partially controlled by the client
 
@@ -913,7 +914,8 @@ Supported newline formats:
 * `{newline}`
 * `<br>`
 
-> Native Hytale nameplates may still render as one line. Experimental glyph nameplates are the reliable multiline path.
+> Native Hytale nameplates flatten configured lines into one line so no resolved
+> placeholders are lost. Experimental glyph nameplates preserve the multiline layout.
 
 ### Nameplate Presets
 
@@ -1167,8 +1169,8 @@ Common/NPC/MysticNameTags/serif
 Important notes:
 
 * glyph nameplates are experimental
-* each character consumes entity budget
-* lower `experimentalGlyphMaxEntitiesPerPlayer` improves performance but increases the chance of **cut-off wording**
+* each character consumes the legacy glyph budget, while contiguous same-color text shares a run entity
+* lower `experimentalGlyphMaxEntitiesPerPlayer` reduces attachment work but increases the chance of **cut-off wording**
 * longer formats and multiple lines need higher values
 * use plain ASCII in test configs if Hytale does not render decorative symbols reliably
 * use with care on larger servers

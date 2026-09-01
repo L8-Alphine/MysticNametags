@@ -1,9 +1,7 @@
 package com.mystichorizons.mysticnametags.nameplate.glyph;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -69,6 +67,11 @@ public final class GlyphInfoCompat {
         return CHAR_TO_SAFE_ID_RAW.containsKey(ch);
     }
 
+    /** Every character with a glyph texture, for asset registration. */
+    public static java.util.Set<Character> supportedChars() {
+        return java.util.Collections.unmodifiableSet(CHAR_TO_SAFE_ID_RAW.keySet());
+    }
+
     @Nullable
     public static String getSafeIdLower(char ch) {
         String raw = CHAR_TO_SAFE_ID_RAW.get(ch);
@@ -81,72 +84,4 @@ public final class GlyphInfoCompat {
         return getSafeIdLower(ch);
     }
 
-    @Nullable
-    public static String getModelAssetId(char ch) {
-        return getModelAssetId(ch, GlyphAssets.DEFAULT_FONT);
-    }
-
-    @Nullable
-    public static String getModelAssetId(char ch, String font) {
-        String safe = getSafeIdLower(ch);
-        if (safe == null) return null;
-        return GlyphAssets.modelId(font, safe);
-    }
-
-    /**
-     * Candidate asset IDs:
-     *  1) lowercase safe id (your pack)
-     *  2) engine-style cased safe id (some builds/packers do this)
-     */
-    @Nullable
-    public static String[] getModelAssetIdCandidates(char ch) {
-        return getModelAssetIdCandidates(ch, GlyphAssets.DEFAULT_FONT);
-    }
-
-    @Nullable
-    public static String[] getModelAssetIdCandidates(char ch, String font) {
-        String lower = getSafeIdLower(ch);
-        if (lower == null) return null;
-
-        String engine = normalizeEngineCase(lower);
-
-        List<String> candidates = new ArrayList<>(4);
-        addCandidate(candidates, GlyphAssets.modelId(font, lower));
-        addCandidate(candidates, GlyphAssets.modelId(font, engine));
-        addCandidate(candidates, GlyphAssets.modelId(GlyphAssets.DEFAULT_FONT, lower));
-        addCandidate(candidates, GlyphAssets.modelId(GlyphAssets.DEFAULT_FONT, engine));
-
-        return candidates.toArray(new String[0]);
-    }
-
-    private static void addCandidate(List<String> candidates, String id) {
-        if (id == null || id.isEmpty() || candidates.contains(id)) {
-            return;
-        }
-        candidates.add(id);
-    }
-
-    public static String normalizeEngineCase(String lowerRaw) {
-        if (lowerRaw == null || lowerRaw.isEmpty()) return lowerRaw;
-
-        String[] parts = lowerRaw.split("_");
-        StringBuilder out = new StringBuilder(lowerRaw.length() + 4);
-
-        for (String p : parts) {
-            if (p.isEmpty()) continue;
-
-            String norm;
-            if (p.length() == 1) {
-                char c = p.charAt(0);
-                norm = Character.isLetter(c) ? String.valueOf(Character.toUpperCase(c)) : p;
-            } else {
-                norm = Character.toUpperCase(p.charAt(0)) + p.substring(1).toLowerCase(Locale.ROOT);
-            }
-
-            if (out.length() > 0) out.append('_');
-            out.append(norm);
-        }
-
-        return out.toString();
-    }
 }

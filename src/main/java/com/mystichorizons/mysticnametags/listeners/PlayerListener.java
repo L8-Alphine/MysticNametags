@@ -176,6 +176,16 @@ public class PlayerListener {
 
         tagManager.trackOnlinePlayer(playerRef, world);
 
+        // Glyph packets written before this point were dropped by a client that was not yet
+        // accepting entity spawns. Forget them so the next follow tick resends every subject
+        // to this viewer, not just this player's own nameplate.
+        try {
+            GlyphNameplateManager.get().onViewerReady(uuid);
+        } catch (Throwable t) {
+            LOGGER.at(Level.FINE).withCause(t)
+                    .log("[MysticNameTags] Failed to re-arm glyph delivery for %s", uuid);
+        }
+
         try {
             world.execute(() -> {
                 try {

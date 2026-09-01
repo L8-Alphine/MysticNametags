@@ -8,8 +8,6 @@ import org.joml.Vector3f;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -64,10 +62,7 @@ public final class PacketGlyphSender {
                                                 float scale,
                                                 @Nullable Integer tintEffectIndex) {
 
-        ModelTransform transform = new ModelTransform();
-        setPosition(transform, x, y, z);
-        transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
-        transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+        ModelTransform transform = billboardTransform(x, y, z, yaw);
 
         return new EntityUpdate(
                 networkId,
@@ -93,10 +88,7 @@ public final class PacketGlyphSender {
                                                  double z,
                                                  float offsetY,
                                                  float yaw) {
-        ModelTransform transform = new ModelTransform();
-        setPosition(transform, x, y, z);
-        transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
-        transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+        ModelTransform transform = billboardTransform(x, y, z, yaw);
 
         return new EntityUpdate(
                 networkId,
@@ -187,10 +179,7 @@ public final class PacketGlyphSender {
         }
 
         try {
-            ModelTransform transform = new ModelTransform();
-            setPosition(transform, x, y, z);
-            transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
-            transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+            ModelTransform transform = billboardTransform(x, y, z, yaw);
 
             EntityUpdate update = new EntityUpdate(
                     networkId,
@@ -219,10 +208,7 @@ public final class PacketGlyphSender {
         }
 
         try {
-            ModelTransform transform = new ModelTransform();
-            setPosition(transform, x, y, z);
-            transform.bodyOrientation = new Direction(yaw, 0.0f, 0.0f);
-            transform.lookOrientation = new Direction(yaw, 0.0f, 0.0f);
+            ModelTransform transform = billboardTransform(x, y, z, yaw);
 
             EntityUpdate update = new EntityUpdate(
                     networkId,
@@ -250,10 +236,7 @@ public final class PacketGlyphSender {
                     continue;
                 }
 
-                ModelTransform transform = new ModelTransform();
-                setPosition(transform, move.x, move.y, move.z);
-                transform.bodyOrientation = new Direction(move.yaw, 0.0f, 0.0f);
-                transform.lookOrientation = new Direction(move.yaw, 0.0f, 0.0f);
+                ModelTransform transform = billboardTransform(move.x, move.y, move.z, move.yaw);
 
                 updates.add(new EntityUpdate(
                         move.networkId,
@@ -393,37 +376,22 @@ public final class PacketGlyphSender {
         safeWrite(viewer, packet);
     }
 
-    private static void setPosition(@Nonnull ModelTransform transform, double x, double y, double z) {
-        try {
-            Object position;
-
-            try {
-                Constructor<Position> ctor = Position.class.getConstructor(double.class, double.class, double.class);
-                position = ctor.newInstance(x, y, z);
-            } catch (Throwable ignored) {
-                position = Position.class.getConstructor().newInstance();
-                setNumberField(position, "x", x);
-                setNumberField(position, "y", y);
-                setNumberField(position, "z", z);
-            }
-
-            Field field = ModelTransform.class.getField("position");
-            field.set(transform, position);
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static void setNumberField(@Nonnull Object target, @Nonnull String fieldName, double value) throws Exception {
-        Field field = target.getClass().getField(fieldName);
-        Class<?> type = field.getType();
-
-        if (type == double.class || type == Double.class) {
-            field.set(target, value);
-        } else if (type == float.class || type == Float.class) {
-            field.set(target, (float) value);
-        } else if (type == int.class || type == Integer.class) {
-            field.set(target, (int) Math.round(value));
-        }
+    /**
+     * Builds the flat billboard transform used by glyph, anchor and banner entities.
+     *
+     * <p>Body and look orientation are kept identical so the quad always faces the viewer.
+     * Update 6 exposes public {@link Position} and {@link ModelTransform} constructors, so
+     * this no longer reflects its way onto the fields. The old reflective path swallowed
+     * every failure, which left {@code position} null and dropped the entity at the world
+     * origin instead of above the player.
+     */
+    @Nonnull
+    private static ModelTransform billboardTransform(double x, double y, double z, float yaw) {
+        return new ModelTransform(
+                new Position(x, y, z),
+                new Direction(yaw, 0.0f, 0.0f),
+                new Direction(yaw, 0.0f, 0.0f)
+        );
     }
 
     public static void disableRuntime(String reason, Throwable t) {

@@ -44,6 +44,7 @@ public final class NameplateTextResolver {
         private final String colored;
         private final String glyphColored;
         private final String plain;
+        private final String nativePlain;
 
         public ResolvedNameplateText(@Nonnull String raw,
                                      @Nonnull String colored,
@@ -53,6 +54,7 @@ public final class NameplateTextResolver {
             this.colored = colored;
             this.glyphColored = glyphColored;
             this.plain = plain;
+            this.nativePlain = flattenForNativeNameplate(plain);
         }
 
         @Nonnull
@@ -73,6 +75,14 @@ public final class NameplateTextResolver {
         @Nonnull
         public String getPlain() {
             return plain;
+        }
+
+        /**
+         * Plain single-line text accepted reliably by Hytale's native Nameplate component.
+         */
+        @Nonnull
+        public String getNativePlain() {
+            return nativePlain;
         }
     }
 
@@ -413,6 +423,21 @@ public final class NameplateTextResolver {
         }
 
         return out.toString();
+    }
+
+    /**
+     * Update 6's native Nameplate component is a single text field and does not
+     * reliably preserve line breaks. Join configured lines so no placeholders
+     * disappear; the glyph renderer continues to consume the multiline value.
+     */
+    @Nonnull
+    static String flattenForNativeNameplate(@Nonnull String text) {
+        return text
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replace('\n', ' ')
+                .replaceAll("[ \\t]+", " ")
+                .trim();
     }
 
     @Nonnull

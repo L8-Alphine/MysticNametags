@@ -1540,7 +1540,7 @@ public class TagManager {
 
         String resolvedColored = resolved.getColored();
         String resolvedGlyphColored = resolved.getGlyphColored();
-        String plainFallback = resolved.getPlain();
+        String plainFallback = resolved.getNativePlain();
 
         boolean glyphEnabled = settings.isExperimentalGlyphNameplatesEnabled();
         EquippedBanner banner = glyphEnabled ? resolveActiveBanner(uuid) : null;
@@ -2716,7 +2716,7 @@ public class TagManager {
 
         String resolvedColored = resolved.getColored();
         String resolvedGlyphColored = resolved.getGlyphColored();
-        String plainFallback = resolved.getPlain();
+        String plainFallback = resolved.getNativePlain();
 
         boolean glyphEnabled = settings.isExperimentalGlyphNameplatesEnabled();
         EquippedBanner banner = glyphEnabled ? resolveActiveBanner(uuid) : null;
