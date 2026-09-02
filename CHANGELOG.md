@@ -6,7 +6,7 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
-## [Unreleased]
+## [1.2.9] - 2026-09-02 - Glyph Rendering Fix
 
 ### Changed
 
@@ -43,15 +43,20 @@ This project follows **Semantic Versioning** where possible.
   `MountedComponent(Ref, Rotation3f, MountController)` constructor, which Update 6 changed
   to take a `Vector3f` attachment offset, so the lookup could no longer have succeeded.
   Glyph mounting is handled by the packet path, which already sends the correct offset.
-- Recreated the glyph carrier and slot assets for Update 6's attachment-based packet model:
-    - The carrier is now a valid but invisible quad, preventing the fallback question-mark
-      texture from being painted behind every glyph run.
-    - Glyph attachments reference their PNGs directly, so the packaged mod no longer loads
-      768 legacy per-character/base server `ModelAsset` descriptors.
-    - Slot models are generated on the renderer's real four-unit grid, reducing the bundled
-      set from 257 models to 65 without changing layout precision.
-    - The build now verifies all eight 96-character font families, image dimensions,
-      transparency, tint-safe pixels, matching filenames, and the Update 6 quad/carrier schema.
+- A glyph line is now one entity per character rather than one carrier entity holding a
+  `ModelAttachment` per glyph. Attachment batching does not draw on Update 6: the carrier
+  spawns, mounts, positions and even accepts its tint, but its attachments are never
+  rendered. Each glyph is now shaped exactly like a banner - a model path plus a texture -
+  which is the only packet shape proven to render. The per-character column still rides in
+  the `GlyphSlot_*` geometry, so layout is unchanged.
+    - Because each glyph carries its own model, the packaged mod no longer ships the 768
+      legacy per-character and per-family server `ModelAsset` descriptors.
+    - Slot models are generated on the renderer's real four-unit grid across +/-256, which
+      is 129 models per ink cell size (258 in total for the 16px and 32px sets) - down from
+      the original 257-model single set while covering twice the layouts.
+    - The build verifies all eight 96-character font families: image dimensions, canvas and
+      gutter, transparency, tint-safe pixels, matching filenames, and the Update 6 quad
+      schema.
 
 ### Fixed
 
@@ -68,8 +73,8 @@ This project follows **Semantic Versioning** where possible.
   Those descriptors are not shipped -- only the carrier `GlyphLineBase` is -- so the lookup
   missed for every character, every line came out empty, and no glyph entity was ever
   spawned. Banner tags were unaffected because they bypass this path, which is why a banner
-  could render above a player whose name line stayed invisible. The lookup is gone; glyph
-  attachments now reference their PNG directly, which is all the packet ever needed.
+  could render above a player whose name line stayed invisible. The lookup is gone; each glyph
+  entity now names its PNG directly, which is all the packet ever needed.
 - Long glyph lines no longer collapse at the edges. Slot offsets are clamped to the
   generated grid, and the old +/-128 range only spanned 33 characters per line, so anything
   longer piled its outermost glyphs onto the clamp. The grid now spans +/-256 (65 characters

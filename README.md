@@ -31,7 +31,7 @@ Built for servers that want:
 
 # ⚠ Compatibility Warning - Please Read
 
-**MysticNameTags v1.2.8 is built for Hytale Update 6 / Hytale `0.6.x`.**
+**MysticNameTags v1.2.9 is built for Hytale Update 6 / Hytale `0.6.x`.**
 
 This version will **ONLY** work on Hytale `0.6.x`.
 
@@ -41,7 +41,7 @@ It is **not compatible** with Hytale `0.5.x` or older dated server builds such a
 2026.03.26-*
 ```
 
-If your server is still running Hytale Update 5 or an older build, do not update to MysticNameTags v1.2.8 yet.
+If your server is still running Hytale Update 5 or an older build, do not update to MysticNameTags v1.2.9 yet.
 
 Before updating, back up:
 
