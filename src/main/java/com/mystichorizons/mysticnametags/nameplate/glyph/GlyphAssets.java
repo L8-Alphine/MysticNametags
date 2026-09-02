@@ -9,24 +9,41 @@ public final class GlyphAssets {
     public static final String NAMESPACE = "mysticnametags";
     public static final String DEFAULT_FONT = "default";
 
-    /** Where glyph PNGs sit in the mod asset pack, relative to {@code Common/}. */
-    public static final String PACK_SUBPATH = "NPC/MysticNameTags/";
+    /**
+     * Where the glyph PNGs live inside the mod jar, one directory per family.
+     *
+     * <p>Deliberately outside the asset pack ({@code Common/}). Every texture under
+     * {@code Common/NPC/} is delivered to, and atlased by, every client whether or not the
+     * font is ever drawn, and eight families is 768 atlas entries. Only the configured family
+     * is pushed, at runtime, by {@link GlyphAssetManager}.</p>
+     */
+    public static final String RESOURCE_ROOT = "glyphfonts/";
+
+    /** Client-facing prefix the active family's textures are registered under, relative to {@code Common/}. */
+    public static final String CLIENT_SUBPATH = "NPC/MysticNameTags/glyphs/";
 
     /**
-     * Where glyph textures are registered and referenced for the client.
+     * Glyph texture layout. Every PNG is a {@value #TEXTURE_CANVAS}x{@value #TEXTURE_CANVAS}
+     * canvas with the ink cell at ({@value #TEXTURE_GUTTER}, {@value #TEXTURE_GUTTER}); the
+     * slot models put their UV box on that cell.
      *
-     * <p>Must differ from {@link #PACK_SUBPATH}; see {@link #texturePath(char, String, String)}.</p>
+     * <p>Two client rules drive this. The entity texture atlas refuses anything smaller than
+     * 32x32 or not a multiple of 32 ({@code Texture width/height must be a multiple of 32 and
+     * at least 32x32} in the client log), which is what turned the old 16x16 set into tinted
+     * blocks on Update 6. And the quad renderer samples slightly outside the UV box at
+     * grazing angles and coarse mips, so ink sitting on the texture edge picks up whatever
+     * the atlas packed next to it as a thin flickering line. A transparent gutter of 32px
+     * survives every mip level; narrower gutters were tried elsewhere and did not.</p>
      */
-    // ---- TEMPORARY DIAGNOSTIC ----
-    // Registration is proven healthy (probe: exists=true, blobBytes=157) yet glyph quads stay
-    // blank, while a banner texture renders on the very same model. The only two variables left
-    // are this prefix and the image itself. Borrowing the banner prefix - the one prefix known
-    // to work - separates them: glyphs appearing means the prefix mattered, glyphs still blank
-    // means it is the 16x16 image, not the path.
-    public static final String CLIENT_SUBPATH = "NPC/MysticNameTags/banners/";
-    // ---- END DIAGNOSTIC (restore: NPC/MysticNameTags/glyphs/) ----
+    public static final int TEXTURE_CANVAS = 96;
+    public static final int TEXTURE_GUTTER = 32;
+
+    /** Ink cell edge, in texels and model units. The default family is a 16px pixel font, the rest are 32px. */
+    public static final int DEFAULT_CELL = 16;
+    public static final int FONT_CELL = 32;
+
     // Keep in sync with glyphSlotMin/glyphSlotMax/glyphSlotStep in build.gradle, which
-    // generates one GlyphSlot_*.blockymodel per step across this range.
+    // generates one GlyphSlot_*.blockymodel (and GlyphSlot32_*) per step across this range.
     public static final int MIN_SLOT_OFFSET = -256;
     public static final int MAX_SLOT_OFFSET = 256;
     public static final int SLOT_OFFSET_STEP = 4;
@@ -40,14 +57,18 @@ public final class GlyphAssets {
 
     private GlyphAssets() {}
 
-    /**
-     * Where the PNG lives inside the mod jar, under {@code Common/}.
-     *
-     * <p>Kept separate from {@link #texturePath} because the two must NOT be equal: see the note
-     * there.</p>
-     */
+    /** Ink cell edge for a family: 16 for the default pixel font, 32 for the others. */
+    public static int cellSize(@Nullable String font) {
+        return DEFAULT_FONT.equals(normalizeFont(font)) ? DEFAULT_CELL : FONT_CELL;
+    }
+
+    /** Where the PNG lives inside the mod jar. */
     public static String resourceTexturePath(char ch, String safeCharId, String font) {
-        return PACK_SUBPATH + fileName(ch, safeCharId, font);
+        return RESOURCE_ROOT + normalizeFont(font) + "/" + fileName(ch, safeCharId);
+    }
+
+    public static String resourceFallbackPath(String font) {
+        return RESOURCE_ROOT + normalizeFont(font) + "/" + fallbackFileName();
     }
 
     public static String texturePath(char ch, String safeCharId) {
@@ -55,27 +76,25 @@ public final class GlyphAssets {
     }
 
     /**
-     * The texture path sent to the client, which must be the path the glyph is registered under
-     * as a common asset.
-     *
-     * <p>Deliberately under {@code glyphs/} rather than the pack location. The mod ships these
-     * same PNGs in its asset pack at {@code NPC/MysticNameTags/...}; registering a common asset
-     * on top of a path the pack already claims does not take effect, and the quad renders
-     * untextured. Banner art never hit this because it lives under {@code banners/}, a prefix the
-     * pack does not contain. Verified on Update 6: pointing a glyph quad at a banner texture
-     * rendered immediately, while the identical quad with a pack-colliding glyph path stayed
-     * blank.</p>
+     * The texture path sent to the client, which is also the path the glyph is registered
+     * under as a common asset.
      */
     public static String texturePath(char ch, String safeCharId, String font) {
-        return CLIENT_SUBPATH + fileName(ch, safeCharId, font);
+        return CLIENT_SUBPATH + normalizeFont(font) + "/" + fileName(ch, safeCharId);
     }
 
-    /** Shared {@code [<font>/]glyph_<id>.png} tail used by both path forms. */
-    private static String fileName(char ch, String safeCharId, String font) {
-        String normalizedFont = normalizeFont(font);
-        String dir = DEFAULT_FONT.equals(normalizedFont) ? "" : normalizedFont + "/";
+    public static String fallbackTexturePath(String font) {
+        return CLIENT_SUBPATH + normalizeFont(font) + "/" + fallbackFileName();
+    }
+
+    public static String fallbackFileName() {
+        return "glyph_fallback.png";
+    }
+
+    /** {@code glyph_<id>.png}, matching the bundled file names. */
+    private static String fileName(char ch, String safeCharId) {
         String leaf = (ch >= 'A' && ch <= 'Z') ? "glyph_up_" + ch : "glyph_" + safeCharId;
-        return dir + leaf + ".png";
+        return leaf + ".png";
     }
 
     public static String normalizeFont(@Nullable String font) {
@@ -92,10 +111,19 @@ public final class GlyphAssets {
     }
 
     public static String slotModelPath(int offsetPx) {
+        return slotModelPath(offsetPx, DEFAULT_CELL);
+    }
+
+    /**
+     * The generated slot model for a horizontal offset and ink cell size:
+     * {@code GlyphSlot_p012} for the 16px family, {@code GlyphSlot32_p012} for the 32px ones.
+     */
+    public static String slotModelPath(int offsetPx, int cellSize) {
         int clamped = Math.max(MIN_SLOT_OFFSET, Math.min(MAX_SLOT_OFFSET, offsetPx));
         int quantized = Math.round((float) clamped / SLOT_OFFSET_STEP) * SLOT_OFFSET_STEP;
         String sign = quantized < 0 ? "m" : "p";
-        return "NPC/MysticNameTags/GlyphSlot_" + sign + String.format("%03d", Math.abs(quantized)) + ".blockymodel";
+        String set = cellSize == DEFAULT_CELL ? "GlyphSlot_" : "GlyphSlot" + cellSize + "_";
+        return "NPC/MysticNameTags/" + set + sign + String.format("%03d", Math.abs(quantized)) + ".blockymodel";
     }
 
     /**

@@ -1,34 +1,34 @@
 package com.mystichorizons.mysticnametags.nameplate.glyph;
 
 import com.hypixel.hytale.logger.HytaleLogger;
+import com.hypixel.hytale.protocol.packets.setup.RequestCommonAssetsRebuild;
 import com.hypixel.hytale.server.core.asset.common.CommonAssetModule;
 import com.hypixel.hytale.server.core.asset.common.asset.FileCommonAsset;
+import com.hypixel.hytale.server.core.universe.Universe;
 import com.mystichorizons.mysticnametags.nameplate.banner.BannerAssetManager;
 
 import javax.annotation.Nonnull;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.logging.Level;
 
 /**
- * Pushes the bundled glyph textures to clients.
+ * Pushes the configured glyph family's textures to clients.
  *
- * <p>Shipping a PNG inside the mod's asset pack makes it available to the <em>server</em>, but a
- * texture named by a packet-sent {@code Model} is only drawn once the client actually holds the
- * file. Banner art has always gone through {@link CommonAssetModule} and renders; the bundled
- * glyph textures did not, and glyph quads drew blank - correctly positioned, correctly tinted,
- * and untextured. Registering them the same way closes that gap.</p>
+ * <p>The glyph PNGs are jar resources under {@link GlyphAssets#RESOURCE_ROOT}, not asset-pack
+ * files, so the client never sees a family it is not drawing. The active family is extracted
+ * to {@code <dataDir>/cache/} and registered through {@link CommonAssetModule}, the same way
+ * banner art is. A full set is 96 files per family, so one font costs one block of atlas rows
+ * rather than eight.</p>
  *
- * <p>Only the font in use is registered. A full set is 96 files per family and there are eight
- * families, so pushing all of them would mean 768 needless downloads per client.</p>
- *
- * <p>The PNGs are extracted from the mod jar to {@code <dataDir>/cache/glyphs/} first, because
- * {@link FileCommonAsset#getBlob0()} serves the blob with {@code Files.readAllBytes(file)} and
- * ignores the {@code byte[]} handed to its constructor. A jar resource therefore cannot be
- * registered directly: the asset appears to register, then fails when a client asks for it.</p>
+ * <p>The extraction step is not optional: {@link FileCommonAsset#getBlob0()} serves the blob
+ * with {@code Files.readAllBytes(file)} and ignores the {@code byte[]} handed to its
+ * constructor. A jar resource registered directly appears to succeed, then fails when a client
+ * asks for it.</p>
  */
 public final class GlyphAssetManager {
 
@@ -36,8 +36,6 @@ public final class GlyphAssetManager {
 
     /** Same pack as banners, so both arrive under one asset pack. */
     public static final String PACK_NAME = BannerAssetManager.PACK_NAME;
-
-    private static final String FALLBACK_FILE = "glyph_fallback.png";
 
     /** Where jar-bundled glyph PNGs are unpacked so they exist as real files. */
     public static final String CACHE_DIR_NAME = "cache";
@@ -48,7 +46,8 @@ public final class GlyphAssetManager {
     }
 
     /**
-     * Registers every glyph texture for {@code font} (plus the shared fallback) as a common asset.
+     * Registers every glyph texture for {@code font} (plus the family's fallback) as a common
+     * asset.
      *
      * @return number of textures registered
      */
@@ -68,12 +67,10 @@ public final class GlyphAssetManager {
             return 0;
         }
 
-        // resource-in-jar -> path the client is told. These must differ: a common asset
-        // registered on a path the mod asset pack already claims does not take effect.
-        // Deduplicated because A-Z share the glyph_up_* naming with their safe ids.
-        java.util.Map<String, String> textures = new java.util.LinkedHashMap<>();
-        textures.put(GlyphAssets.PACK_SUBPATH + FALLBACK_FILE,
-                GlyphAssets.CLIENT_SUBPATH + FALLBACK_FILE);
+        // resource-in-jar -> path the client is told. Deduplicated because A-Z share the
+        // glyph_up_* naming with their safe ids.
+        Map<String, String> textures = new LinkedHashMap<>();
+        textures.put(GlyphAssets.resourceFallbackPath(normalized), GlyphAssets.fallbackTexturePath(normalized));
 
         for (char ch : GlyphInfoCompat.supportedChars()) {
             String safeId = GlyphInfoCompat.getSafeIdLower(ch);
@@ -91,20 +88,21 @@ public final class GlyphAssetManager {
         Path probePath = null;
         String probeTexture = null;
 
-        for (java.util.Map.Entry<String, String> entry : textures.entrySet()) {
+        for (Map.Entry<String, String> entry : textures.entrySet()) {
             String resourcePath = entry.getKey();
             String texturePath = entry.getValue();
-            byte[] bytes = readResource("Common/" + resourcePath);
+            byte[] bytes = readResource(resourcePath);
             if (bytes == null) {
                 missing++;
                 continue;
             }
 
             try {
-                // Mirror the pack layout under the cache dir so each asset has a real file.
+                // Mirror the client-facing layout under the cache dir so each asset has a real
+                // file. Compare bytes, not sizes: a re-drawn glyph can keep its byte count.
                 Path onDisk = cacheRoot.resolve(texturePath);
                 Files.createDirectories(onDisk.getParent());
-                if (!Files.exists(onDisk) || Files.size(onDisk) != bytes.length) {
+                if (!Files.exists(onDisk) || !Arrays.equals(Files.readAllBytes(onDisk), bytes)) {
                     Files.write(onDisk, bytes);
                 }
 
@@ -127,6 +125,7 @@ public final class GlyphAssetManager {
             }
         }
 
+        String previous = registeredFont;
         registeredFont = normalized;
 
         if (missing > 0) {
@@ -136,7 +135,7 @@ public final class GlyphAssetManager {
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Registered " + registered
                 + " glyph texture(s) for font '" + normalized + "' under "
-                + GlyphAssets.CLIENT_SUBPATH + " (cache: " + cacheRoot + ").");
+                + GlyphAssets.CLIENT_SUBPATH + normalized + "/ (cache: " + cacheRoot + ").");
 
         if (probe != null) {
             try {
@@ -151,6 +150,24 @@ public final class GlyphAssetManager {
                 LOGGER.at(Level.WARNING).withCause(t)
                         .log("[MysticNameTags] Glyph asset probe FAILED for '" + probeTexture
                                 + "' (file=" + probePath + "). Textures will render blank.");
+            }
+        }
+
+        // addCommonAsset streams each file to connected clients but never asks them to rebuild
+        // their texture atlases, and an entity texture that is not in the atlas draws as an
+        // untextured quad. Players who join later get an atlas built with these textures in
+        // it; players already online need one rebuild request, the same packet the server
+        // sends for its own asset reloads. Only on a font change: at boot nobody is connected.
+        if (registered > 0 && previous != null && !previous.equals(normalized)) {
+            try {
+                Universe universe = Universe.get();
+                if (universe != null && universe.getPlayerCount() > 0) {
+                    universe.broadcastPacketNoCache(new RequestCommonAssetsRebuild());
+                }
+            } catch (Throwable t) {
+                LOGGER.at(Level.WARNING).withCause(t)
+                        .log("[MysticNameTags] Could not request a client asset rebuild after switching glyph font; "
+                                + "online players see the new font after they reconnect.");
             }
         }
 

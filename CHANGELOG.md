@@ -10,6 +10,22 @@ This project follows **Semantic Versioning** where possible.
 
 ### Changed
 
+- Glyph textures moved out of the asset pack. All eight font families used to ship under
+  `Common/NPC/MysticNameTags/`, and every texture there is delivered to and atlased by every
+  client whether or not the font is ever drawn: 768 entity atlas entries for one nameplate
+  font. The PNGs now live in the jar as plain resources and only the configured family is
+  registered, at boot and on `/tags reload`, through the same common-asset path banner art
+  already uses. Switching the font on a live server now also asks connected clients to
+  rebuild their atlases, so the new family shows up without a reconnect.
+- Every glyph PNG is a 96x96 canvas with the ink cell at (32,32) and a 32px transparent
+  gutter around it; the slot models put their UV box on that cell. The gutter is deliberate:
+  the quad renderer samples a little outside the UV box at grazing angles and coarse mips,
+  and ink on the texture edge picks up whatever the atlas packed next to it as a thin
+  flickering line. Pixel data is unchanged, so the fonts look exactly as before.
+- Slot models are generated per ink cell size: `GlyphSlot_*` (16px) for the default family
+  and `GlyphSlot32_*` for the seven 32px families.
+- `verifyGlyphAssets` now checks the canvas size, that ink stays inside the family's cell,
+  and that the quad models' UV box sits on the cell.
 - Updated the LuckPerms API compile dependency to 5.5.
 - Removed the obsolete local `HytaleServer.jar` copy task; Update 6's server API is
   resolved from Hytale's official Maven repository as version 0.6.0.
@@ -39,6 +55,13 @@ This project follows **Semantic Versioning** where possible.
 
 ### Fixed
 
+- Glyphs drew as solid tinted blocks on Update 6. The client's entity texture atlas refuses
+  any texture smaller than 32x32 (`Texture width/height must be a multiple of 32 and at
+  least 32x32` in the client log, once per glyph), so the 16x16 default set never reached
+  the atlas and every quad fell back to an untextured fill that the tint effect then
+  coloured. See the texture layout change above.
+- The 32px families rendered only the top-left quarter of each glyph: the rewritten renderer
+  used the 16x16 slot quads for every family. They now get their own 32x32 slot set.
 - **Glyph nameplate text renders again on Update 6.** Every character was being dropped
   before it could be drawn: `populateTextLine` resolved a per-character `ModelAsset`
   (`mysticnametags:Glyph_lo_a` and friends) and skipped the glyph when the lookup missed.

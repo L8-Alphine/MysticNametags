@@ -1093,8 +1093,10 @@ public final class GlyphNameplateManager {
         int offsetPx = (int) Math.round((-offset / safeScale) * GLYPH_RUN_SLOT_UNITS_PER_BLOCK);
 
         // The slot model carries this glyph's horizontal offset in its own geometry, so the
-        // entity can sit on the line anchor and still land in the right column.
-        String slotModel = GlyphAssets.slotModelPath(offsetPx);
+        // entity can sit on the line anchor and still land in the right column. The 16px
+        // default family and the 32px families each have their own slot set, sized to the
+        // ink cell their textures carry.
+        String slotModel = GlyphAssets.slotModelPath(offsetPx, GlyphAssets.cellSize(line.glyphFont));
 
         String texture = line.glyphTexturePaths.get(index);
 
