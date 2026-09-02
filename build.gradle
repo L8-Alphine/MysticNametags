@@ -205,6 +205,28 @@ def glyphSlotMin = -256
 def glyphSlotMax = 256
 def glyphSlotStep = 4
 
+// Keep in sync with GlyphAssets.TEXTURE_CANVAS / TEXTURE_GUTTER / DEFAULT_CELL / FONT_CELL.
+// Every glyph PNG is a 96x96 canvas with its ink cell at (32,32). The client's entity atlas
+// refuses textures under 32x32 or off the 32 grid, and the quad renderer samples a little
+// outside the UV box at grazing angles, so the cell needs transparent room on every side.
+def glyphTextureCanvas = 96
+def glyphTextureGutter = 32
+// One slot set per ink cell size: GlyphSlot_* for the 16px default family, GlyphSlot32_*
+// for the 32px families. The quad is the cell; the UV box sits on the cell in the texture.
+def glyphSlotSets = [[prefix: 'GlyphSlot_', cell: 16], [prefix: 'GlyphSlot32_', cell: 32]]
+def glyphFontRoot = file('src/main/resources/glyphfonts')
+def glyphModelRoot = file('src/main/resources/Common/NPC/MysticNameTags')
+def glyphFamilies = [
+        default: 16,
+        comic: 32,
+        cursive: 32,
+        impact: 32,
+        mono: 32,
+        sans: 32,
+        serif: 32,
+        thin: 32
+]
+
 tasks.register('generateGlyphSlotModels') {
     outputs.dir(generatedGlyphSlotDir)
     outputs.upToDateWhen { false }
@@ -214,16 +236,19 @@ tasks.register('generateGlyphSlotModels') {
         delete outDir
         outDir.mkdirs()
 
-        for (int x = glyphSlotMin; x <= glyphSlotMax; x += glyphSlotStep) {
-            def sign = x < 0 ? 'm' : 'p'
-            def name = String.format('GlyphSlot_%s%03d.blockymodel', sign, Math.abs(x))
-            def file = new File(outDir, name)
-            file.setText("""{
+        glyphSlotSets.each { Map set ->
+            int cell = set.cell as int
+            int halfCell = cell.intdiv(2)
+            for (int x = glyphSlotMin; x <= glyphSlotMax; x += glyphSlotStep) {
+                def sign = x < 0 ? 'm' : 'p'
+                def name = String.format('%s%s%03d.blockymodel', set.prefix, sign, Math.abs(x))
+                def file = new File(outDir, name)
+                file.setText("""{
   "nodes": [
     {
       "id": "1",
       "name": "face",
-      "position": {"x": ${x}, "y": 8, "z": 0},
+      "position": {"x": ${x}, "y": ${halfCell}, "z": 0},
       "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
       "shape": {
         "type": "quad",
@@ -231,12 +256,12 @@ tasks.register('generateGlyphSlotModels') {
         "stretch": {"x": 1, "y": 1, "z": 1},
         "settings": {
           "isPiece": false,
-          "size": {"x": 16, "y": 16},
+          "size": {"x": ${cell}, "y": ${cell}},
           "normal": "+Z"
         },
         "textureLayout": {
           "front": {
-            "offset": {"x": 0, "y": 0},
+            "offset": {"x": ${glyphTextureGutter}, "y": ${glyphTextureGutter}},
             "mirror": {"x": false, "y": false},
             "angle": 0
           }
@@ -252,33 +277,25 @@ tasks.register('generateGlyphSlotModels') {
   "lod": "auto"
 }
 """, 'UTF-8')
+            }
         }
     }
 }
 
 tasks.register('verifyGlyphAssets') {
-    def glyphRoot = file('src/main/resources/Common/NPC/MysticNameTags')
-    inputs.files(fileTree(glyphRoot) {
+    inputs.files(fileTree(glyphFontRoot) {
         include '**/glyph_*.png'
+    })
+    inputs.files(fileTree(glyphModelRoot) {
         include 'Glyph*.blockymodel'
     })
     inputs.file('src/main/resources/Server/Models/MysticNameTags/GlyphLineBase.json')
 
     doLast {
-        def families = [
-                default: [dir: glyphRoot, size: 16],
-                comic: [dir: file("${glyphRoot}/comic"), size: 32],
-                cursive: [dir: file("${glyphRoot}/cursive"), size: 32],
-                impact: [dir: file("${glyphRoot}/impact"), size: 32],
-                mono: [dir: file("${glyphRoot}/mono"), size: 32],
-                sans: [dir: file("${glyphRoot}/sans"), size: 32],
-                serif: [dir: file("${glyphRoot}/serif"), size: 32],
-                thin: [dir: file("${glyphRoot}/thin"), size: 32]
-        ]
-
         Set<String> expectedNames = null
-        families.each { String family, Map spec ->
-            def pngs = spec.dir.listFiles({ File dir, String name ->
+        glyphFamilies.each { String family, int cell ->
+            def dir = new File(glyphFontRoot, family)
+            def pngs = dir.listFiles({ File d, String name ->
                 name.startsWith('glyph_') && name.endsWith('.png')
             } as FilenameFilter)?.toList()?.sort { it.name } ?: []
 
@@ -293,13 +310,15 @@ tasks.register('verifyGlyphAssets') {
                 throw new GradleException("Glyph family '${family}' does not match the default glyph filename set")
             }
 
+            int cellMin = glyphTextureGutter
+            int cellMax = glyphTextureGutter + cell
             pngs.each { File png ->
                 def image = javax.imageio.ImageIO.read(png)
                 if (image == null) {
                     throw new GradleException("Unreadable glyph PNG: ${png}")
                 }
-                if (image.width != spec.size || image.height != spec.size) {
-                    throw new GradleException("${png} must be ${spec.size}x${spec.size}; found ${image.width}x${image.height}")
+                if (image.width != glyphTextureCanvas || image.height != glyphTextureCanvas) {
+                    throw new GradleException("${png} must be ${glyphTextureCanvas}x${glyphTextureCanvas}; found ${image.width}x${image.height}")
                 }
                 if (!image.colorModel.hasAlpha()) {
                     throw new GradleException("Glyph PNG requires transparency: ${png}")
@@ -308,7 +327,13 @@ tasks.register('verifyGlyphAssets') {
                 for (int y = 0; y < image.height; y++) {
                     for (int x = 0; x < image.width; x++) {
                         int argb = image.getRGB(x, y)
-                        if (((argb >>> 24) & 0xFF) != 0 && (argb & 0xFFFFFF) != 0xFFFFFF) {
+                        if (((argb >>> 24) & 0xFF) == 0) {
+                            continue
+                        }
+                        if (x < cellMin || x >= cellMax || y < cellMin || y >= cellMax) {
+                            throw new GradleException("Glyph ink must stay inside the ${cell}x${cell} cell at (${cellMin},${cellMin}): ${png} at ${x},${y}")
+                        }
+                        if ((argb & 0xFFFFFF) != 0xFFFFFF) {
                             throw new GradleException("Glyph pixels must be white for runtime tinting: ${png} at ${x},${y}")
                         }
                     }
@@ -317,7 +342,7 @@ tasks.register('verifyGlyphAssets') {
         }
 
         def parser = new groovy.json.JsonSlurper()
-        def carrier = parser.parse(file("${glyphRoot}/GlyphLineBase.blockymodel"))
+        def carrier = parser.parse(new File(glyphModelRoot, 'GlyphLineBase.blockymodel'))
         // Structure only. Node visibility is a rendering choice, not a validity property, and
         // pinning it to false here previously made the carrier-visibility question untestable.
         if (carrier.format != 'character' || carrier.nodes?.size() != 1
@@ -326,11 +351,15 @@ tasks.register('verifyGlyphAssets') {
         }
 
         [[name: 'GlyphQuad.blockymodel', size: 16], [name: 'GlyphQuad32.blockymodel', size: 32]].each { spec ->
-            def quad = parser.parse(file("${glyphRoot}/${spec.name}"))
+            def quad = parser.parse(new File(glyphModelRoot, spec.name))
             def shape = quad.nodes?.getAt(0)?.shape
             if (quad.format != 'character' || shape?.type != 'quad' || shape?.visible != true
                     || shape?.settings?.size?.x != spec.size || shape?.settings?.size?.y != spec.size) {
                 throw new GradleException("Invalid Update 6 glyph quad: ${spec.name}")
+            }
+            def uv = shape?.textureLayout?.front?.offset
+            if (uv?.x != glyphTextureGutter || uv?.y != glyphTextureGutter) {
+                throw new GradleException("Glyph quad UV box must sit on the ink cell at (${glyphTextureGutter},${glyphTextureGutter}): ${spec.name}")
             }
         }
 
