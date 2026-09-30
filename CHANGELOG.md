@@ -6,6 +6,34 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
+## [Unreleased] - Licensing on MysticLicenses v2
+
+### Changed
+
+- Tag banners are licensed through MysticLicenses v2 instead of offline
+  `license.mclicense` files. Put the key from the portal in `license.key` in
+  the plugin's data directory. The server activates online once, then runs on
+  a signed authorization it caches and renews in the background, with an
+  offline grace period while the licensing service is unreachable. A server
+  licensed before starts at once; a first start waits at most 5 seconds, and
+  banners switch on by themselves if the answer comes later.
+- `/tags reload` re-reads `license.key`: a new key activates and frees the
+  previous license's slot, the same key is re-checked at once, and a removed
+  key releases the server. Banner art is registered or dropped, and every
+  nameplate redrawn, whenever the license changes while the server runs.
+- The server's licensing identity lives in `.mystic/` at the server root,
+  shared with other Mystic mods, so a server counts once in the portal.
+- The licensing service's address and public keys are set at build time
+  (`mysticnametags.licensing.url` / `mysticnametags.licensing.keys`); see
+  `docs/INSTALL.md`. A build without them runs with banners off.
+
+### Removed
+
+- The prototype's offline verifier (`McLicenseVerifier`, `ServerIdentity`
+  and friends). `license.mclicense`, `server-id.txt` and
+  `license-request.json` are no longer read or written; a leftover
+  `license.mclicense` gets a one-line notice at startup.
+
 ## [1.3.0] - Storage Fixes
 
 ### Fixed

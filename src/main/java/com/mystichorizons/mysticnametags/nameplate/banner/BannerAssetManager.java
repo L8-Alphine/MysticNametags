@@ -89,8 +89,8 @@ public final class BannerAssetManager {
      */
     public synchronized int scanAndRegister() {
         // Licensed feature: don't push banner art to clients that can never display it.
-        // reloadAll() re-reads the license before calling this, so adding one and running
-        // /tags reload registers the art without a restart.
+        // When the license changes while the server runs (a key added and /tags reload, a
+        // subscription lapsing), MysticNameTagsPlugin.onBannerLicenseChanged calls this again.
         if (!MysticNameTagsLicense.bannersLicensed()) {
             banners.clear();
             BannerQuadModels.invalidate();

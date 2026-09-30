@@ -167,58 +167,73 @@ The banner takes the exact position the tag's text occupied. Notes:
 Tag banners are a **licensed feature** (`mysticnametags` / `tags.banner`). Everything else in the
 mod is unlicensed and always works.
 
-Put `license.mclicense` in the plugin's data directory next to `settings.json`, then restart or run
-`/tags reload`. Verification is entirely offline — the mod never contacts a licensing server and
-never needs an internet connection.
+Copy your license key from the MysticLicenses portal into **`license.key`** in the plugin's data
+directory (next to `settings.json`), then restart or run `/tags reload`. The key is the line that
+starts with `MYSTIC-`; blank lines and lines starting with `#` are ignored. The key never appears in
+the log.
 
-On first run the mod writes two files into its data directory:
+The server activates online, then runs on a signed authorization it caches and renews in the
+background:
 
-* **`server-id.txt`** — this server's licensing identity. Register it in the portal to bind a
-  license here. Back it up; **do not copy it to another server**, or a license bound to it will
-  stop working there.
-* **`license-request.json`** — written only when no license is present. Upload it to the portal
-  instead of typing the UUID by hand.
+* **A server licensed before starts at once** from its cached authorization, even if the licensing
+  service is down at that moment.
+* **A server's very first start** waits up to 5 seconds for the licensing service. If it takes
+  longer, or is unreachable, the server starts anyway and banners switch on by themselves when it
+  answers. No restart needed.
+* **If the licensing service is unreachable**, banners keep working from the cached authorization
+  for the license's offline grace period (3 days by default).
+* **`/tags reload` re-reads `license.key`.** A new key is activated, and frees this server's slot on
+  the key it replaced. The same key is checked again immediately, so an upgrade shows up at once. A
+  removed key releases this server's slot and switches banners off.
 
-If `server-id.txt` is ever corrupted, the mod **will not** regenerate it. Regenerating would orphan
-your license against a UUID you can no longer produce, so it reports the problem and leaves the file
-alone. Fix or delete it, then re-register through the portal's server-replacement flow.
+The server's licensing identity and cached authorization live in **`.mystic/`** in the server root
+(next to `mods/`), with a backup of the identity in `mods/.mystic/`. Other Mystic mods share it, so
+a server counts once in the portal. **Do not copy `.mystic/` to another server**: to the licensing
+service a copied identity is the same server. Deleting it is harmless; the server gets a new
+identity at its next start and appears in the portal as a new server, so free the old one there if
+your license limits how many servers it runs on.
 
-The mod logs one line at startup and is then quiet:
+The mod logs a line at startup and whenever the license state changes:
 
 ```text
-[MysticNameTags] License: VALID - licensed (id=lic_01K1A2…, banners=enabled)
-[MysticNameTags] Server licensing id: 20bf6b33-b798-43bb-b248-e4162a26ce28
+[MysticNameTags] MysticNameTags license: licensed.
 ```
 
-| Status | What it means for you |
+| Log line | What it means for you |
 | --- | --- |
-| `VALID` | Banners work. |
-| `GRACE_PERIOD` | Expired but inside its grace window. Banners still work; renew soon. Warned once per start. |
-| `MISSING` | No license file. Banner tags render their text display. |
-| `EXPIRED` | Past expiry and grace. Renew to restore banners. |
-| `NOT_YET_VALID` | The license starts later; check the server clock. |
-| `WRONG_SERVER` | Registered to a different `server-id.txt`. |
-| `WRONG_PRODUCT` | The license does not cover `mysticnametags`. |
-| `INVALID_SIGNATURE` / `DECRYPTION_FAILED` / `INVALID_FORMAT` | The file is damaged or altered. Re-download it. |
-| `UNKNOWN_SIGNING_KEY` / `UNKNOWN_ENCRYPTION_KEY` | The license needs a newer build of the mod. |
+| `licensed` | Banners work. |
+| `licensed (licensing service unreachable; ...)` | Running on the cached authorization until the time shown. Banners still work. |
+| `not licensed (no key yet)` | No `license.key`. Banner tags render their text display. |
+| `not licensed yet: the licensing service has not answered` | A first start while the service is unreachable. Banners switch on when it answers. |
+| `restricted` | The cached authorization ran out while the service was unreachable. Banners return when it answers. |
+| `denied: INSTANCE_LIMIT_REACHED` | The license is already active on as many servers as it allows. Free one in the portal. |
+| `denied: ENTITLEMENT_MISSING` | The license does not include MysticNameTags. |
+| `denied: ...` (other reasons) | Shown as given; the portal explains it. |
+| `revoked` | The license was revoked. |
+| `key not accepted` | The key is wrong or was replaced in the portal. Copy it again. |
+| `This build has no licensing service configured` | A self-built jar without licensing settings (see `docs/INSTALL.md`). Banners stay off. |
 
-**A licensing problem never breaks your server.** Any status other than `VALID`/`GRACE_PERIOD`
-switches off banner artwork and nothing else — tags, the `/tags` menu, nameplates, and every other
-feature carry on. Banner tags simply render their text `display`, exactly as they did before
-banners existed. A corrupt or truncated license file is a status, not a crash.
+A `license.mclicense` file from the retired licensing prototype is no longer read; the mod says so
+once at startup. It, `server-id.txt` and `license-request.json` can be deleted.
+
+**A licensing problem never breaks your server.** Anything other than a licensed state switches off
+banner artwork and nothing else: tags, the `/tags` menu, nameplates, and every other feature carry
+on. Banner tags simply render their text `display`, exactly as they did before banners existed. An
+unreachable service, a wrong key or a denial is a log line, not a crash.
 
 #### Honestly, what this does and does not protect
 
-* **The Ed25519 signature is the security boundary.** The AES content key ships inside the mod and
-  should be assumed extractable; it only makes license contents opaque to casual inspection.
-  Extracting it does **not** allow forging a license — that needs the private key, which only the
-  licensing server holds.
+* **The Ed25519 signature is the security boundary.** The mod carries only the licensing service's
+  public keys. Forging an authorization needs the private key, which only the licensing service
+  holds. The service's address and keys are fixed when the mod is built, so a server cannot be
+  pointed at a licensing service of its own.
 * **Java bytecode can be patched.** Someone determined can remove these checks. This is a licensing
   control for honest operators, not DRM. There is deliberately no obfuscation, anti-debug tricks or
   integrity self-checking: they cost real reliability and buy almost nothing.
-* **Offline licenses cannot be revoked remotely.** Expiry plus the grace period is what limits a
-  downloaded file. No revocation-list fetching is implemented, on purpose — a mod that hard-fails
-  when a server is unreachable is worse than one that occasionally honours a revoked license.
+* **Revocation reaches a server at its next renewal**, and a server that cannot reach the licensing
+  service keeps banners until its offline grace runs out. That is on purpose: a mod that hard-fails
+  whenever a server is offline is worse than one that occasionally honours a revoked license a little
+  longer.
 
 ### Requirements
 

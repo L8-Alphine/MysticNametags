@@ -461,6 +461,15 @@ public class TagManager {
         LOGGER.at(Level.INFO).log("[MysticNameTags] tags.json reload complete.");
     }
 
+    /** Redraws every online nameplate without re-reading tags.json, e.g. after a license change. */
+    public static void refreshAllNameplates() {
+        TagManager current = instance;
+        if (current == null) {
+            return;
+        }
+        current.refreshAllOnlineNameplates();
+    }
+
     // ------------- Player data -------------
 
     @Nonnull

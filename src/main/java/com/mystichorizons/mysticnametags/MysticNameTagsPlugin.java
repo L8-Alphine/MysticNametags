@@ -144,9 +144,10 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         RedisManager.init();
 
         // ------------------------------------------------------
-        // Licensing (gates tag banners; never blocks startup)
+        // Licensing (gates tag banners; never fails startup, and waits
+        // at most a few seconds on a server's very first activation)
         // ------------------------------------------------------
-        MysticNameTagsLicense.init(getDataDirectory(), version, null);
+        MysticNameTagsLicense.init(getDataDirectory(), version, this::onBannerLicenseChanged);
 
         // ------------------------------------------------------
         // Tag banner art (registers images/*.png as client assets)
@@ -412,6 +413,10 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         try {
             EndlessLevelingCompat.restorePlayerNameplates();
         } catch (Throwable ignored) {
+        }
+        try {
+            MysticNameTagsLicense.shutdown();
+        } catch (Throwable ignored) {
         } finally {
             MysticLog.shutdown();
             instance = null;
@@ -516,7 +521,8 @@ public class MysticNameTagsPlugin extends JavaPlugin {
                     .log("[MysticNameTags] Failed to re-initialize integrations during reload.");
         }
 
-        // 3a) Re-read the license so an operator can drop one in without a restart
+        // 3a) Re-read license.key so an operator can add or change their key without a restart.
+        // The answer arrives asynchronously and is applied by onBannerLicenseChanged.
         MysticNameTagsLicense.reload();
 
         // 3b) Re-scan banner art so new/changed PNGs reach connected players
@@ -553,6 +559,23 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         tryRegisterEndlessLevelingNameplates();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Reload complete.");
+    }
+
+    /**
+     * Tag banners became licensed, or stopped being licensed, while the server runs: register or drop
+     * the banner art, then redraw every online nameplate. Called on the licensing thread.
+     */
+    private void onBannerLicenseChanged() {
+        try {
+            BannerAssetManager banners = BannerAssetManager.get();
+            if (banners != null) {
+                banners.scanAndRegister();
+            }
+        } catch (Throwable t) {
+            LOGGER.at(Level.WARNING).withCause(t)
+                    .log("[MysticNameTags] Failed to re-scan tag banners after a license change.");
+        }
+        TagManager.refreshAllNameplates();
     }
 
     private void tryRegisterEndlessLevelingNameplates() {

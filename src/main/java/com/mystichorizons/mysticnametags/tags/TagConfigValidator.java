@@ -208,7 +208,7 @@ public final class TagConfigValidator {
 
         if (!MysticNameTagsLicense.bannersLicensed()) {
             report.add(Severity.INFO, path, "Banner is configured, but tag banners are not licensed on this server ("
-                    + MysticNameTagsLicense.service().status().operatorSummary()
+                    + MysticNameTagsLicense.summaryLine().replaceAll("\\.$", "")
                     + "). The tag renders its text display.");
             return;
         }

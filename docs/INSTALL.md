@@ -140,6 +140,24 @@ The build process will:
 3. Process resources and generate glyph slot models
 4. Create a shadow JAR with all dependencies bundled (excludes Hytale Server classes)
 
+**Licensing settings (release builds).** Tag banners are licensed through MysticLicenses. The
+licensing service's address and its public signing keys are built into the jar, never read at
+runtime. Put them in `gradle.properties` (not committed) or pass them with `-P`:
+
+```properties
+mysticnametags.licensing.url=https://licenses.example.com
+# kid=publicKeyRaw pairs, comma-separated, exactly as GET <url>/api/v2/runtime/public-keys lists them.
+# Keep a retired key listed until nothing it signed can still be cached.
+mysticnametags.licensing.keys=mls-2026-01=AbCd...
+```
+
+The environment variables `MYSTICNAMETAGS_LICENSING_URL` and `MYSTICNAMETAGS_LICENSING_KEYS` work
+too. The URL must use `https` (plain `http` only to `localhost`, for testing against a local
+service). Without these settings the build still succeeds, and the jar runs with banners off.
+
+The licensing client is `vendor/mystic-licenses-sdk-*.jar`, built from `sdk/mystic-license-java`
+in the MysticLicensing repository (`mvn package`).
+
 **Build output:** `build/libs/MysticNameTags.jar`
 
 #### Step 4: Deploy to Server
