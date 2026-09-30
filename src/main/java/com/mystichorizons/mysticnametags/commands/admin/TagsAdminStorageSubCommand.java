@@ -8,6 +8,7 @@ import com.mystichorizons.mysticnametags.config.Settings;
 import com.mystichorizons.mysticnametags.network.NetworkSyncService;
 import com.mystichorizons.mysticnametags.network.RedisManager;
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
+import com.mystichorizons.mysticnametags.util.JdbcDrivers;
 
 import javax.annotation.Nonnull;
 import java.io.File;
@@ -66,16 +67,22 @@ public class TagsAdminStorageSubCommand extends AbstractTagsAdminSubCommand {
                 break;
             }
 
-            case MYSQL: {
+            case MYSQL:
+            case MARIADB: {
                 String host = settings.getMysqlHost();
                 int port    = settings.getMysqlPort();
                 String db   = settings.getMysqlDatabase();
                 String user = settings.getMysqlUser();
+                String jdbcUrl = backend.mySqlJdbcUrl(host, port, db);
 
-                sb.append("&7MySQL Host: &f").append(host).append("&r\n");
-                sb.append("&7MySQL Port: &f").append(port).append("&r\n");
-                sb.append("&7MySQL Database: &f").append(db).append("&r\n");
-                sb.append("&7MySQL User: &f").append(user).append("&r\n");
+                sb.append("&7SQL Host: &f").append(host).append("&r\n");
+                sb.append("&7SQL Port: &f").append(port).append("&r\n");
+                sb.append("&7SQL Database: &f").append(db).append("&r\n");
+                sb.append("&7SQL User: &f").append(user).append("&r\n");
+                sb.append("&7JDBC driver: ")
+                        .append(JdbcDrivers.isAvailable(jdbcUrl) ? "&a" : "&c")
+                        .append(JdbcDrivers.describeDriver(jdbcUrl))
+                        .append("&r\n");
                 break;
             }
 
@@ -85,6 +92,10 @@ public class TagsAdminStorageSubCommand extends AbstractTagsAdminSubCommand {
                 sb.append("&7Redis Host: &f").append(settings.getRedisHost()).append("&r\n");
                 sb.append("&7Redis Port: &f").append(settings.getRedisPort()).append("&r\n");
                 sb.append("&7Redis Database: &f").append(settings.getRedisDatabase()).append("&r\n");
+                sb.append("&7Redis User: &f")
+                        .append(settings.getRedisUser().isEmpty() ? "(default)" : settings.getRedisUser())
+                        .append("&r\n");
+                sb.append("&7TLS: &f").append(settings.isRedisSsl() ? "on" : "off").append("&r\n");
                 sb.append("&7Key Prefix: &f").append(settings.getRedisKeyPrefix()).append("&r\n");
                 sb.append("&7Connected: ")
                         .append(redis != null && redis.isHealthy() ? "&aYES" : "&cNO")

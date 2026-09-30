@@ -144,15 +144,15 @@ public class TagManager {
                 break;
             }
 
-            case MYSQL: {
+            case MYSQL:
+            case MARIADB: {
                 String host = settings.getMysqlHost();
                 int port = settings.getMysqlPort();
                 String db = settings.getMysqlDatabase();
                 String user = settings.getMysqlUser();
                 String pass = settings.getMysqlPassword();
 
-                String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + db +
-                        "?useSSL=false&autoReconnect=true&characterEncoding=UTF-8";
+                String jdbcUrl = backend.mySqlJdbcUrl(host, port, db);
 
                 store = new SqlPlayerTagStore(jdbcUrl, user, pass, GSON);
                 store.migrateFromFolder(playerDataFolder, GSON);

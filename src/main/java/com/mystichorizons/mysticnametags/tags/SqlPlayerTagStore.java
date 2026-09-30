@@ -2,6 +2,7 @@ package com.mystichorizons.mysticnametags.tags;
 
 import com.google.gson.Gson;
 import com.hypixel.hytale.logger.HytaleLogger;
+import com.mystichorizons.mysticnametags.util.JdbcDrivers;
 
 import javax.annotation.Nonnull;
 import java.io.File;
@@ -43,10 +44,7 @@ public final class SqlPlayerTagStore implements PlayerTagStore {
     }
 
     private Connection getConnection() throws SQLException {
-        if (user.isEmpty() && password.isEmpty()) {
-            return DriverManager.getConnection(jdbcUrl);
-        }
-        return DriverManager.getConnection(jdbcUrl, user, password);
+        return JdbcDrivers.open(jdbcUrl, user, password);
     }
 
     private void initSchema() {

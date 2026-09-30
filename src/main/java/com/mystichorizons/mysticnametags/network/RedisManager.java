@@ -136,9 +136,16 @@ public final class RedisManager {
 
         } catch (Throwable t) {
             instance = null;
+            String user = settings.getRedisUser();
             LOGGER.at(Level.SEVERE).withCause(t)
                     .log("[MysticNameTags] Failed to connect to Redis at " + host + ":" + port
-                            + ". Redis-backed storage and cross-server sync are disabled.");
+                            + " (user=" + (user.isEmpty() ? "(default)" : user)
+                            + ", password=" + (settings.getRedisPassword().isEmpty() ? "no" : "yes")
+                            + ", tls=" + (settings.isRedisSsl() ? "on" : "off")
+                            + "). Redis-backed storage and cross-server sync are disabled."
+                            + " A connection that dies during AUTH usually means the ACL wants a"
+                            + " username (settings.json: redisUser) alongside redisPassword, or"
+                            + " that the instance is TLS-only and redisSsl is still false.");
             return false;
         }
     }

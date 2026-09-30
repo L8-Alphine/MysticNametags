@@ -30,6 +30,7 @@ import com.mystichorizons.mysticnametags.tags.TagConfigValidator;
 import com.mystichorizons.mysticnametags.tags.TagDefinition;
 import com.mystichorizons.mysticnametags.util.ColorFormatter;
 import com.mystichorizons.mysticnametags.tags.TagManager;
+import com.mystichorizons.mysticnametags.util.JdbcDrivers;
 import com.mystichorizons.mysticnametags.util.MysticLog;
 import com.mystichorizons.mysticnametags.util.MysticNotificationUtil;
 import com.mystichorizons.mysticnametags.util.UpdateChecker;
@@ -282,7 +283,7 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                 File parent = sqliteFile.getAbsoluteFile().getParentFile();
                 yield (parent != null && parent.canWrite()) ? 0 : 1;
             }
-            case MYSQL -> 0;
+            case MYSQL, MARIADB -> 0;
             case REDIS -> {
                 RedisManager redis = RedisManager.get();
                 yield (redis != null && redis.isHealthy()) ? 0 : 1;
@@ -1303,6 +1304,11 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
                     "port", String.valueOf(settings.getMysqlPort()),
                     "database", settings.getMysqlDatabase()
             ));
+            case MARIADB -> lang.tr("dashboard.storage_mariadb", Map.of(
+                    "host", settings.getMysqlHost(),
+                    "port", String.valueOf(settings.getMysqlPort()),
+                    "database", settings.getMysqlDatabase()
+            ));
             case REDIS -> lang.tr("dashboard.storage_redis", Map.of(
                     "host", settings.getRedisHost(),
                     "port", String.valueOf(settings.getRedisPort()),
@@ -1315,8 +1321,10 @@ public class MysticNameTagsDashboardUI extends InteractiveCustomUIPage<MysticNam
         return switch (backend) {
             case FILE -> "FILE (playerdata/*.json)";
             case SQLITE -> "SQLITE file=" + settings.getSqliteFile();
-            case MYSQL -> "MYSQL " + settings.getMysqlHost() + ":" + settings.getMysqlPort()
-                    + "/" + settings.getMysqlDatabase();
+            case MYSQL, MARIADB -> backend.name() + " " + settings.getMysqlHost()
+                    + ":" + settings.getMysqlPort() + "/" + settings.getMysqlDatabase()
+                    + " driver=" + JdbcDrivers.describeDriver(backend.mySqlJdbcUrl(
+                            settings.getMysqlHost(), settings.getMysqlPort(), settings.getMysqlDatabase()));
             case REDIS -> "REDIS " + settings.getRedisHost() + ":" + settings.getRedisPort()
                     + "/" + settings.getRedisDatabase()
                     + " prefix=" + settings.getRedisKeyPrefix()

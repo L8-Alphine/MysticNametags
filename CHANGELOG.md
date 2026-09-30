@@ -6,6 +6,47 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
+## [1.3.0] - Storage Fixes
+
+### Fixed
+
+- SQL storage never connected. `DriverManager` finds drivers with a one-off
+  `ServiceLoader` scan that runs the first time it is touched, using whichever
+  class loader is current then - on a Hytale server that is the launcher's,
+  long before the plugin loader that owns our shaded MySQL/SQLite classes
+  exists. It therefore never saw them, and `storageBackend: MYSQL` died at boot
+  with `No suitable driver found for jdbc:mysql://...`, taking tag ownership and
+  stats with it. Connections now go through `JdbcDrivers`, which instantiates
+  the bundled drivers from the plugin's own class loader and calls
+  `Driver.connect` directly, so nothing depends on DriverManager's registry.
+- `shadowJar` merges service files. Without it the MySQL, MariaDB and SQLite
+  `META-INF/services/java.sql.Driver` entries overwrite each other and only the
+  last one shaded survives.
+- The stats table is created as `LONGTEXT` on MySQL/MariaDB instead of `TEXT`.
+  A long-lived player's per-block counters can pass the 64KB `TEXT` limit, and
+  the row would have been silently truncated. Existing tables are left alone.
+- The Redis connection failure is logged with the username, whether a password
+  was sent and whether TLS is on, plus what a connection that dies mid-AUTH
+  usually means. It previously reported only the address.
+
+### Added
+
+- `storageBackend: MARIADB`, using MariaDB Connector/J. It shares every `mysql*`
+  setting, the same tables and the same SQL as `MYSQL` - only the driver and the
+  JDBC URL differ - so switching between the two needs no migration. MySQL
+  Connector/J and a MariaDB server do not always agree on the handshake, so a
+  MariaDB server should use the driver MariaDB ships. `MARIA`, `MARIA_DB` and
+  `maria-db` are accepted spellings.
+- `/tagsadmin storage`, `/tagsadmin debugstorage` and `/tagsadmin doctor` report
+  which JDBC driver serves the configured backend, and `doctor` now fails the
+  storage check when no bundled driver accepts the URL rather than always
+  passing. `/tagsadmin storage` also shows the Redis username and TLS state.
+- `redisUsername` is accepted as an alias for `redisUser`, and the generated
+  `settings.json` documents `redisUser`, `redisPassword` and `redisSsl` in the
+  `__network` block.
+
+---
+
 ## [1.2.9] - 2026-09-02 - Glyph Rendering Fix
 
 ### Changed

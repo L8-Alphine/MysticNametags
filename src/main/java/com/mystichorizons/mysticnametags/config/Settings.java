@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.annotations.SerializedName;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.mystichorizons.mysticnametags.MysticNameTagsPlugin;
 import com.mystichorizons.mysticnametags.nameplate.glyph.GlyphAssets;
@@ -44,15 +45,15 @@ public final class Settings {
     private int tagDelaysecs = 20;
 
     // ---------------------------------------------------------------------
-    // Storage backend (FILE / SQLITE / MYSQL)
+    // Storage backend (FILE / SQLITE / MYSQL / MARIADB / REDIS)
     // ---------------------------------------------------------------------
 
-    private String storageBackend = "FILE"; // FILE, SQLITE, MYSQL
+    private String storageBackend = "FILE"; // FILE, SQLITE, MYSQL, MARIADB, REDIS
 
     // SQLite options (relative to plugin data folder)
     private String sqliteFile = "playerdata.db";
 
-    // MySQL options
+    // MySQL / MariaDB options (both backends share these)
     private String mysqlHost = "localhost";
     private int mysqlPort = 3306;
     private String mysqlDatabase = "mysticnametags";
@@ -62,6 +63,8 @@ public final class Settings {
     // Redis options (used by storageBackend=REDIS and by redisSyncEnabled)
     private String redisHost = "localhost";
     private int redisPort = 6379;
+    /** Redis 6+ ACL username; blank uses the server's default user. */
+    @SerializedName(value = "redisUser", alternate = {"redisUsername"})
     private String redisUser = "";
     private String redisPassword = "";
     private int redisDatabase = 0;
@@ -544,11 +547,15 @@ public final class Settings {
 
                 addInfoBlock(out, "__storage",
                         "Storage backend for tag ownership data.",
-                        "storageBackend = FILE / SQLITE / MYSQL / REDIS",
+                        "storageBackend = FILE / SQLITE / MYSQL / MARIADB / REDIS",
                         "FILE and SQLITE are single-server only.",
-                        "MYSQL and REDIS are shared: every server reads the same tag data,",
-                        "so a tag equipped on one server is already equipped on the next",
+                        "MYSQL, MARIADB and REDIS are shared: every server reads the same tag",
+                        "data, so a tag equipped on one server is already equipped on the next",
                         "server the player joins.",
+                        "MYSQL and MARIADB use the same mysql* settings below and the same",
+                        "tables; they differ only in the JDBC driver. Pick MARIADB when the",
+                        "server is MariaDB - MySQL Connector/J and MariaDB do not always",
+                        "agree on the handshake, and the MariaDB driver is the supported one.",
                         "REDIS needs Redis persistence (RDB/AOF) turned on, or tag ownership",
                         "is lost when the Redis instance restarts."
                 );
@@ -565,8 +572,15 @@ public final class Settings {
                         "Used when storageBackend = REDIS, and whenever redisSyncEnabled is true.",
                         "redisSyncEnabled = broadcast tag changes to the other servers over",
                         "Redis pub/sub so they update live instead of only on next join.",
-                        "Pair redisSyncEnabled with storageBackend = MYSQL to keep durability",
-                        "in SQL and use Redis purely as the message bus.",
+                        "Pair redisSyncEnabled with storageBackend = MYSQL or MARIADB to keep",
+                        "durability in SQL and use Redis purely as the message bus.",
+                        "redisUser = Redis 6+ ACL username. Leave blank for a server that only",
+                        "has a requirepass password; set it when the ACL expects",
+                        "AUTH <username> <password>. redisUsername is accepted as an alias.",
+                        "redisPassword = blank for no AUTH at all.",
+                        "redisSsl = true for TLS (rediss://). A TLS-only server drops the",
+                        "connection mid-AUTH when this is false, which shows up in the log as",
+                        "\"Unexpected end of stream\".",
                         "redisKeyPrefix namespaces the keys; keep it identical on every server.",
                         "networkServerId = blank to auto-generate. It only exists so a server",
                         "can ignore the messages it published itself.",

@@ -21,7 +21,7 @@ import java.util.logging.Level;
 /**
  * Central stat system for MysticNameTags.
  *
- * - Persists per-player stats using PlayerStatStore (FILE / SQLITE / MYSQL).
+ * - Persists per-player stats using PlayerStatStore (FILE / SQLITE / MYSQL / MARIADB / REDIS).
  * - Implements StatProvider for tag requirements.
  * - Exposes helpers for kills/blocks/distance/damage/etc.
  * - Tracks lightweight session-only stats in memory.
@@ -121,15 +121,15 @@ public final class PlayerStatManager implements StatProvider {
                 break;
             }
 
-            case MYSQL: {
+            case MYSQL:
+            case MARIADB: {
                 String host = settings.getMysqlHost();
                 int port = settings.getMysqlPort();
                 String db = settings.getMysqlDatabase();
                 String user = settings.getMysqlUser();
                 String pass = settings.getMysqlPassword();
 
-                String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + db +
-                        "?useSSL=false&autoReconnect=true&characterEncoding=UTF-8";
+                String jdbcUrl = backend.mySqlJdbcUrl(host, port, db);
 
                 chosen = new SqlPlayerStatStore(jdbcUrl, user, pass, GSON);
                 break;

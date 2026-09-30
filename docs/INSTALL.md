@@ -211,7 +211,7 @@ After installation, MysticNameTags creates configuration files on first startup.
   "tagDelaysecs": 20,
   "__storage": [
     "Storage backend for tag ownership data.",
-    "storageBackend = FILE / SQLITE / MYSQL"
+    "storageBackend = FILE / SQLITE / MYSQL / MARIADB / REDIS"
   ],
   "storageBackend": "FILE",
   "sqliteFile": "playerdata.db",
@@ -302,13 +302,16 @@ After installation, MysticNameTags creates configuration files on first startup.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `storageBackend` | String | `"FILE"` | Storage system: `FILE` (JSON files), `SQLITE`, or `MYSQL` |
+| `storageBackend` | String | `"FILE"` | Storage system: `FILE` (JSON files), `SQLITE`, `MYSQL`, `MARIADB`, or `REDIS` |
 | `sqliteFile` | String | `"playerdata.db"` | SQLite file name (relative to config folder) |
-| `mysqlHost` | String | `"localhost"` | MySQL server hostname |
-| `mysqlPort` | Number | `3306` | MySQL server port |
-| `mysqlDatabase` | String | `"mysticnametags"` | MySQL database name |
-| `mysqlUser` | String | `"root"` | MySQL username |
-| `mysqlPassword` | String | `"password"` | MySQL password |
+| `mysqlHost` | String | `"localhost"` | MySQL/MariaDB server hostname |
+| `mysqlPort` | Number | `3306` | MySQL/MariaDB server port |
+| `mysqlDatabase` | String | `"mysticnametags"` | Database name |
+| `mysqlUser` | String | `"root"` | Database username |
+| `mysqlPassword` | String | `"password"` | Database password |
+
+`MARIADB` uses the same `mysql*` settings and the same tables as `MYSQL`; only
+the JDBC driver differs. Use it when the server is MariaDB.
 
 **Nameplate Settings Reference:**
 

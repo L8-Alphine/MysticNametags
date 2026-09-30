@@ -955,11 +955,18 @@ Supported storage backends:
 | `FILE`   | Single server | `playerdata/*.json`. The default. |
 | `SQLITE` | Single server | One local database file. |
 | `MYSQL`  | Network       | Shared across every server. Recommended for networks. |
+| `MARIADB`| Network       | Same tables and `mysql*` settings as `MYSQL`, connected with the MariaDB driver. Pick this when the server is MariaDB. |
 | `REDIS`  | Network       | Shared across every server. Needs Redis persistence enabled. |
 
 `FILE` and `SQLITE` are local to one server, so a tag equipped on one server is
-invisible to the others. `MYSQL` and `REDIS` are shared: every server reads and
-writes the same record.
+invisible to the others. `MYSQL`, `MARIADB` and `REDIS` are shared: every server
+reads and writes the same record.
+
+`MYSQL` and `MARIADB` differ only in the JDBC driver they use - the settings,
+the tables and the SQL are identical, so switching between them needs no
+migration. MySQL Connector/J and a MariaDB server do not always agree on the
+connection handshake, so point a MariaDB server at `MARIADB` and let it use the
+driver MariaDB ships.
 
 ***
 
@@ -980,6 +987,12 @@ writes the same record.
 ```
 
 There are two independent pieces here, and you can use either or both.
+
+`redisUser` is the Redis 6+ ACL username. Leave it blank for an instance that
+only has a `requirepass` password; set it when the ACL expects
+`AUTH <username> <password>`. Set `redisSsl` for a TLS-only instance - without
+it the server hangs up part way through AUTH, which the log reports as
+`Unexpected end of stream`.
 
 **1. Redis as the storage backend** (`storageBackend: "REDIS"`)
 

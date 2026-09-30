@@ -13,6 +13,7 @@ import com.mystichorizons.mysticnametags.integrations.rpgleveling.RPGLevelingCom
 import com.mystichorizons.mysticnametags.tags.StorageBackend;
 import com.mystichorizons.mysticnametags.tags.TagConfigValidator;
 import com.mystichorizons.mysticnametags.tags.TagManager;
+import com.mystichorizons.mysticnametags.util.JdbcDrivers;
 
 import javax.annotation.Nonnull;
 import java.io.File;
@@ -133,8 +134,12 @@ public class TagsAdminDoctorSubCommand extends AbstractTagsAdminSubCommand {
                         .append(sqliteParent != null && sqliteParent.canWrite() ? "&aYES" : "&cNO")
                         .append("&r\n");
             }
-            case MYSQL -> {
-                sb.append("&7MySQL: &f")
+            case MYSQL, MARIADB -> {
+                String jdbcUrl = backend.mySqlJdbcUrl(
+                        settings.getMysqlHost(), settings.getMysqlPort(), settings.getMysqlDatabase());
+                sb.append("&7")
+                        .append(backend == StorageBackend.MARIADB ? "MariaDB" : "MySQL")
+                        .append(": &f")
                         .append(settings.getMysqlHost())
                         .append(":")
                         .append(settings.getMysqlPort())
@@ -142,6 +147,10 @@ public class TagsAdminDoctorSubCommand extends AbstractTagsAdminSubCommand {
                         .append(settings.getMysqlDatabase())
                         .append("&r\n");
                 sb.append("&7User: &f").append(settings.getMysqlUser()).append("&r\n");
+                sb.append("&7JDBC driver: ")
+                        .append(JdbcDrivers.isAvailable(jdbcUrl) ? "&a" : "&c")
+                        .append(JdbcDrivers.describeDriver(jdbcUrl))
+                        .append("&r\n");
             }
             case REDIS -> {
                 sb.append("&7Redis: &f")
@@ -272,7 +281,11 @@ public class TagsAdminDoctorSubCommand extends AbstractTagsAdminSubCommand {
                 File parent = sqliteFile.getAbsoluteFile().getParentFile();
                 yield (parent != null && parent.canWrite()) ? 0 : 1;
             }
-            case MYSQL -> 0;
+            // No connection is attempted here: /doctor must not block the main
+            // thread on a remote server. A missing driver is the failure that
+            // silently killed every SQL backend, so that is what gets checked.
+            case MYSQL, MARIADB -> JdbcDrivers.isAvailable(backend.mySqlJdbcUrl(
+                    settings.getMysqlHost(), settings.getMysqlPort(), settings.getMysqlDatabase())) ? 0 : 1;
             case REDIS -> {
                 RedisManager redis = RedisManager.get();
                 yield (redis != null && redis.isHealthy()) ? 0 : 1;
