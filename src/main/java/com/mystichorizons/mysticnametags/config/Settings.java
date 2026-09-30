@@ -198,6 +198,13 @@ public final class Settings {
     private long bannerMaxFileBytes = 262_144L;
     private boolean bannerKeepNameLine = false;
 
+    // --- Network -------------------------------------------------------------
+    // Everything the mod sends over the internet besides licensing (which only
+    // runs once license.key exists). See README "Network use".
+
+    private boolean updateCheckEnabled = true;
+    private boolean metricsEnabled = true;
+
     // ---------------------------------------------------------------------
 
     // Not serialized
@@ -328,6 +335,10 @@ public final class Settings {
                 this.bannerMaxHeightBlocks = loaded.bannerMaxHeightBlocks;
                 this.bannerMaxFileBytes = loaded.bannerMaxFileBytes;
                 this.bannerKeepNameLine = loaded.bannerKeepNameLine;
+
+                // Network
+                this.updateCheckEnabled = loaded.updateCheckEnabled;
+                this.metricsEnabled = loaded.metricsEnabled;
             }
         } catch (Exception e) {
             LOGGER.at(Level.WARNING).withCause(e)
@@ -703,6 +714,19 @@ public final class Settings {
                 copy.accept("bannerMaxFileBytes");
                 copy.accept("bannerKeepNameLine");
 
+                addInfoBlock(out, "__network",
+                        "Everything this mod sends over the internet, and how to turn it off. Changes apply at the next start.",
+                        "updateCheckEnabled = at startup, ask CFWidget (api.cfwidget.com) for the newest MysticNameTags release on CurseForge;",
+                        "                     sends nothing but this mod's version in the User-Agent",
+                        "metricsEnabled = anonymous server statistics to HStats (hstats.dev) every 5 minutes: a random server id,",
+                        "                 player count, OS name/version, Java version and CPU cores. Setting enabled=false in",
+                        "                 hstats-server-uuid.txt (server root) turns it off for every HStats mod at once",
+                        "Licensing contacts the MysticLicenses service only when license.key exists; it sends the key, a random",
+                        "server id and this mod's version, never player data. Remove license.key to stop it."
+                );
+                copy.accept("updateCheckEnabled");
+                copy.accept("metricsEnabled");
+
                 JsonObject other = new JsonObject();
                 for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
                     String key = entry.getKey();
@@ -1072,6 +1096,16 @@ public final class Settings {
 
     public double getExperimentalGlyphTintStrength() {
         return Math.max(0.0d, Math.min(1.0d, experimentalGlyphTintStrength));
+    }
+
+    // --- Network -------------------------------------------------------------
+
+    public boolean isUpdateCheckEnabled() {
+        return updateCheckEnabled;
+    }
+
+    public boolean isMetricsEnabled() {
+        return metricsEnabled;
     }
 
     // --- Tag banners ---------------------------------------------------------

@@ -12,6 +12,9 @@
 
 ![HStats](https://api.hstats.dev/api/embed/859c9d6b-fc61-45ba-83e8-666cb523df00/card.svg?theme=light&layout=compact&size=md&dark=true)
 
+Server statistics are anonymous and can be turned off; see [Network use](#-network-use) for
+everything the mod sends and how to switch each part off.
+
 ***
 
 **MysticNameTags** is a modern, permission-driven, and performance-focused **tag and nameplate system for Hytale servers**.
@@ -303,6 +306,24 @@ Worked examples at default caps:
   the banner rendering.
 
 ***
+
+## 🌐 Network use
+
+Everything MysticNameTags sends over the internet, and how to turn each part off. Nothing here
+involves players' personal data.
+
+| What | Where | When | What is sent | Turn it off |
+| --- | --- | --- | --- | --- |
+| Update check | `api.cfwidget.com` (public CurseForge metadata) | Once at startup, in the background | Nothing but this mod's version, in the `User-Agent` | `"updateCheckEnabled": false` in `settings.json` |
+| Anonymous server statistics ([HStats](https://hstats.dev)) | `api.hstats.dev` | At startup, then every 5 minutes | A random server id, the online player **count**, OS name and version, Java version, CPU core count, and this mod's version | `"metricsEnabled": false` in `settings.json`, or `enabled=false` in `hstats-server-uuid.txt` in the server root (turns it off for every HStats mod) |
+| Licensing (tag banners only) | The MysticLicenses service | Only once `license.key` exists: at startup, then every 45 minutes or so | The license key, the product id, a random server id, and this mod's version | Remove `license.key` and run `/tags reload` (banners switch off) |
+
+* No player names, UUIDs, chat, IP addresses, world data or files are sent anywhere.
+* Settings changes take effect at the next server start.
+* Storage and sync backends (MySQL, MariaDB, Redis) only connect to servers you configure.
+* The licensing service sees your server's IP address, as any HTTPS request shows; it uses it only
+  for short-lived rate limiting and does not store it. The licensing client is tested to send nothing
+  beyond the fields listed above.
 
 ## 📦 Suggested Mods / Integrations
 

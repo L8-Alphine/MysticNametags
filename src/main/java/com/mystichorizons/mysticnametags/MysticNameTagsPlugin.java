@@ -111,14 +111,6 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         }
 
         this.updateChecker = new UpdateChecker(version);
-        // Synchronous is fine here; if you prefer async, wrap in your scheduler.
-        this.updateChecker.checkForUpdates();
-
-        // Start HStats when a runtime or bundled UUID is available.
-        String hstatsModUuid = resolveHStatsModUuid();
-        if (hstatsModUuid != null) {
-            new HStats(hstatsModUuid, version);
-        }
 
         // ------------------------------------------------------
         // Playtime service (60s interval; adjust if you add config)
@@ -135,6 +127,13 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         // ------------------------------------------------------
         Settings.init();
         LanguageManager.init();
+
+        // ------------------------------------------------------
+        // Network: update check + anonymous metrics. Both are
+        // switchable in settings.json (see its "__network" block),
+        // and neither may hold up startup, so both run off-thread.
+        // ------------------------------------------------------
+        startNetworkServices(version);
 
         // ------------------------------------------------------
         // Redis (network storage + cross-server sync)
@@ -188,6 +187,35 @@ public class MysticNameTagsPlugin extends JavaPlugin {
         registerEcsSystems();
 
         LOGGER.at(Level.INFO).log("[MysticNameTags] Setup complete!");
+    }
+
+    private void startNetworkServices(String version) {
+        Settings settings = Settings.get();
+
+        if (settings.isUpdateCheckEnabled()) {
+            this.updateChecker.checkForUpdatesAsync();
+        } else {
+            LOGGER.at(Level.INFO).log("[MysticNameTags] Update check disabled in settings.json.");
+        }
+
+        if (!settings.isMetricsEnabled()) {
+            LOGGER.at(Level.INFO).log("[MysticNameTags] HStats metrics disabled in settings.json.");
+            return;
+        }
+        // Start HStats when a runtime or bundled UUID is available. Its first
+        // two requests are synchronous, so it starts on its own thread.
+        String hstatsModUuid = resolveHStatsModUuid();
+        if (hstatsModUuid != null) {
+            Thread metrics = new Thread(() -> {
+                try {
+                    new HStats(hstatsModUuid, version);
+                } catch (Throwable t) {
+                    LOGGER.at(Level.FINE).withCause(t).log("[MysticNameTags] HStats did not start.");
+                }
+            }, "MysticNameTags-HStats");
+            metrics.setDaemon(true);
+            metrics.start();
+        }
     }
 
     private String resolveHStatsModUuid() {

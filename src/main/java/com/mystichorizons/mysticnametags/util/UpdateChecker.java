@@ -1,13 +1,16 @@
 package com.mystichorizons.mysticnametags.util;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.hypixel.hytale.logger.HytaleLogger;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -15,19 +18,21 @@ import java.util.regex.Pattern;
 /**
  * Very small update checker for MysticNameTags.
  *
- * This implementation scrapes the CurseForge files listing for:
- *   https://www.curseforge.com/hytale/mods/mysticnametags
- *
- * It looks for the first "mysticnametags-<version>.jar" occurrence and
- * treats that as the latest public release.
+ * <p>Asks CFWidget's keyless JSON API for this project's newest release file on
+ * CurseForge, as Mystic Essentials does, and reads the version from its
+ * "mysticnametags-&lt;version&gt;.jar" name. It does not load curseforge.com
+ * itself: the Overwolf platform terms forbid automated access to the site.
+ * Sends nothing but this mod's version in the User-Agent. Switchable with
+ * {@code updateCheckEnabled} in settings.json.</p>
  */
 public final class UpdateChecker {
 
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
-    // CurseForge files page – no API key required, just HTML.
-    private static final String FILES_URL =
-            "https://www.curseforge.com/hytale/mods/mysticnametags/files/all";
+    /** CFWidget's view of the MysticNameTags CurseForge project (id 1446990). */
+    private static final String UPDATE_API_URL = "https://api.cfwidget.com/1446990";
+
+    private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
     // mysticnametags-1.0.2.jar -> capture "1.0.2"
     private static final Pattern VERSION_PATTERN =
@@ -46,17 +51,23 @@ public final class UpdateChecker {
         this.currentVersion = currentVersion;
     }
 
+    /** Runs {@link #checkForUpdates()} on its own daemon thread, so startup never waits on the network. */
+    public void checkForUpdatesAsync() {
+        Thread thread = new Thread(this::checkForUpdates, "MysticNameTags-UpdateCheck");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
     /**
-     * Call this once during plugin startup.
-     * Network errors are swallowed and will just log a debug message.
+     * One check. Network errors are swallowed and will just log a debug message.
      */
     public void checkForUpdates() {
         try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(FILES_URL).openConnection();
+            HttpURLConnection conn = (HttpURLConnection) URI.create(UPDATE_API_URL).toURL().openConnection();
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
-            conn.setRequestProperty("Accept", "text/html");
-            conn.setRequestProperty("User-Agent", "MysticNameTags-UpdateChecker");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("User-Agent", "MysticNameTags/" + getCurrentVersion() + " (update check)");
 
             int code = conn.getResponseCode();
             if (code != 200) {
@@ -65,16 +76,13 @@ public final class UpdateChecker {
                 return;
             }
 
-            StringBuilder html = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    html.append(line).append('\n');
-                }
+            String body;
+            try (InputStream in = conn.getInputStream()) {
+                body = new String(in.readNBytes(MAX_RESPONSE_BYTES), StandardCharsets.UTF_8);
             }
 
-            Matcher matcher = VERSION_PATTERN.matcher(html);
+            String newestFile = newestFileName(body);
+            Matcher matcher = VERSION_PATTERN.matcher(newestFile == null ? "" : newestFile);
             if (matcher.find()) {
                 String latest = matcher.group(1).trim();
                 if (!latest.isEmpty()) {
@@ -95,11 +103,39 @@ public final class UpdateChecker {
                 }
             } else {
                 LOGGER.at(Level.FINE)
-                        .log("[MysticNameTags] Could not find mysticnametags-*.jar on CurseForge files page.");
+                        .log("[MysticNameTags] Could not find mysticnametags-*.jar in the CurseForge metadata.");
             }
         } catch (Exception ex) {
             LOGGER.at(Level.FINE).withCause(ex)
                     .log("[MysticNameTags] Failed to check for updates.");
+        }
+    }
+
+    /**
+     * CFWidget puts the newest release file (beta/alpha only when no release
+     * exists) in {@code download}; its name carries the version.
+     */
+    @Nullable
+    static String newestFileName(String json) {
+        try {
+            JsonElement root = JsonParser.parseString(json);
+            if (!root.isJsonObject()) {
+                return null;
+            }
+            JsonElement download = root.getAsJsonObject().get("download");
+            if (download == null || !download.isJsonObject()) {
+                return null;
+            }
+            JsonObject file = download.getAsJsonObject();
+            for (String field : new String[] {"name", "display"}) {
+                JsonElement value = file.get(field);
+                if (value != null && value.isJsonPrimitive()) {
+                    return value.getAsString();
+                }
+            }
+            return null;
+        } catch (RuntimeException malformed) {
+            return null;
         }
     }
 

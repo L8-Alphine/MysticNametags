@@ -27,6 +27,18 @@ This project follows **Semantic Versioning** where possible.
   (`mystic.licensing.url` / `mystic.licensing.keys`, shared by every Mystic
   mod); see `docs/INSTALL.md`. A build without them runs with banners off.
 
+### Network use
+
+- The update check no longer downloads curseforge.com's file listing (the
+  Overwolf platform terms forbid automated access to the site). It asks
+  CFWidget's public JSON API instead, as Mystic Essentials does, and runs in
+  the background rather than holding up startup for up to 10 seconds.
+- `settings.json` has a `__network` block: `updateCheckEnabled` and
+  `metricsEnabled` switch off the update check and HStats statistics. HStats
+  also starts in the background now.
+- The README's "Network use" section lists everything the mod sends, where,
+  when, and how to turn each part off.
+
 ### Removed
 
 - The prototype's offline verifier (`McLicenseVerifier`, `ServerIdentity`
