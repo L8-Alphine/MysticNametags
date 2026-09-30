@@ -142,16 +142,18 @@ The build process will:
 
 **Licensing settings (release builds).** Tag banners are licensed through MysticLicenses. The
 licensing service's address and its public signing keys are built into the jar, never read at
-runtime. Put them in `gradle.properties` (not committed) or pass them with `-P`:
+runtime. They are shared by every Mystic mod, so put them in `~/.gradle/gradle.properties` (or
+this project's uncommitted `gradle.properties`), or pass them with `-P`:
 
 ```properties
-mysticnametags.licensing.url=https://licenses.example.com
+mystic.licensing.url=https://licenses.example.com
 # kid=publicKeyRaw pairs, comma-separated, exactly as GET <url>/api/v2/runtime/public-keys lists them.
 # Keep a retired key listed until nothing it signed can still be cached.
-mysticnametags.licensing.keys=mls-2026-01=AbCd...
+mystic.licensing.keys=mls-2026-01=AbCd...
 ```
 
-The environment variables `MYSTICNAMETAGS_LICENSING_URL` and `MYSTICNAMETAGS_LICENSING_KEYS` work
+`mysticnametags.licensing.url` / `.keys` override them for this mod only. The environment
+variables `MYSTIC_LICENSING_URL` / `MYSTIC_LICENSING_KEYS` (or the `MYSTICNAMETAGS_` ones) work
 too. The URL must use `https` (plain `http` only to `localhost`, for testing against a local
 service). Without these settings the build still succeeds, and the jar runs with banners off.
 

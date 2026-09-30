@@ -24,8 +24,8 @@ This project follows **Semantic Versioning** where possible.
 - The server's licensing identity lives in `.mystic/` at the server root,
   shared with other Mystic mods, so a server counts once in the portal.
 - The licensing service's address and public keys are set at build time
-  (`mysticnametags.licensing.url` / `mysticnametags.licensing.keys`); see
-  `docs/INSTALL.md`. A build without them runs with banners off.
+  (`mystic.licensing.url` / `mystic.licensing.keys`, shared by every Mystic
+  mod); see `docs/INSTALL.md`. A build without them runs with banners off.
 
 ### Removed
 

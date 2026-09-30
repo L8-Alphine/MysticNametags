@@ -401,13 +401,18 @@ tasks.named('processResources') {
 // in base64url, as GET /api/v2/runtime/public-keys publishes them), as kid=key pairs separated by commas. Keep a
 // retired key listed until nothing it signed can still be cached. Both are fixed at build time and never read at
 // runtime, so a server operator cannot point the mod at a licensing service of their own. A build without them
-// works normally with tag banners off.
+// works normally with tag banners off. mystic.licensing.* is shared by every Mystic mod (put it in
+// ~/.gradle/gradle.properties); mysticnametags.licensing.* overrides it here.
 tasks.register('generateLicensingEndpoint') {
     def urlProvider = providers.gradleProperty('mysticnametags.licensing.url')
+        .orElse(providers.gradleProperty('mystic.licensing.url'))
         .orElse(providers.environmentVariable('MYSTICNAMETAGS_LICENSING_URL'))
+        .orElse(providers.environmentVariable('MYSTIC_LICENSING_URL'))
         .orElse('')
     def keysProvider = providers.gradleProperty('mysticnametags.licensing.keys')
+        .orElse(providers.gradleProperty('mystic.licensing.keys'))
         .orElse(providers.environmentVariable('MYSTICNAMETAGS_LICENSING_KEYS'))
+        .orElse(providers.environmentVariable('MYSTIC_LICENSING_KEYS'))
         .orElse('')
 
     inputs.property('licensingUrl', urlProvider)
