@@ -20,6 +20,7 @@ import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.mystichorizons.mysticnametags.config.Settings;
+import com.mystichorizons.mysticnametags.integrations.MysticQuestsSupport;
 import com.mystichorizons.mysticnametags.integrations.MysticVanishSupport;
 import com.mystichorizons.mysticnametags.license.MysticNameTagsLicense;
 import com.mystichorizons.mysticnametags.nameplate.banner.BannerInfo;
@@ -851,6 +852,11 @@ public final class GlyphNameplateManager {
                     // received. Once the subject unvanishes the glyphs respawn via
                     // the normal missing-entity path.
                     if (!selfView && !MysticVanishSupport.canSee(viewerUuid, uuid)) {
+                        continue;
+                    }
+                    // Quest-hidden subject: same despawn/respawn path as vanish, asked
+                    // separately so each system's hide only ever lifts itself.
+                    if (!selfView && !MysticQuestsSupport.canSee(viewerUuid, uuid)) {
                         continue;
                     }
 
