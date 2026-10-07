@@ -1070,6 +1070,10 @@ public class IntegrationManager {
     public boolean isMysticVanishAvailable() {
         return MysticVanishSupport.isAvailable();
     }
+
+    public boolean isMysticQuestsAvailable() {
+        return MysticQuestsSupport.isAvailable();
+    }
 //
 //    public boolean isCoinsAndMarketsAvailable() {
 //        return coinsAndMarketsBackend != null && coinsAndMarketsBackend.isAvailable();
