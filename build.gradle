@@ -1,10 +1,10 @@
 plugins {
     id 'java'
-    id 'com.gradleup.shadow' version '8.3.0'
+    id 'com.gradleup.shadow' version '9.6.1'
 }
 
 group = 'com.mystichorizons.mysticnametags'
-version = '1.3.0'
+version = '1.3.1'
 
 repositories {
     mavenCentral()
@@ -49,8 +49,8 @@ dependencies {
 
     // MysticLicenses v2 client (licensed features: tag banners). Built from sdk/mystic-license-java in the
     // MysticLicensing repo and dependency-free. Lives in vendor/ because libs/ is not committed. Shaded as is,
-    // like gson and jedis: each plugin has its own class loader, and relocating would need a newer ASM than
-    // Shadow 8.3.0 carries, since relocation rewrites every class and ASM 9.7 cannot read Java 25 classes.
+    // like gson and jedis: a plugin's class lookups try its own jar before other plugins', and it has no
+    // META-INF/services files for another plugin's copy to leak into (see the MariaDB relocation below).
     implementation files('vendor/mystic-licenses-sdk-2.0.0-SNAPSHOT.jar')
 
     // PlaceholderAPI
@@ -200,9 +200,24 @@ shadowJar {
     // Without this the JDBC drivers' META-INF/services/java.sql.Driver files
     // overwrite each other and only the last one shaded survives.
     mergeServiceFiles()
+    // Shadow 9 drops duplicate paths before transformers see them unless
+    // they are INCLUDEd, which would leave java.sql.Driver listing one driver.
+    filesMatching(['META-INF/services/**', 'META-INF/*.kotlin_module']) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
+    // MariaDB finds its codecs and auth/TLS plugins with ServiceLoader, and a
+    // Hytale plugin loader's getResources also returns every other plugin's
+    // files. When another plugin shades a newer MariaDB, its list names classes
+    // ours lacks (UtilDateCodec after 3.5.3). Those load from that plugin's
+    // copy, and startup dies with "UtilDateCodec not a subtype". A plugin with
+    // an older copy fails the same way on our list. Relocated, each driver
+    // reads only its own services files. SQLite stays put because its JNI
+    // symbols are bound to org.sqlite names; MySQL Connector/J has no services
+    // files that could collide.
+    relocate 'org.mariadb.jdbc', 'com.mystichorizons.mysticnametags.libs.mariadb'
     // Exclude server classes from the final JAR
     dependencies {
-        exclude(dependency { it.moduleGroup == 'com.hypixel' })
+        exclude(dependency('com.hypixel.hytale:.*:.*'))
     }
 }
 
