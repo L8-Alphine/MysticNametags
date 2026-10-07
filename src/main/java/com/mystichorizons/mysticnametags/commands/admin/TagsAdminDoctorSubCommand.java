@@ -228,6 +228,9 @@ public class TagsAdminDoctorSubCommand extends AbstractTagsAdminSubCommand {
         sb.append("&7MysticVanish vanish hook: ")
                 .append(integrations.isMysticVanishAvailable() ? "&aactive" : "&7not detected")
                 .append("&r\n");
+        sb.append("&7MysticQuests visibility hook: ")
+                .append(integrations.isMysticQuestsAvailable() ? "&aactive" : "&7not detected")
+                .append("&r\n");
 
         for (String warning : warnings) {
             sb.append("&eWARN &7integration&f: ")
