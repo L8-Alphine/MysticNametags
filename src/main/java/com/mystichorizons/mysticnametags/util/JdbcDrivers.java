@@ -38,11 +38,21 @@ public final class JdbcDrivers {
     private static final HytaleLogger LOGGER = HytaleLogger.forEnclosingClass();
 
     public static final String MYSQL_DRIVER = "com.mysql.cj.jdbc.Driver";
+    /** The shadow jar relocates MariaDB and rewrites this literal to match. */
     public static final String MARIADB_DRIVER = "org.mariadb.jdbc.Driver";
     public static final String SQLITE_DRIVER = "org.sqlite.JDBC";
 
     /** Probed in this order; the first one that accepts a URL wins. */
     private static final String[] BUNDLED = {MYSQL_DRIVER, MARIADB_DRIVER, SQLITE_DRIVER};
+
+    /**
+     * Not a string switch: that compiles to the literals' hash codes, which
+     * relocation leaves behind when it rewrites MARIADB_DRIVER.
+     */
+    private static final Map<String, String> LABELS = Map.of(
+            MYSQL_DRIVER, "MySQL Connector/J",
+            MARIADB_DRIVER, "MariaDB Connector/J",
+            SQLITE_DRIVER, "SQLite JDBC");
 
     private static volatile Map<String, Driver> drivers;
 
@@ -215,13 +225,8 @@ public final class JdbcDrivers {
 
     @Nonnull
     private static String label(@Nonnull Driver driver) {
-        String name = switch (driver.getClass().getName()) {
-            case MYSQL_DRIVER -> "MySQL Connector/J";
-            case MARIADB_DRIVER -> "MariaDB Connector/J";
-            case SQLITE_DRIVER -> "SQLite JDBC";
-            default -> driver.getClass().getName();
-        };
-        return name + " " + driver.getMajorVersion() + "." + driver.getMinorVersion();
+        String type = driver.getClass().getName();
+        return LABELS.getOrDefault(type, type) + " " + driver.getMajorVersion() + "." + driver.getMinorVersion();
     }
 
     /** Scheme only; the rest of a JDBC URL can carry credentials. */
