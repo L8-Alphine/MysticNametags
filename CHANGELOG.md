@@ -6,7 +6,7 @@ This project follows **Semantic Versioning** where possible.
 
 ---
 
-## [Unreleased] - Licensing on MysticLicenses v2
+## [1.3.1] - Licensing on MysticLicenses v2
 
 ### Changed
 
@@ -23,9 +23,6 @@ This project follows **Semantic Versioning** where possible.
   nameplate redrawn, whenever the license changes while the server runs.
 - The server's licensing identity lives in `.mystic/` at the server root,
   shared with other Mystic mods, so a server counts once in the portal.
-- The licensing service's address and public keys are set at build time
-  (`mystic.licensing.url` / `mystic.licensing.keys`, shared by every Mystic
-  mod); see `docs/INSTALL.md`. A build without them runs with banners off.
 
 ### Network use
 
@@ -45,6 +42,25 @@ This project follows **Semantic Versioning** where possible.
   and friends). `license.mclicense`, `server-id.txt` and
   `license-request.json` are no longer read or written; a leftover
   `license.mclicense` gets a one-line notice at startup.
+
+### Fixed
+
+- `storageBackend: MARIADB` failed at boot with
+  `ServiceConfigurationError: ... UtilDateCodec not a subtype` when another
+  plugin on the server also bundled MariaDB Connector/J. A Hytale plugin's
+  class loader returns every plugin's `META-INF/services` files, so our driver
+  read the other plugin's codec list and loaded classes from its copy. The
+  bundled MariaDB driver is now relocated to
+  `com.mystichorizons.mysticnametags.libs.mariadb`. That also stops our copy
+  from breaking plugins that bundle an older MariaDB.
+- Built with Shadow 9.6.1. Shadow 8.3.0 could not read Java 25 classes, so it
+  could not relocate anything.
+
+### License Server Domain Change
+Url: https://licenses.hyzion.net
+
+Login using your Discord or with MysticIdentity.
+You must also be in our discord for updated roles for entitlements.
 
 ## [1.3.0] - Storage Fixes
 
